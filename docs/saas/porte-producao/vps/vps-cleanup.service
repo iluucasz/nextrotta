@@ -1,0 +1,6 @@
+[Unit]
+Description=Daily disk cleanup (porto-worker images, build cache, logs)
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/vps-cleanup.sh

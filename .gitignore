@@ -1,0 +1,32 @@
+# Dependencies
+node_modules
+
+# Build output
+.next/
+# worker/tsconfig.json compiles to ../dist (Docker-only, never committed)
+/dist/
+*.tsbuildinfo
+next-env.d.ts
+
+# Environment variables (secrets) — only .env.example is versioned
+.env
+.env.*
+!.env.example
+
+# Local DB backups (contain real data — never commit)
+backups/
+
+# Local tooling and editor state
+.vercel/
+.vscode/
+.sf/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+*.log
+
+# Local validation artifacts (browser profiles may hold session cookies; screenshots)
+components/platform/.browser-validation/
+components/platform/.next-validation/
+components/platform/*.png
+components/platform/cms/*.png

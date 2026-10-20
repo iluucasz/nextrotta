@@ -1,0 +1,182 @@
+.nr-marketing,
+.nr-theme-page {
+  background: var(--site-background, #fcfdf9);
+  color: var(--site-text, #1c392e);
+  font-family: var(--site-font, var(--font-geist-sans), sans-serif);
+}
+.nr-marketing .nr-btn.primary,
+.nr-theme-page .nr-btn.primary,
+.nr-marketing .nr-final-cta .nr-btn {
+  background: var(--site-primary, #147d63);
+  border-color: var(--site-primary, #147d63);
+}
+.nr-marketing .nr-btn,
+.nr-theme-page .nr-btn {
+  border-radius: var(--site-button-radius, 7px);
+}
+.nr-marketing .nr-hero h1,
+.nr-marketing .nr-public-section h2,
+.nr-marketing .nr-public-section h1 {
+  color: var(--site-text, #1c392e);
+}
+.nr-marketing .nr-hero h1 .green,
+.nr-marketing .nr-text-link {
+  color: var(--site-primary, #147d63);
+}
+.nr-marketing .nr-hero-copy > p,
+.nr-marketing .nr-public-section p {
+  color: var(--site-muted, #7c8a76);
+}
+.nr-marketing .nr-public-plan,
+.nr-marketing .nr-feature-grid article,
+.nr-marketing .nr-contact-form {
+  background: var(--site-surface, #fff);
+  border-radius: var(--site-radius, 12px);
+}
+.nr-marketing .nr-final-cta,
+.nr-marketing .nr-ai-card,
+.nr-marketing .nr-testimonials blockquote {
+  background: var(--site-accent, #eaf0dd);
+  border-radius: var(--site-radius, 12px);
+}
+.nr-theme-section {
+  position: relative;
+  min-width: 0;
+}
+.nr-theme-section.has-background > section {
+  background: var(--section-background);
+}
+.nr-theme-section.has-color h1,
+.nr-theme-section.has-color h2,
+.nr-theme-section.has-color h3,
+.nr-theme-section.has-color p {
+  color: var(--section-color) !important;
+}
+.nr-theme-section.has-spacing > section {
+  padding-block: var(--section-padding);
+}
+.nr-theme-section.has-alignment .nr-section-center,
+.nr-theme-section.has-alignment .nr-hero-copy,
+.nr-theme-section.has-alignment .nr-theme-custom {
+  text-align: var(--section-align);
+}
+.nr-theme-section.full-width > section {
+  max-width: none;
+}
+.nr-theme-section.selected {
+  outline: 2px solid #3b7ce2;
+  outline-offset: -2px;
+  z-index: 1;
+}
+.nr-theme-page.is-editing .nr-theme-section:hover {
+  outline: 2px solid #3b7ce2;
+  outline-offset: -2px;
+}
+.nr-theme-page.is-editing .nr-theme-section {
+  min-height: 38px;
+  cursor: pointer;
+}
+.nr-theme-section.drop-target {
+  box-shadow: inset 0 5px #3b7ce2 !important;
+}
+.nr-canvas-section-label {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 5;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 150px;
+  gap: 15px;
+  background: #3b7ce2;
+  color: white;
+  font:
+    16px/1.4 system-ui,
+    sans-serif;
+  border-radius: 0 0 5px 0;
+  box-shadow: 0 2px 5px #16396515;
+}
+.nr-canvas-section-label > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 9px;
+  cursor: grab;
+}
+.nr-canvas-section-label button {
+  padding: 6px 9px;
+  border-left: 1px solid #ffffff40;
+  cursor: pointer;
+}
+.nr-theme-section:hover > .nr-canvas-section-label,
+.nr-theme-section.selected > .nr-canvas-section-label {
+  display: flex;
+}
+.nr-theme-custom h2 {
+  margin-bottom: 20px;
+}
+.nr-theme-custom .nr-kicker {
+  margin-bottom: 15px;
+}
+.nr-theme-custom .nr-btn {
+  margin-top: 22px;
+}
+.nr-theme-custom img {
+  width: 100%;
+  max-height: 600px;
+  border-radius: var(--site-radius, 12px);
+}
+.nr-theme-custom figcaption {
+  padding-top: 14px;
+  font-size: 12px;
+  color: var(--site-muted, #7c8a76);
+}
+.nr-theme-banner {
+  background: var(--site-accent, #eaf0dd);
+  margin-block: 35px;
+  border-radius: var(--site-radius, 12px);
+}
+.nr-theme-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: center;
+  gap: 45px;
+}
+.nr-theme-image-placeholder {
+  min-height: 230px;
+  background: linear-gradient(135deg, #f1f4ee, #e5ebe0);
+  border: 1px dashed #c7d3be;
+  border-radius: var(--site-radius, 12px);
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+  align-items: center;
+  justify-content: center;
+  color: #7c8c74;
+  font-size: 12px;
+  text-align: center;
+  padding: 25px;
+}
+.nr-theme-empty {
+  min-height: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+  color: #859080;
+}
+.nr-theme-empty h2 {
+  font-size: 24px;
+  font-weight: 600;
+}
+.nr-theme-empty p {
+  font-size: 13px;
+}
+@media (max-width: 760px) {
+  .nr-theme-cards {
+    grid-template-columns: 1fr;
+    gap: 25px;
+  }
+}

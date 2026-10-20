@@ -1,0 +1,12 @@
+<svg width="180" height="180" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="fade" x1="10" y1="9" x2="30" y2="31" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fff" />
+      <stop offset="1" stop-color="#fff" stop-opacity="0.15" />
+    </linearGradient>
+  </defs>
+  <rect width="40" height="40" rx="10" fill="#1f9d74" />
+  <rect x="10" y="9" width="5" height="22" fill="#fff" />
+  <rect x="25" y="9" width="5" height="22" fill="#fff" />
+  <polygon points="10,9 15.5,9 30,31 24.5,31" fill="url(#fade)" />
+</svg>

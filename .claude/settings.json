@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(//c/Users/iluuc/Documents/sistema-de-gestao-tecnica/**)",
+      "Write(//c/Users/iluuc/Documents/sistema-de-gestao-tecnica/**)",
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env*.local)",
+      "Read(./.next/**)",
+      "Read(./dist/**)",
+      "Read(./*.tsbuildinfo)",
+      "Read(./pnpm-lock.yaml)",
+      "Read(./package-lock.json)",
+      "Read(./worker/package-lock.json)"
+    ]
+  }
+}

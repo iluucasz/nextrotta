@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node10",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "types": ["node"],
+    "rootDir": "..",
+    "outDir": "../dist"
+  },
+  "include": [
+    "index.ts",
+    "server.ts",
+    "../lib/porto-integration/**/*.ts",
+    "../lib/porto-jobs/**/*.ts",
+    "../lib/porto-crypto.ts",
+
+    "../lib/porto-sync-log.ts",
+    "../lib/db.ts",
+    "../lib/types.ts",
+    "../lib/schedule-write-service.ts",
+    "../lib/work-hours-service.ts",
+    "../lib/schedule-planner.ts",
+    "../lib/whatsapp/dates.ts",
+    "../lib/whatsapp/evolution.ts",
+    "../lib/whatsapp/notification-types.ts",
+    "../lib/whatsapp/notifications.ts",
+    "../lib/whatsapp/store.ts"
+  ]
+}

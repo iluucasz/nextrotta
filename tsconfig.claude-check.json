@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "incremental": false },
+  "exclude": ["node_modules", "worker", "lib/porto-integration", "lib/porto-jobs",
+    "components/platform", "components/site", "app/site", "app/plataforma", "docs"]
+}

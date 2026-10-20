@@ -1,0 +1,364 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #f6f8f6;
+  --foreground: #152b28;
+  --card: #ffffff;
+  --card-foreground: #152b28;
+  --popover: #ffffff;
+  --popover-foreground: #152b28;
+  --primary: #147d63;
+  --primary-foreground: #ffffff;
+  --secondary: #e9f4ee;
+  --secondary-foreground: #245b47;
+  --muted: #f0f4f1;
+  --muted-foreground: #596e63;
+  --accent: #e3f1e8;
+  --accent-foreground: #126b51;
+  --destructive: #b34545;
+  --destructive-foreground: #ffffff;
+  --border: #dfe7e1;
+  --input: #cedbd2;
+  --ring: #147d63;
+  --chart-1: #147d63;
+  --chart-2: #568cad;
+  --chart-3: #d69a42;
+  --chart-4: #8cac79;
+  --chart-5: #bd7186;
+  --radius: 0.75rem;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #52675d;
+  --sidebar-primary: #e9f4ee;
+  --sidebar-primary-foreground: #126b51;
+  --sidebar-accent: #f1f7f3;
+  --sidebar-accent-foreground: #126b51;
+  --sidebar-border: #e5ebe7;
+  --sidebar-ring: #147d63;
+  --action: #147d63;
+  --action-foreground: #ffffff;
+}
+
+.dark {
+  --background: #14221c;
+  --foreground: #eef5f0;
+  --card: #1c3026;
+  --card-foreground: #eef5f0;
+  --popover: #1c3026;
+  --popover-foreground: #eef5f0;
+  --primary: #6dc6a1;
+  --primary-foreground: #10271b;
+  --secondary: #294336;
+  --secondary-foreground: #d1e8da;
+  --muted: #243b2e;
+  --muted-foreground: #afc5b8;
+  --accent: #315440;
+  --accent-foreground: #dcf5e5;
+  --destructive: #e68195;
+  --destructive-foreground: #211b36;
+  --border: #375342;
+  --input: #496653;
+  --ring: #6dc6a1;
+  --action: #6dc6a1;
+  --action-foreground: #10271b;
+}
+
+/*
+ * The organizations' system (everything inside the app shell, plus its dialogs and menus rendered
+ * in portals) uses the purple palette with a dark sidebar. The owner panel, the marketing site and
+ * the login keep the NextRotta green above.
+ */
+body:has(.app-shell) {
+  --background: #f7f8fc;
+  --foreground: #272536;
+  --card: #ffffff;
+  --card-foreground: #272536;
+  --popover: #ffffff;
+  --popover-foreground: #272536;
+  --primary: #7161ef;
+  --primary-foreground: #ffffff;
+  --secondary: #f1effb;
+  --secondary-foreground: #625773;
+  --muted: #f3f2f8;
+  --muted-foreground: #7c768b;
+  --accent: #eeeafa;
+  --accent-foreground: #6452c7;
+  --destructive: #c44f65;
+  --destructive-foreground: #ffffff;
+  --border: #eae8f2;
+  --input: #dfdbe9;
+  --ring: #8a79ef;
+  --chart-1: #7161ef;
+  --chart-2: #34b6aa;
+  --chart-3: #f2ae60;
+  --chart-4: #97a5e9;
+  --chart-5: #db8faa;
+  --sidebar: #211f32;
+  --sidebar-foreground: #aba8bf;
+  --sidebar-primary: #7161ef;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ffffff08;
+  --sidebar-accent-foreground: #ffffff;
+  --sidebar-border: #ffffff0c;
+  --sidebar-ring: #a99af8;
+  --action: #282638;
+  --action-foreground: #ffffff;
+}
+
+.dark body:has(.app-shell) {
+  --background: #1c1a29;
+  --foreground: #f0edf8;
+  --card: #262336;
+  --card-foreground: #f0edf8;
+  --popover: #262336;
+  --popover-foreground: #f0edf8;
+  --primary: #a99af8;
+  --primary-foreground: #211b36;
+  --secondary: #322d45;
+  --secondary-foreground: #ded7ef;
+  --muted: #2c283b;
+  --muted-foreground: #b2a8c4;
+  --accent: #3a3153;
+  --accent-foreground: #d5c8ff;
+  --destructive: #e68195;
+  --destructive-foreground: #211b36;
+  --border: #3b344d;
+  --input: #4d435f;
+  --ring: #a99af8;
+  --action: #dcd4fa;
+  --action-foreground: #272138;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans), 'Segoe UI', sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes gauge-goal-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+  }
+
+  50% {
+    transform: translateY(-2px) scale(1.008);
+  }
+}
+
+@keyframes gauge-mega-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    box-shadow:
+      0 22px 60px rgba(249, 115, 22, 0.24),
+      0 12px 34px rgba(245, 158, 11, 0.16);
+  }
+
+  50% {
+    transform: translateY(-3px) scale(1.016);
+    box-shadow:
+      0 30px 78px rgba(249, 115, 22, 0.34),
+      0 22px 58px rgba(239, 68, 68, 0.2);
+  }
+}
+
+@keyframes gauge-badge-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+@keyframes gauge-ring {
+  0% {
+    transform: translateX(-50%) scale(0.9);
+    opacity: 0.12;
+  }
+
+  50% {
+    opacity: 0.4;
+  }
+
+  100% {
+    transform: translateX(-50%) scale(1.16);
+    opacity: 0;
+  }
+}
+
+@keyframes gauge-bar-flash {
+  0% {
+    transform: translateX(120%);
+    opacity: 0;
+  }
+
+  20% {
+    opacity: 0.85;
+  }
+
+  100% {
+    transform: translateX(-180%);
+    opacity: 0;
+  }
+}
+
+@keyframes gauge-confetti {
+  0% {
+    transform: translateY(-6px) rotate(0deg);
+    opacity: 0;
+  }
+
+  12% {
+    opacity: 1;
+  }
+
+  100% {
+    transform: translateY(42px) rotate(190deg);
+    opacity: 0;
+  }
+}
+
+@keyframes gauge-shine {
+  0% {
+    stroke-dashoffset: 42;
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.45;
+  }
+}
+
+@keyframes gauge-needle-boost {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+
+  42% {
+    transform: rotate(1.8deg);
+  }
+
+  56% {
+    transform: rotate(-0.7deg);
+  }
+
+  70% {
+    transform: rotate(1deg);
+  }
+}
+
+@layer utilities {
+  .gauge-goal-celebration {
+    animation: gauge-goal-pulse 2.8s ease-in-out infinite;
+  }
+
+  .gauge-mega-celebration {
+    animation: gauge-mega-pulse 2.4s ease-in-out infinite;
+  }
+
+  .gauge-badge-float {
+    animation: gauge-badge-float 2.8s ease-in-out infinite;
+  }
+
+  .gauge-ring {
+    animation: gauge-ring 3.8s ease-out infinite;
+  }
+
+  .gauge-confetti-piece {
+    animation: gauge-confetti 3.4s ease-in infinite;
+  }
+
+  .gauge-bar-flash {
+    animation: gauge-bar-flash 2.9s linear infinite;
+  }
+
+  .gauge-shine {
+    animation: gauge-shine 2.6s linear infinite;
+  }
+
+  .gauge-needle-boost {
+    transform-box: view-box;
+    transform-origin: 90px 86px;
+    animation: gauge-needle-boost 1.35s ease-in-out infinite;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gauge-goal-celebration,
+  .gauge-mega-celebration,
+  .gauge-badge-float,
+  .gauge-ring,
+  .gauge-confetti-piece,
+  .gauge-bar-flash,
+  .gauge-shine,
+  .gauge-needle-boost {
+    animation: none !important;
+  }
+}
