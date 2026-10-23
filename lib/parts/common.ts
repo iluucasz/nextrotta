@@ -58,6 +58,36 @@ export async function withNumberRetry<T>(run: () => Promise<T>): Promise<T> {
   }
 }
 
+/**
+ * First statement of a transaction that moves units out of a stock: serializes writers of that
+ * stock, so the check below sees what the previous writer committed.
+ */
+export function lockStock(organizationId: string, technicianId: string | null) {
+  return sql`SELECT pg_advisory_xact_lock(hashtext(${`parts-stock:${organizationId}:${technicianId ?? 'central'}`}::text))`;
+}
+
+/**
+ * Aborts the whole transaction (error P0409, see `runStockTransaction`) when the stock holds fewer
+ * than `quantity` units of the part. Always follows `lockStock` in the same transaction. The check
+ * lives in a function (migration 0024) because Postgres folds constant expressions such as
+ * `1 / 0` at plan time, which makes a plain CASE-based guard fail even when the stock is enough.
+ */
+export function requireUnits(organizationId: string, technicianId: string | null, partId: string, quantity: number) {
+  return sql`SELECT parts_require_units(${organizationId}::uuid, ${technicianId}::uuid, ${partId}::uuid, ${quantity}::int)`;
+}
+
+/** Runs a transaction built with `lockStock`/`requireUnits`, turning a failed guard into a 409. */
+export async function runStockTransaction(queries: ReturnType<typeof sql>[]) {
+  try {
+    await sql.transaction(queries);
+  } catch (error) {
+    if ((error as { code?: string })?.code === 'P0409') {
+      throw new PartsError('O estoque mudou enquanto a operação era registrada. Confira as quantidades e tente de novo.', 409);
+    }
+    throw error;
+  }
+}
+
 /** Positive integer quantity, or a PartsError. */
 export function parseQuantity(value: unknown, label = 'Quantidade') {
   const number = Number(value);

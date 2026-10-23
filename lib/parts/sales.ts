@@ -17,8 +17,21 @@ import {
   type MercadoPagoOrder,
 } from '../mercadopago/client';
 import { fallbackPayerEmail, mercadoPagoNotificationUrl } from '../mercadopago/config';
-import { getPartsSettings } from './catalog';
-import { currentMonth, isUuid, money, parseQuantity, PartsError, requireTechnician, toIso, withNumberRetry, type PartsActor } from './common';
+import { getCompanyName, getPartsSettings } from './catalog';
+import {
+  currentMonth,
+  isUuid,
+  lockStock,
+  money,
+  parseQuantity,
+  PartsError,
+  requireTechnician,
+  requireUnits,
+  runStockTransaction,
+  toIso,
+  withNumberRetry,
+  type PartsActor,
+} from './common';
 import { sendCustomerMessage, whatsappShareUrl, type CustomerMessageResult } from './notify';
 import { getStock } from './stock';
 import {
@@ -207,7 +220,8 @@ export async function createSale(
     if (!isUuid(item?.partId)) throw new PartsError('Peça inválida na venda.');
     const quantity = parseQuantity(item.quantity);
     const unitPrice = parseAmount(item.unitPrice);
-    if (unitPrice === null) throw new PartsError('Preço de venda inválido.');
+    // The screen already asks for a price per part; a zero would register a free sale that still charges the technician.
+    if (unitPrice === null || unitPrice <= 0) throw new PartsError('Informe o valor cobrado de cada peça (maior que zero).');
     const previous = requested.get(item.partId);
     if (previous && previous.unitPrice !== unitPrice) throw new PartsError('A mesma peça aparece com dois preços diferentes.');
     requested.set(item.partId, { quantity: (previous?.quantity ?? 0) + quantity, unitPrice });
@@ -246,8 +260,12 @@ export async function createSale(
 
   const id = randomUUID();
   const month = currentMonth();
+  // The stock is locked and re-checked inside the transaction, so a double tap on "Cobrar" (or two
+  // devices) can never sell the same unit twice.
   await withNumberRetry(() =>
-    sql.transaction([
+    runStockTransaction([
+      lockStock(organizationId, technician.id),
+      ...items.map((item) => requireUnits(organizationId, technician.id, String(item.part.id), item.quantity)),
       sql`
         INSERT INTO part_sales (
           id, organization_id, number, technician_id, customer_name, customer_phone, order_code, payment_method,
@@ -288,7 +306,7 @@ export async function createSale(
       await startPayment(organizationId, id, technician.id, actor);
     } catch (error) {
       // The sale stays; the screen shows the error with "tentar de novo" or another method.
-      const message = error instanceof Error ? error.message : String(error);
+      const message = paymentFailureMessage(error, paymentMethod);
       await sql`UPDATE part_sales SET payment_error = ${message} WHERE id = ${id}`;
     }
   }
@@ -297,13 +315,8 @@ export async function createSale(
 
 // ---------------------------------------------------------------- charging the customer
 
-function describeSale(row: Record<string, unknown>, organizationName: string) {
-  return `Venda nº ${row.number} — ${organizationName}`;
-}
-
-async function organizationName(organizationId: string) {
-  const row = (await sql`SELECT name FROM organizations WHERE id = ${organizationId}`)[0];
-  return String(row?.name ?? '');
+function describeSale(row: Record<string, unknown>, companyName: string) {
+  return `Venda nº ${row.number}${companyName ? ` — ${companyName}` : ''}`;
 }
 
 /** Creates the charge in the technician's Mercado Pago account for the sale's method. */
@@ -316,7 +329,7 @@ export async function startPayment(organizationId: string, saleId: string, techn
   const { token, terminalId } = await getAccessToken(organizationId, technicianId);
   const attempt = Number(row.payment_attempts) + 1;
   const reference = `${row.id}`;
-  const name = await organizationName(organizationId);
+  const name = await getCompanyName(organizationId);
   const amount = money(row.total_amount);
 
   if (method === 'pix') {
@@ -325,10 +338,11 @@ export async function startPayment(organizationId: string, saleId: string, techn
       amount,
       description: describeSale(row, name),
       payerEmail: fallbackPayerEmail(),
-      payerFirstName: (row.customer_name as string | null) ?? undefined,
+      // Pix orders sent without a payer name came back as "processing_error" while named ones worked; the customer often has no name.
+      payerFirstName: (row.customer_name as string | null)?.trim() || 'Cliente',
       expirationMinutes: PIX_EXPIRATION_MINUTES,
+      attempt,
     });
-    // Idempotency per attempt: a retry of the same attempt gets the same order back.
     const payment = order.transactions?.payments?.[0];
     const expiresAt = payment?.date_of_expiration ? new Date(payment.date_of_expiration) : new Date(Date.now() + PIX_EXPIRATION_MINUTES * 60_000);
     await sql`
@@ -348,6 +362,7 @@ export async function startPayment(organizationId: string, saleId: string, techn
       items: items.map((item) => ({ id: item.partId, title: item.name, quantity: item.quantity, unitPrice: item.unitPrice })),
       notificationUrl: mercadoPagoNotificationUrl(),
       expiresAt,
+      attempt,
     });
     await sql`
       UPDATE part_sales SET
@@ -398,11 +413,24 @@ export async function retryPayment(organizationId: string, saleId: unknown, tech
   try {
     await startPayment(organizationId, String(row.id), technicianId, actor);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const currentMethod = isPaymentMethod(input.paymentMethod) ? input.paymentMethod : (row.payment_method as PaymentMethod);
+    const message = paymentFailureMessage(error, currentMethod);
     await sql`UPDATE part_sales SET payment_error = ${message} WHERE id = ${row.id}`;
-    throw error;
+    throw message === (error instanceof Error ? error.message : String(error)) ? error : new PartsError(message, 502);
   }
   return getSale(organizationId, row.id, technicianId);
+}
+
+/**
+ * What the technician sees when the charge can't be created. A Pix refused with "processing_error"
+ * is, in practice, a Mercado Pago account without a Pix key; the raw answer stays in the server logs.
+ */
+function paymentFailureMessage(error: unknown, method: PaymentMethod) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (method === 'pix' && error instanceof MercadoPagoError && /processing_error/i.test(message)) {
+    return 'O Mercado Pago não conseguiu gerar o Pix. O motivo mais comum é a conta não ter uma chave Pix: abra o app do Mercado Pago, vá em Pix > Minhas chaves e cadastre uma. Depois toque em "Tentar de novo". Se já tem chave, aguarde um pouco e tente de novo.';
+  }
+  return message;
 }
 
 async function cancelOpenOrder(organizationId: string, row: Record<string, unknown>) {
@@ -462,18 +490,26 @@ export async function checkPayment(organizationId: string, saleId: unknown, tech
   if (mpStatus) await sql`UPDATE part_sales SET mp_status = ${mpStatus} WHERE id = ${row.id}`;
   if (!paidPaymentId) return { sale: await getSale(organizationId, row.id, technicianId), found: false };
 
-  await markPaid(organizationId, String(row.id), { by: 'mercadopago', mpPaymentId: paidPaymentId });
-  return { sale: await getSale(organizationId, row.id, technicianId), found: true };
+  const marked = await markPaid(organizationId, String(row.id), { by: 'mercadopago', mpPaymentId: paidPaymentId });
+  return { sale: await getSale(organizationId, row.id, technicianId), found: marked };
 }
 
+/** Returns false when the sale was not awaiting payment, or the Mercado Pago payment already settled another sale. */
 async function markPaid(organizationId: string, saleId: string, input: { by: 'mercadopago' | 'technician'; mpPaymentId?: string | null; actorId?: string | null }) {
-  const updated = await sql`
-    UPDATE part_sales SET status = 'paid', paid_at = NOW(), payment_confirmed_by = ${input.by},
-      mp_payment_id = COALESCE(${input.mpPaymentId ?? null}, mp_payment_id), payment_error = NULL
-    WHERE id = ${saleId} AND organization_id = ${organizationId} AND status = 'awaiting_payment'
-    RETURNING id, technician_id
-  `;
-  if (!updated.length) return;
+  let updated;
+  try {
+    updated = await sql`
+      UPDATE part_sales SET status = 'paid', paid_at = NOW(), payment_confirmed_by = ${input.by},
+        mp_payment_id = COALESCE(${input.mpPaymentId ?? null}, mp_payment_id), payment_error = NULL
+      WHERE id = ${saleId} AND organization_id = ${organizationId} AND status = 'awaiting_payment'
+      RETURNING id, technician_id
+    `;
+  } catch (error) {
+    // part_sales_mp_payment_idx: that payment is already tied to another sale.
+    if ((error as { code?: string })?.code === '23505') return false;
+    throw error;
+  }
+  if (!updated.length) return false;
   await recordAudit({
     organizationId,
     actorId: input.actorId ?? null,
@@ -484,6 +520,7 @@ async function markPaid(organizationId: string, saleId: string, input: { by: 'me
     details: { by: input.by, mpPaymentId: input.mpPaymentId ?? null },
   });
   await sendReceipt(organizationId, saleId, null).catch((error) => console.error('[parts] receipt:', error));
+  return true;
 }
 
 /** Cash, or a charge made outside the system: the technician states they received it. */
@@ -507,29 +544,50 @@ export async function cancelSale(organizationId: string, saleId: unknown, input:
   }
   const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim().slice(0, 300) : null;
   if (!reason) throw new PartsError('Informe o motivo do cancelamento.');
+
+  // The customer may have paid since the screen last looked: ask Mercado Pago first, so a technician never
+  // cancels (and gets the parts back for) a sale whose money has already arrived. Only for charges tied to an
+  // order or a link; "cartão presencial" is matched by amount and could pair with an unrelated payment.
+  if (input.technicianId && row.status === 'awaiting_payment' && (row.mp_order_id || row.payment_method === 'card_link')) {
+    let paidMeanwhile = false;
+    try {
+      paidMeanwhile = (await checkPayment(organizationId, row.id, input.technicianId)).sale.status === 'paid';
+    } catch (error) {
+      // Mercado Pago unreachable (or the charge never existed): cancel anyway, as before.
+      console.warn('[parts] check before cancel:', error instanceof Error ? error.message : error);
+    }
+    if (paidMeanwhile) {
+      throw new PartsError('O cliente acabou de pagar esta venda. Se precisar cancelar, peça ao administrador (e faça o estorno no Mercado Pago).', 409);
+    }
+  }
   await cancelOpenOrder(organizationId, row);
 
   const items = await sql`SELECT part_id, quantity, unit_cost, unit_technician_price FROM part_sale_items WHERE sale_id = ${row.id}`;
-  const updated = await sql`
-    UPDATE part_sales SET status = 'canceled', canceled_at = NOW(), canceled_by = ${actor.id}, cancel_reason = ${reason}
-    WHERE id = ${row.id} AND status <> 'canceled'
-    RETURNING id
-  `;
-  if (!updated.length) throw new PartsError('Esta venda já foi cancelada.', 409);
-  await sql.transaction([
-    ...items.map(
-      (item) => sql`
-        INSERT INTO part_movements (organization_id, part_id, technician_id, quantity, kind, unit_cost, unit_technician_price, sale_id, note, created_by)
-        VALUES (${organizationId}, ${item.part_id}, ${row.technician_id}, ${Number(item.quantity)}, 'sale_canceled', ${item.unit_cost},
-                ${item.unit_technician_price}, ${row.id}, ${reason}, ${actor.id})
+  try {
+    // One transaction: status, stock and account change together or not at all. The unique indexes
+    // on part_movements/part_account_entries (migration 0024) make a concurrent second cancel fail here.
+    await sql.transaction([
+      sql`
+        UPDATE part_sales SET status = 'canceled', canceled_at = NOW(), canceled_by = ${actor.id}, cancel_reason = ${reason}
+        WHERE id = ${row.id} AND organization_id = ${organizationId} AND status <> 'canceled'
       `,
-    ),
-    sql`
-      INSERT INTO part_account_entries (organization_id, technician_id, kind, amount, due_month, sale_id, description, created_by)
-      SELECT ${organizationId}, technician_id, 'sale_canceled', -amount, ${currentMonth()}, sale_id, ${`Venda nº ${row.number} cancelada: ${reason}`}, ${actor.id}
-      FROM part_account_entries WHERE sale_id = ${row.id} AND kind = 'sale'
-    `,
-  ]);
+      ...items.map(
+        (item) => sql`
+          INSERT INTO part_movements (organization_id, part_id, technician_id, quantity, kind, unit_cost, unit_technician_price, sale_id, note, created_by)
+          VALUES (${organizationId}, ${item.part_id}, ${row.technician_id}, ${Number(item.quantity)}, 'sale_canceled', ${item.unit_cost},
+                  ${item.unit_technician_price}, ${row.id}, ${reason}, ${actor.id})
+        `,
+      ),
+      sql`
+        INSERT INTO part_account_entries (organization_id, technician_id, kind, amount, due_month, sale_id, description, created_by)
+        SELECT ${organizationId}, technician_id, 'sale_canceled', -amount, ${currentMonth()}, sale_id, ${`Venda nº ${row.number} cancelada: ${reason}`}, ${actor.id}
+        FROM part_account_entries WHERE sale_id = ${row.id} AND kind = 'sale'
+      `,
+    ]);
+  } catch (error) {
+    if ((error as { code?: string })?.code === '23505') throw new PartsError('Esta venda já foi cancelada.', 409);
+    throw error;
+  }
   await recordAudit({
     organizationId, actorId: actor.id, actorRole: actor.role, impersonationId: actor.impersonationId,
     action: 'part.sale_canceled', targetType: 'part_sale', targetId: String(row.id), details: { reason, wasPaid: row.status === 'paid' },
@@ -545,9 +603,9 @@ function greeting(name: string | null) {
   return name ? `Olá, ${name.split(' ')[0]}!` : 'Olá!';
 }
 
-export function paymentMessage(sale: Sale, organization: string) {
+export function paymentMessage(sale: Sale, company: string) {
   const lines = [
-    `${greeting(sale.customerName)} Segue o pagamento das peças (${organization}).`,
+    `${greeting(sale.customerName)} Segue o pagamento das peças${company ? ` (${company})` : ''}.`,
     '',
     ...sale.items.map((item) => `${item.quantity}× ${item.name} — ${formatBRL(item.unitPrice * item.quantity)}`),
     `*Total: ${formatBRL(sale.totalAmount)}*`,
@@ -562,11 +620,11 @@ export function paymentMessage(sale: Sale, organization: string) {
   return lines.join('\n');
 }
 
-export function receiptMessage(sale: Sale, organization: string, footer: string) {
+export function receiptMessage(sale: Sale, company: string, footer: string) {
   const paidAt = sale.paidAt ? new Date(sale.paidAt) : new Date();
   const lines = [
     `*Recibo de venda nº ${sale.number}*`,
-    organization,
+    ...(company ? [company] : []),
     `Data: ${paidAt.toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' })}`,
     `Vendedor: ${sale.technicianName}`,
     ...(sale.customerName ? [`Cliente: ${sale.customerName}`] : []),
@@ -584,8 +642,8 @@ export async function sendPaymentLink(organizationId: string, saleId: unknown, t
   const sale = await getSale(organizationId, saleId, technicianId);
   if (sale.status !== 'awaiting_payment') throw new PartsError('Esta venda não está aguardando pagamento.', 409);
   if (!sale.paymentUrl && !sale.pixQrCode) throw new PartsError('Esta venda não tem link de pagamento para enviar.');
-  const organization = await organizationName(organizationId);
-  const text = paymentMessage(sale, organization);
+  const company = await getCompanyName(organizationId);
+  const text = paymentMessage(sale, company);
   const attempt = (await sql`SELECT payment_attempts FROM part_sales WHERE id = ${sale.id}`)[0]?.payment_attempts ?? 0;
   const base = { phone: sale.customerPhone, technicianId: sale.technicianId, technicianName: sale.technicianName, createdBy: actorId };
 
@@ -607,7 +665,7 @@ export async function sendReceipt(organizationId: string, saleId: unknown, techn
   const sale = await getSale(organizationId, saleId, technicianId);
   if (sale.status !== 'paid') throw new PartsError('O recibo só sai depois do pagamento.', 409);
   const settings = await getPartsSettings(organizationId);
-  const text = receiptMessage(sale, await organizationName(organizationId), settings.receiptFooter);
+  const text = receiptMessage(sale, await getCompanyName(organizationId, settings), settings.receiptFooter);
   if (sale.receiptSentAt && !options.force) return { whatsapp: null, shareUrl: whatsappShareUrl(sale.customerPhone, text) };
 
   const result = await sendCustomerMessage(organizationId, {

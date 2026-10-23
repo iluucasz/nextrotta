@@ -116,12 +116,15 @@ export interface TechnicianPart {
 }
 
 export interface PartsSettings {
+  /** Shown to the customer in the payment message and the receipt; empty omits it. */
+  companyName: string;
   paymentMethods: PaymentMethod[];
   receiptFooter: string;
   settlementDay: number;
 }
 
 export const DEFAULT_PARTS_SETTINGS: PartsSettings = {
+  companyName: '',
   paymentMethods: [...PAYMENT_METHODS],
   receiptFooter: '',
   settlementDay: 10,
@@ -132,13 +135,16 @@ export function roundMoney(value: number) {
   return Math.round((value + Number.EPSILON) * 100) / 100;
 }
 
-/** Accepts 12,50 / 12.50 / "R$ 1.234,56"; null when not a valid non-negative amount. */
+/** Accepts 12,50 / 12.50 / "R$ 1.234,56" / "1.500" (thousands, as typed in Brazil); null when not a valid non-negative amount. */
 export function parseAmount(value: unknown): number | null {
   if (typeof value === 'number') return Number.isFinite(value) && value >= 0 ? roundMoney(value) : null;
   if (typeof value !== 'string') return null;
   let text = value.replace(/[R$\s]/g, '');
   if (!text) return null;
   if (text.includes(',')) text = text.replace(/\./g, '').replace(',', '.');
+  // Dots in groups of three digits and no comma ("1.500", "25.000") are thousands separators, not decimals:
+  // reading "1.500" as R$ 1,50 would charge a customer a thousandth of the price.
+  else if (/^[1-9]\d{0,2}(\.\d{3})+$/.test(text)) text = text.replace(/\./g, '');
   const number = Number(text);
   return Number.isFinite(number) && number >= 0 ? roundMoney(number) : null;
 }

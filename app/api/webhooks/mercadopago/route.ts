@@ -6,6 +6,8 @@ import { handleMercadoPagoNotification } from '@/lib/parts/sales';
 
 export const runtime = 'nodejs';
 
+const MAX_BODY_BYTES = 64 * 1024;
+
 /**
  * Mercado Pago notifications (orders and payments of the technicians' accounts). Nothing in the
  * body is trusted: it only says which sale to check, and the check asks Mercado Pago itself with
@@ -13,6 +15,7 @@ export const runtime = 'nodejs';
  */
 export async function POST(request: NextRequest) {
   const text = await request.text();
+  if (text.length > MAX_BODY_BYTES) return NextResponse.json({ error: 'Corpo grande demais.' }, { status: 413 });
   let body: Record<string, unknown> = {};
   try {
     body = text ? JSON.parse(text) : {};

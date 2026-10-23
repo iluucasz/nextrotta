@@ -19,7 +19,8 @@ export function whatsappShareUrl(phone: string | null, text: string) {
 /**
  * Sends a message to the end customer through the organization's WhatsApp (Evolution) and records
  * it in the send history. With a test number configured, it goes there instead (like every other
- * message of the organization).
+ * message of the organization). It does not depend on the notifications' master switch: a payment
+ * link must reach the customer.
  */
 export async function sendCustomerMessage(
   organizationId: string,

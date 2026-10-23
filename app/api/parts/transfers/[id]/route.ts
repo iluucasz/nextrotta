@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { getCompanyName } from '@/lib/parts/catalog';
 import { partsContext, partsError, requestIp } from '@/lib/parts/route-helpers';
 import { acknowledgeTransfer, getTransfer } from '@/lib/parts/stock';
 
@@ -19,8 +19,8 @@ export async function GET(request: NextRequest, { params }: Params) {
     const { id } = await params;
     const transfer = await getTransfer(context.organizationId, id, context.technicianId ?? undefined);
     // For the printed consignment term.
-    const organization = (await sql`SELECT name FROM organizations WHERE id = ${context.organizationId}`)[0];
-    return NextResponse.json({ transfer: context.isAdmin ? transfer : hideCost(transfer), organizationName: String(organization?.name ?? '') });
+    const organizationName = await getCompanyName(context.organizationId);
+    return NextResponse.json({ transfer: context.isAdmin ? transfer : hideCost(transfer), organizationName });
   } catch (error) {
     return partsError(error, 'get transfer');
   }

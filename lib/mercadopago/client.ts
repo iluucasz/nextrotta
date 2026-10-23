@@ -20,9 +20,14 @@ type Json = Record<string, unknown>;
 function describe(body: unknown, status: number) {
   if (body && typeof body === 'object') {
     const data = body as Json;
-    const errors = Array.isArray(data.errors) ? (data.errors as Json[]).map((e) => e.message ?? e.code).filter(Boolean) : [];
+    // Orders API failures ("The following transactions failed") keep the real reason in `details`.
+    const errors = Array.isArray(data.errors)
+      ? (data.errors as Json[]).flatMap((e) => [e.message ?? e.code, ...(Array.isArray(e.details) ? (e.details as unknown[]).map((item) => (typeof item === 'string' ? item : JSON.stringify(item))) : [])]).filter(Boolean)
+      : [];
     const cause = Array.isArray(data.cause) ? (data.cause as Json[]).map((c) => c.description ?? c.code).filter(Boolean) : [];
     const detail = [data.message, data.error_description, ...errors, ...cause].filter(Boolean).join(' · ');
+    // A payment refused with nothing but the generic text: show the raw answer so the cause can be found.
+    if (status === 402 && !errors.some((item) => String(item).includes(':'))) return `Mercado Pago (${status}): ${detail || 'cobrança recusada'} — ${JSON.stringify(body).slice(0, 400)}`;
     if (detail) return `Mercado Pago (${status}): ${detail}`;
   }
   return `Mercado Pago respondeu ${status}.`;
@@ -54,7 +59,15 @@ async function request<T = Json>(path: string, init: RequestInit & { token?: str
       body = text;
     }
     if (!response.ok) {
-      console.error('[mercadopago]', rest.method ?? 'GET', path, response.status, typeof body === 'string' ? body.slice(0, 300) : JSON.stringify(body).slice(0, 500));
+      // x-request-id is what Mercado Pago's support asks for when a payment fails with "processing_error".
+      console.error(
+        '[mercadopago]',
+        rest.method ?? 'GET',
+        path,
+        response.status,
+        `x-request-id=${response.headers.get('x-request-id') ?? 'n/a'}`,
+        typeof body === 'string' ? body.slice(0, 300) : JSON.stringify(body).slice(0, 900),
+      );
       throw new MercadoPagoError(describe(body, response.status), response.status === 401 ? 401 : 502, body);
     }
     return body as T;
@@ -162,12 +175,13 @@ function amountString(value: number) {
 
 export async function createPixOrder(
   token: string,
-  input: { reference: string; amount: number; description: string; payerEmail: string; payerFirstName?: string; expirationMinutes: number },
+  input: { reference: string; amount: number; description: string; payerEmail: string; payerFirstName?: string; expirationMinutes: number; attempt: number },
 ) {
   return request<MercadoPagoOrder>('/v1/orders', {
     method: 'POST',
     token,
-    idempotencyKey: `pix-${input.reference}`,
+    // Per attempt: a retry after an expired or canceled order must create a new one, not get the old one back.
+    idempotencyKey: `pix-${input.reference}-${input.attempt}`,
     body: JSON.stringify({
       type: 'online',
       total_amount: amountString(input.amount),
@@ -264,12 +278,13 @@ export async function createPaymentLink(
     items: Array<{ id: string; title: string; quantity: number; unitPrice: number }>;
     notificationUrl: string | null;
     expiresAt: Date;
+    attempt: number;
   },
 ) {
   return request<{ id: string; init_point: string; sandbox_init_point?: string }>('/checkout/preferences', {
     method: 'POST',
     token,
-    idempotencyKey: `link-${input.reference}`,
+    idempotencyKey: `link-${input.reference}-${input.attempt}`,
     body: JSON.stringify({
       items: input.items.map((item) => ({
         id: item.id,

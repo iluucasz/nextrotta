@@ -18,10 +18,19 @@ export async function getPartsSettings(organizationId: string): Promise<PartsSet
   const row = (await sql`SELECT * FROM parts_settings WHERE organization_id = ${organizationId}`)[0];
   if (!row) return { ...DEFAULT_PARTS_SETTINGS, paymentMethods: [...DEFAULT_PARTS_SETTINGS.paymentMethods] };
   return {
+    companyName: String(row.company_name ?? ''),
     paymentMethods: (row.payment_methods as string[]).filter(isPaymentMethod),
     receiptFooter: String(row.receipt_footer ?? ''),
     settlementDay: Number(row.settlement_day),
   };
+}
+
+/** Name shown to the customer (payment message, receipt, consignment term): the one set in Ajustes, or the organization's own. */
+export async function getCompanyName(organizationId: string, settings?: { companyName: string }) {
+  const configured = (settings ?? (await getPartsSettings(organizationId))).companyName.trim();
+  if (configured) return configured;
+  const row = (await sql`SELECT name FROM organizations WHERE id = ${organizationId}`)[0];
+  return String(row?.name ?? '');
 }
 
 export async function savePartsSettings(organizationId: string, input: Record<string, unknown>, actor: PartsActor) {
@@ -30,15 +39,16 @@ export async function savePartsSettings(organizationId: string, input: Record<st
     ? Array.from(new Set(input.paymentMethods.filter(isPaymentMethod)))
     : current.paymentMethods;
   if (!paymentMethods.length) throw new PartsError('Deixe ao menos uma forma de pagamento ligada.');
+  const companyName = typeof input.companyName === 'string' ? input.companyName.trim().slice(0, 80) : current.companyName;
   const receiptFooter = typeof input.receiptFooter === 'string' ? input.receiptFooter.trim().slice(0, 500) : current.receiptFooter;
   const settlementDay = input.settlementDay === undefined ? current.settlementDay : Number(input.settlementDay);
   if (!Number.isInteger(settlementDay) || settlementDay < 1 || settlementDay > 28) throw new PartsError('Dia do acerto deve ser entre 1 e 28.');
 
   await sql`
-    INSERT INTO parts_settings (organization_id, payment_methods, receipt_footer, settlement_day, updated_at, updated_by)
-    VALUES (${organizationId}, ${paymentMethods}, ${receiptFooter}, ${settlementDay}, NOW(), ${actor.id})
+    INSERT INTO parts_settings (organization_id, company_name, payment_methods, receipt_footer, settlement_day, updated_at, updated_by)
+    VALUES (${organizationId}, ${companyName}, ${paymentMethods}, ${receiptFooter}, ${settlementDay}, NOW(), ${actor.id})
     ON CONFLICT (organization_id) DO UPDATE
-    SET payment_methods = EXCLUDED.payment_methods, receipt_footer = EXCLUDED.receipt_footer,
+    SET company_name = EXCLUDED.company_name, payment_methods = EXCLUDED.payment_methods, receipt_footer = EXCLUDED.receipt_footer,
         settlement_day = EXCLUDED.settlement_day, updated_at = NOW(), updated_by = EXCLUDED.updated_by
   `;
   return getPartsSettings(organizationId);
