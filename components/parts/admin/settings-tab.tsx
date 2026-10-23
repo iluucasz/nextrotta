@@ -47,7 +47,7 @@ export function SettingsTab() {
     <form onSubmit={save} className="grid gap-4">
       <DataPanel
         title="Formas de pagamento"
-        description="O que os técnicos podem oferecer ao cliente. Pix, link e cartão caem na conta do Mercado Pago do próprio técnico, que precisa conectá-la em “Minhas peças”."
+        description="O que o técnico pode oferecer ao cliente. Pix e cartão caem na conta dele no Mercado Pago."
       >
         <div className="grid gap-2">
           {PAYMENT_METHODS.map((method) => (
@@ -60,6 +60,15 @@ export function SettingsTab() {
       </DataPanel>
       <DataPanel title="Recibo e acerto">
         <div className="grid gap-4 sm:max-w-xl">
+          <Field label="Nome da empresa" hint="Aparece para o cliente na mensagem de pagamento, no recibo e no termo de consignação impresso. Em branco, vale o nome da sua organização.">
+            <input
+              className={inputClass('')}
+              value={form.companyName}
+              maxLength={80}
+              onChange={(event) => setForm({ ...form, companyName: event.target.value })}
+              placeholder="Ex.: Socorro Auto LTDA"
+            />
+          </Field>
           <Field label="Rodapé do recibo" hint="Vai no fim do recibo enviado ao cliente pelo WhatsApp (garantia, contato…).">
             <textarea
               className={inputClass('min-h-20 py-2')}

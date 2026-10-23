@@ -18,7 +18,7 @@ export const PLAN_FEATURES = {
   billing_report: 'Faturamento',
   management_dashboard: 'Dashboard gerencial',
   ai: 'Assistente de IA',
-  parts: 'Controle de Peças',
+  parts: 'Venda de Peças',
   support: 'Suporte',
 } as const;
 

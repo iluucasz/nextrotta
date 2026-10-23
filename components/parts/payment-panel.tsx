@@ -15,6 +15,13 @@ export interface Delivery {
 
 const POLL_MS = 4000;
 
+// The raw Evolution API answer (JSON) is for the admin's WhatsApp history, not for the technician.
+function friendlyDeliveryError(error: string | null) {
+  if (!error) return '';
+  if (/^Evolution API/i.test(error) || error.includes('{')) return 'Não foi possível enviar pelo WhatsApp da empresa.';
+  return error;
+}
+
 function DeliveryNote({ delivery, what }: { delivery: Delivery | null; what: string }) {
   if (!delivery) return null;
   const status = delivery.whatsapp?.status;
@@ -24,7 +31,7 @@ function DeliveryNote({ delivery, what }: { delivery: Delivery | null; what: str
         <Alert tone="success">{what} enviado para o WhatsApp do cliente.</Alert>
       ) : (
         <Alert tone="warning">
-          {delivery.whatsapp?.error ? `${delivery.whatsapp.error} ` : ''}Envie pelo seu WhatsApp:
+          {delivery.whatsapp?.error ? `${friendlyDeliveryError(delivery.whatsapp.error)} ` : ''}Envie pelo seu WhatsApp:
         </Alert>
       )}
       {status !== 'sent' && delivery.shareUrl ? (
@@ -78,6 +85,19 @@ export function PaymentPanel({
     sale.status === 'awaiting_payment' &&
     !sale.paymentError &&
     (sale.paymentMethod === 'pix' || sale.paymentMethod === 'card_link' || (sale.paymentMethod === 'card_present' && sale.sentToTerminal));
+
+  // A Pix QR Code lasts an hour and a payment link a day: say so when it is over, with a way to get a new one.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 15_000);
+    return () => clearInterval(timer);
+  }, []);
+  const expired =
+    sale.status === 'awaiting_payment' &&
+    !sale.paymentError &&
+    (sale.paymentMethod === 'pix' || sale.paymentMethod === 'card_link') &&
+    Boolean(sale.paymentExpiresAt) &&
+    new Date(sale.paymentExpiresAt!).getTime() < now;
 
   // Polls while the customer pays (the webhook does the same on the server when it is reachable).
   useEffect(() => {
@@ -187,6 +207,16 @@ export function PaymentPanel({
       {error ? <Alert>{error}</Alert> : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
 
+      {expired ? (
+        <div className="grid gap-2">
+          <Alert tone="warning">{sale.paymentMethod === 'pix' ? 'Este QR Code expirou: o cliente não consegue mais pagar por ele.' : 'Este link expirou: o cliente não consegue mais pagar por ele.'}</Alert>
+          <Button onClick={() => act('retry', { paymentMethod: sale.paymentMethod })} disabled={busy !== null}>
+            {busy === 'retry' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            {sale.paymentMethod === 'pix' ? 'Gerar novo QR Code' : 'Gerar novo link'}
+          </Button>
+        </div>
+      ) : null}
+
       {sale.paymentError ? (
         <div className="grid gap-3">
           <Alert>Não foi possível criar a cobrança: {sale.paymentError}</Alert>
@@ -271,7 +301,7 @@ export function PaymentPanel({
         </div>
       ) : null}
 
-      {waitingMercadoPago ? (
+      {waitingMercadoPago && !expired ? (
         <p className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
           Aguardando o pagamento…
@@ -282,8 +312,8 @@ export function PaymentPanel({
         <div className="grid gap-2">
           <DeliveryNote delivery={linkDelivery} what="Link de pagamento" />
           {linkDelivery?.whatsapp?.status === 'sent' || sale.paymentLinkSentAt ? null : (
-            <Button variant="ghost" size="sm" onClick={() => act('send-link')} disabled={busy !== null}>
-              <MessageCircle className="h-4 w-4" />
+            <Button variant="ghost" size="sm" className="h-auto min-h-8 whitespace-normal py-1.5 text-center" onClick={() => act('send-link')} disabled={busy !== null}>
+              <MessageCircle className="h-4 w-4 shrink-0" />
               Enviar o pagamento pelo WhatsApp da empresa
             </Button>
           )}
@@ -294,7 +324,7 @@ export function PaymentPanel({
         <summary className="cursor-pointer select-none text-muted-foreground">Outras opções</summary>
         <div className="mt-3 grid gap-2">
           {sale.paymentMethod !== 'cash' ? (
-            <Button variant="outline" size="sm" onClick={() => act('confirm')} disabled={busy !== null}>
+            <Button variant="outline" size="sm" className="h-auto min-h-8 whitespace-normal py-1.5 text-center" onClick={() => act('confirm')} disabled={busy !== null}>
               Recebi de outra forma (dinheiro ou fora do sistema)
             </Button>
           ) : null}
@@ -321,7 +351,7 @@ export function PaymentPanel({
               </Button>
             </div>
           ) : (
-            <Button variant="ghost" size="sm" className="text-rose-700" onClick={() => setShowCancel(true)}>
+            <Button variant="ghost" size="sm" className="h-auto min-h-8 whitespace-normal py-1.5 text-center text-rose-700" onClick={() => setShowCancel(true)}>
               Cancelar venda (as peças voltam para o seu estoque)
             </Button>
           )}

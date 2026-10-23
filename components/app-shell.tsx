@@ -67,7 +67,7 @@ const adminLinks: NavItem[] = [
   { href: '/admin/services', label: 'Serviços', icon: Wrench },
   { href: '/admin/schedule', label: 'Escala', icon: CalendarDays },
   { href: '/admin/payroll', label: 'Folha', icon: WalletCards },
-  { href: '/admin/pecas', label: 'Controle de Peças', icon: Package },
+  { href: '/admin/pecas', label: 'Venda de Peças', icon: Package },
   { href: '/admin/faturamento', label: 'Faturamento', icon: TrendingUp },
   { href: '/admin/financeiro', label: 'Controle de Despesas', icon: Landmark },
   { href: '/admin/library', label: 'Biblioteca', icon: BookOpen },

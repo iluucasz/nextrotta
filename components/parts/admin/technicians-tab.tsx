@@ -37,75 +37,99 @@ export function TechniciansTab() {
 
   if (!catalog.data) return catalog.error ? <Alert>{catalog.error}</Alert> : <Spinner />;
   const { technicians, stock } = catalog.data;
+  const rows = technicians
+    .filter((technician) => technician.status === 'active' || stock.some((item) => item.technicianId === technician.id))
+    .map((technician) => {
+      const items = stock.filter((item) => item.technicianId === technician.id && item.quantity !== 0);
+      const value = items.reduce((sum, item) => sum + item.quantity * (partsById.get(item.partId)?.technicianPrice ?? 0), 0);
+      const units = items.reduce((sum, item) => sum + item.quantity, 0);
+      return { technician, items, value, units };
+    });
+  const withParts = rows.filter((row) => row.items.length);
+  const idle = rows.filter((row) => !row.items.length);
+
+  function mercadoPagoStatus(technician: (typeof technicians)[number], allowDisconnect: boolean) {
+    if (!technician.mercadoPago) return <StatusBadge tone="warning">Mercado Pago não conectado</StatusBadge>;
+    return (
+      <>
+        <StatusBadge tone="success">Mercado Pago{technician.mercadoPago.nickname ? ` · ${technician.mercadoPago.nickname}` : ''}</StatusBadge>
+        {technician.mercadoPago.liveMode === false ? <StatusBadge tone="warning">conta de teste</StatusBadge> : null}
+        {allowDisconnect ? (
+          <Button variant="ghost" size="lg" className="px-3" onClick={() => disconnect(technician.id, technician.name)}>
+            <Unplug className="h-3.5 w-3.5" />
+            Desconectar
+          </Button>
+        ) : null}
+      </>
+    );
+  }
 
   return (
     <div className="grid gap-4">
       {notice ? <Alert tone="success">{notice}</Alert> : null}
       {error ? <Alert>{error}</Alert> : null}
-      <div className="grid gap-4 xl:grid-cols-2">
-        {technicians
-          .filter((technician) => technician.status === 'active' || stock.some((item) => item.technicianId === technician.id))
-          .map((technician) => {
-            const items = stock.filter((item) => item.technicianId === technician.id && item.quantity !== 0);
-            const value = items.reduce((sum, item) => sum + item.quantity * (partsById.get(item.partId)?.technicianPrice ?? 0), 0);
-            const units = items.reduce((sum, item) => sum + item.quantity, 0);
-            return (
-              <DataPanel
-                key={technician.id}
-                title={technician.name}
-                description={`${units} peça(s) no carro · ${formatCurrency(value)} a preço de técnico`}
-                action={
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={() => setDialog({ kind: 'out', technicianId: technician.id })} disabled={technician.status !== 'active'}>
-                      <ArrowUpFromLine className="h-4 w-4" />
-                      Enviar peças
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={() => setDialog({ kind: 'return', technicianId: technician.id })} disabled={!items.length}>
-                      <ArrowDownToLine className="h-4 w-4" />
-                      Devolução
-                    </Button>
-                  </div>
-                }
-              >
-                <div className="grid gap-3">
-                  <div className="flex flex-wrap items-center gap-2 text-xs">
-                    {technician.mercadoPago ? (
-                      <>
-                        <StatusBadge tone="success">Mercado Pago conectado{technician.mercadoPago.nickname ? `: ${technician.mercadoPago.nickname}` : ''}</StatusBadge>
-                        {technician.mercadoPago.liveMode === false ? <StatusBadge tone="warning">conta de teste</StatusBadge> : null}
-                        <Button variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => disconnect(technician.id, technician.name)}>
-                          <Unplug className="h-3.5 w-3.5" />
-                          Desconectar
-                        </Button>
-                      </>
-                    ) : (
-                      <StatusBadge tone="neutral">Mercado Pago não conectado (só vende em dinheiro)</StatusBadge>
-                    )}
-                    {technician.status !== 'active' ? <StatusBadge tone="danger">Inativo</StatusBadge> : null}
-                  </div>
-                  {items.length ? (
-                    <ul className="divide-y text-sm">
-                      {items.map((item) => {
-                        const part = partsById.get(item.partId);
-                        return (
-                          <li key={item.partId} className="flex items-center gap-3 py-1.5">
-                            <PartImage src={part?.imageUrl ?? null} alt={part?.name ?? ''} className="h-8 w-8" />
-                            <span className="flex-1 truncate">{part?.name ?? 'Peça arquivada'}</span>
-                            <span className="tabular-nums">{item.quantity}</span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Nenhuma peça com este técnico.</p>
-                  )}
-                </div>
-              </DataPanel>
-            );
-          })}
-      </div>
 
-      <DataPanel title="Remessas e devoluções" description="Cada envio vira um termo de consignação que o técnico confirma no app.">
+      {withParts.length ? (
+        <div className="grid gap-4 xl:grid-cols-2">
+          {withParts.map(({ technician, items, value, units }) => (
+            <DataPanel
+              key={technician.id}
+              title={technician.name}
+              description={`${units} peça(s) no carro · ${formatCurrency(value)}`}
+              action={
+                <div className="flex gap-2">
+                  <Button size="lg" onClick={() => setDialog({ kind: 'out', technicianId: technician.id })} disabled={technician.status !== 'active'}>
+                    <ArrowUpFromLine className="h-4 w-4" />
+                    Enviar peças
+                  </Button>
+                  <Button size="lg" variant="outline" onClick={() => setDialog({ kind: 'return', technicianId: technician.id })}>
+                    <ArrowDownToLine className="h-4 w-4" />
+                    Devolução
+                  </Button>
+                </div>
+              }
+            >
+              <div className="grid gap-3">
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  {mercadoPagoStatus(technician, true)}
+                  {technician.status !== 'active' ? <StatusBadge tone="danger">Inativo</StatusBadge> : null}
+                </div>
+                <ul className="divide-y text-sm">
+                  {items.map((item) => {
+                    const part = partsById.get(item.partId);
+                    return (
+                      <li key={item.partId} className="flex items-center gap-3 py-1.5">
+                        <PartImage src={part?.imageUrl ?? null} alt={part?.name ?? ''} className="h-8 w-8" />
+                        <span className="flex-1 truncate">{part?.name ?? 'Peça arquivada'}</span>
+                        <span className="tabular-nums">{item.quantity}</span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </div>
+            </DataPanel>
+          ))}
+        </div>
+      ) : null}
+
+      {idle.length ? (
+        <DataPanel title="Sem peças no carro">
+          <ul className="divide-y">
+            {idle.map(({ technician }) => (
+              <li key={technician.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 py-2.5">
+                <span className="min-w-0 flex-1 truncate text-sm font-medium">{technician.name}</span>
+                <span className="flex flex-wrap items-center gap-2 text-xs">{mercadoPagoStatus(technician, false)}</span>
+                <Button size="lg" variant="outline" onClick={() => setDialog({ kind: 'out', technicianId: technician.id })} disabled={technician.status !== 'active'}>
+                  <ArrowUpFromLine className="h-4 w-4" />
+                  Enviar peças
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </DataPanel>
+      ) : null}
+
+      <DataPanel title="Remessas e devoluções" description="O técnico confirma cada envio no app.">
         {!transfers.data ? (
           <Spinner />
         ) : !transfers.data.transfers.length ? (
@@ -149,7 +173,7 @@ export function TechniciansTab() {
                       )}
                     </td>
                     <td className="py-2 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => printTerm(transfer.id)}>
+                      <Button variant="ghost" size="lg" onClick={() => printTerm(transfer.id)}>
                         <Printer className="h-4 w-4" />
                         Termo
                       </Button>
@@ -163,7 +187,7 @@ export function TechniciansTab() {
       </DataPanel>
 
       <Dialog open={dialog !== null} onOpenChange={(open) => !open && setDialog(null)}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto p-4 sm:p-6 sm:max-w-2xl">
           {dialog ? (
             <TransferForm
               direction={dialog.kind}
@@ -291,12 +315,12 @@ function TransferForm({
               </div>
             ))}
             <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="sm" onClick={() => setLines((current) => [...current, { partId: options[0]?.id ?? '', quantity: '' }])}>
+              <Button type="button" variant="outline" size="lg" onClick={() => setLines((current) => [...current, { partId: options[0]?.id ?? '', quantity: '' }])}>
                 <Plus className="h-4 w-4" />
                 Outra peça
               </Button>
               {!scanning ? (
-                <Button type="button" variant="outline" size="sm" onClick={() => setScanning(true)}>
+                <Button type="button" variant="outline" size="lg" onClick={() => setScanning(true)}>
                   <ScanBarcode className="h-4 w-4" />
                   Ler códigos
                 </Button>

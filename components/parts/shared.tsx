@@ -62,7 +62,7 @@ export function Alert({ tone = 'danger', children, className }: { tone?: 'danger
     info: 'border-sky-200 bg-sky-50 text-sky-900',
   };
   return (
-    <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('whitespace-pre-line rounded-lg border px-3 py-2 text-sm', tones[tone], className)}>
+    <div role={tone === 'danger' ? 'alert' : 'status'} className={cn('whitespace-pre-line rounded-lg border px-3 py-2 text-sm wrap-anywhere', tones[tone], className)}>
       {children}
     </div>
   );

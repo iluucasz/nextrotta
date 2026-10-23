@@ -73,16 +73,28 @@ export function SalesTab() {
           <option value="paid">Pagas</option>
           <option value="canceled">Canceladas</option>
         </select>
-        <Button variant="outline" size="sm" onClick={exportSheet} disabled={!sales.length} className="ml-auto">
+        <Button variant="outline" size="lg" onClick={exportSheet} disabled={!sales.length} className="ml-auto">
           <Download className="h-4 w-4" />
           Exportar
         </Button>
       </div>
 
-      <DataPanel
-        title={`Vendas de ${formatMonthLabel(month)}`}
-        description={`Vendido ${formatCurrency(totals.sold)} · técnicos devem ${formatCurrency(totals.owed)} · custo ${formatCurrency(totals.cost)} · margem da empresa ${formatCurrency(totals.owed - totals.cost)}`}
-      >
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {[
+          { label: 'Vendido', value: totals.sold, hint: 'ao cliente' },
+          { label: 'Técnicos devem', value: totals.owed, hint: 'preço de técnico' },
+          { label: 'Custo', value: totals.cost, hint: 'das peças vendidas' },
+          { label: 'Margem', value: totals.owed - totals.cost, hint: 'da empresa' },
+        ].map((item) => (
+          <div key={item.label} className="rounded-xl border bg-card p-3.5">
+            <p className="text-xs text-muted-foreground">{item.label}</p>
+            <p className="mt-0.5 text-xl font-semibold tabular-nums">{formatCurrency(item.value)}</p>
+            <p className="text-xs text-muted-foreground">{item.hint}</p>
+          </div>
+        ))}
+      </div>
+
+      <DataPanel title={`Vendas de ${formatMonthLabel(month)}`}>
         {error ? <Alert>{error}</Alert> : null}
         {loading && !data ? (
           <Spinner />
@@ -125,7 +137,7 @@ export function SalesTab() {
       </DataPanel>
 
       <Dialog open={open !== null} onOpenChange={(value) => !value && setOpen(null)}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-lg">
+        <DialogContent className="max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto p-4 sm:p-6 sm:max-w-lg">
           {open ? (
             <SaleDetail
               sale={open}
@@ -174,118 +186,147 @@ function SaleDetail({ sale, onChanged }: { sale: Sale; onChanged: (sale: Sale) =
   const margin = sale.totalTechnicianPrice - (sale.totalCost ?? 0);
 
   return (
-    <div className="grid gap-4 text-sm">
+    <div className="grid gap-5 text-sm">
       <DialogHeader>
         <DialogTitle>Venda nº {sale.number}</DialogTitle>
         <DialogDescription>
           {sale.technicianName} · {formatDateTime(sale.createdAt)}
         </DialogDescription>
       </DialogHeader>
-      <div className="flex flex-wrap gap-2">
-        <StatusBadge tone={STATUS_TONES[sale.status]}>{sale.statusLabel}</StatusBadge>
-        <StatusBadge tone="info">{sale.paymentMethodLabel}</StatusBadge>
-        {sale.paymentConfirmedBy === 'technician' ? <StatusBadge tone="warning">Recebimento marcado pelo técnico</StatusBadge> : null}
+
+      <div className="flex items-center justify-between gap-3 rounded-xl bg-muted/40 p-4">
+        <div>
+          <p className="text-xs text-muted-foreground">Total da venda</p>
+          <p className="text-2xl font-semibold tabular-nums">{formatCurrency(sale.totalAmount)}</p>
+        </div>
+        <div className="grid justify-items-end gap-1.5">
+          <StatusBadge tone={STATUS_TONES[sale.status]}>{sale.statusLabel}</StatusBadge>
+          <StatusBadge tone="info">{sale.paymentMethodLabel}</StatusBadge>
+        </div>
       </div>
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-        <dt className="text-muted-foreground">Cliente</dt>
-        <dd>{sale.customerName || '—'}</dd>
-        <dt className="text-muted-foreground">WhatsApp</dt>
-        <dd>{sale.customerPhone || '—'}</dd>
-        {sale.orderCode ? (
-          <>
-            <dt className="text-muted-foreground">OS</dt>
-            <dd>{sale.orderCode}</dd>
-          </>
-        ) : null}
-        {sale.paidAt ? (
-          <>
-            <dt className="text-muted-foreground">Pago em</dt>
-            <dd>{formatDateTime(sale.paidAt)}</dd>
-          </>
-        ) : null}
-        {sale.mpPaymentId ? (
-          <>
-            <dt className="text-muted-foreground">Pagamento MP</dt>
-            <dd>{sale.mpPaymentId}</dd>
-          </>
-        ) : null}
-        <dt className="text-muted-foreground">Recibo</dt>
-        <dd>{sale.receiptSentAt ? `enviado em ${formatDateTime(sale.receiptSentAt)}` : 'não enviado'}</dd>
-        {sale.canceledAt ? (
-          <>
-            <dt className="text-muted-foreground">Cancelada</dt>
-            <dd>
-              {formatDateTime(sale.canceledAt)} — {sale.cancelReason}
-            </dd>
-          </>
-        ) : null}
-      </dl>
-      <table className="w-full text-sm">
-        <thead className="text-left text-xs text-muted-foreground">
-          <tr className="border-b">
-            <th className="py-1.5 pr-2 font-medium">Peça</th>
-            <th className="py-1.5 pr-2 text-right font-medium">Venda</th>
-            <th className="py-1.5 text-right font-medium">Técnico</th>
-          </tr>
-        </thead>
-        <tbody>
+      {sale.paymentConfirmedBy === 'technician' ? <Alert tone="warning">O técnico marcou este recebimento à mão. Não foi confirmado pelo Mercado Pago.</Alert> : null}
+
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Peças</h3>
+        <ul className="divide-y rounded-xl border">
           {sale.items.map((item) => (
-            <tr key={item.partId} className="border-b last:border-0">
-              <td className="py-1.5 pr-2">
-                {item.quantity}× {item.name}
-              </td>
-              <td className="py-1.5 pr-2 text-right tabular-nums">{formatCurrency(item.unitPrice * item.quantity)}</td>
-              <td className="py-1.5 text-right tabular-nums">{formatCurrency(item.unitTechnicianPrice * item.quantity)}</td>
-            </tr>
+            <li key={item.partId} className="flex items-start justify-between gap-3 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="font-medium">
+                  {item.quantity}× {item.name}
+                </p>
+                <p className="text-xs text-muted-foreground">Técnico deve {formatCurrency(item.unitTechnicianPrice * item.quantity)}</p>
+              </div>
+              <span className="shrink-0 font-medium tabular-nums">{formatCurrency(item.unitPrice * item.quantity)}</span>
+            </li>
           ))}
-        </tbody>
-        <tfoot className="font-semibold">
-          <tr>
-            <td className="pt-2">Total</td>
-            <td className="pt-2 text-right tabular-nums">{formatCurrency(sale.totalAmount)}</td>
-            <td className="pt-2 text-right tabular-nums">{formatCurrency(sale.totalTechnicianPrice)}</td>
-          </tr>
-        </tfoot>
-      </table>
-      <p className="text-xs text-muted-foreground">
-        Custo das peças {formatCurrency(sale.totalCost ?? 0)} · margem da empresa {formatCurrency(margin)} · ganho do técnico {formatCurrency(sale.totalAmount - sale.totalTechnicianPrice)}
-      </p>
+        </ul>
+      </section>
+
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Cliente</h3>
+        <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 rounded-xl border p-3">
+          <dt className="text-muted-foreground">Nome</dt>
+          <dd className="font-medium">{sale.customerName || '—'}</dd>
+          <dt className="text-muted-foreground">WhatsApp</dt>
+          <dd className="font-medium">{formatPhone(sale.customerPhone)}</dd>
+          {sale.orderCode ? (
+            <>
+              <dt className="text-muted-foreground">Nº da OS</dt>
+              <dd className="font-medium">{sale.orderCode}</dd>
+            </>
+          ) : null}
+          {sale.paidAt ? (
+            <>
+              <dt className="text-muted-foreground">Pago em</dt>
+              <dd className="font-medium">{formatDateTime(sale.paidAt)}</dd>
+            </>
+          ) : null}
+          <dt className="text-muted-foreground">Recibo</dt>
+          <dd className="font-medium">{sale.receiptSentAt ? `Enviado em ${formatDateTime(sale.receiptSentAt)}` : 'Ainda não enviado'}</dd>
+          {sale.canceledAt ? (
+            <>
+              <dt className="text-muted-foreground">Cancelada</dt>
+              <dd className="font-medium wrap-anywhere">
+                {formatDateTime(sale.canceledAt)} — {sale.cancelReason}
+              </dd>
+            </>
+          ) : null}
+        </dl>
+      </section>
+
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Como o dinheiro se divide</h3>
+        <dl className="grid gap-1.5 rounded-xl border p-3">
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">A empresa recebe do técnico</dt>
+            <dd className="font-medium tabular-nums">{formatCurrency(sale.totalTechnicianPrice)}</dd>
+          </div>
+          <div className="flex justify-between gap-3">
+            <dt className="text-muted-foreground">Custo das peças</dt>
+            <dd className="font-medium tabular-nums">− {formatCurrency(sale.totalCost ?? 0)}</dd>
+          </div>
+          <div className="flex justify-between gap-3 border-t pt-2 font-semibold">
+            <dt>Lucro da empresa</dt>
+            <dd className={`tabular-nums ${margin < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatCurrency(margin)}</dd>
+          </div>
+          <div className="flex justify-between gap-3 text-xs text-muted-foreground">
+            <dt>Fica com o técnico</dt>
+            <dd className="tabular-nums">{formatCurrency(sale.totalAmount - sale.totalTechnicianPrice)}</dd>
+          </div>
+        </dl>
+      </section>
 
       {error ? <Alert>{error}</Alert> : null}
       {notice ? <Alert tone="info">{notice}</Alert> : null}
 
-      <div className="flex flex-wrap gap-2">
-        {sale.status === 'awaiting_payment' && sale.paymentMethod !== 'cash' ? (
-          <Button variant="outline" size="sm" onClick={() => act('check')} disabled={busy !== null}>
+      {sale.status === 'awaiting_payment' && sale.paymentMethod !== 'cash' ? (
+        <div className="grid gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-amber-950">Esperando o cliente pagar. Se ele já pagou, confira no Mercado Pago.</p>
+          <Button variant="outline" onClick={() => act('check')} disabled={busy !== null}>
             {busy === 'check' ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
             Conferir pagamento
           </Button>
-        ) : null}
-        {sale.status === 'paid' ? (
-          <Button variant="outline" size="sm" onClick={() => act('send-receipt')} disabled={busy !== null}>
-            {busy === 'send-receipt' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-            Reenviar recibo
-          </Button>
-        ) : null}
-        {sale.status !== 'canceled' ? (
-          <Button variant="ghost" size="sm" className="text-rose-700" onClick={() => setCancelOpen(true)}>
-            <XCircle className="h-4 w-4" />
-            Cancelar venda
-          </Button>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
+      {sale.status === 'paid' ? (
+        <Button variant="outline" onClick={() => act('send-receipt')} disabled={busy !== null}>
+          {busy === 'send-receipt' ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+          Reenviar recibo ao cliente
+        </Button>
+      ) : null}
+      {sale.status !== 'canceled' && !cancelOpen ? (
+        <Button variant="ghost" size="lg" className="justify-self-start text-rose-700" onClick={() => setCancelOpen(true)}>
+          <XCircle className="h-4 w-4" />
+          Cancelar venda
+        </Button>
+      ) : null}
       {cancelOpen ? (
-        <div className="grid gap-2 rounded-lg border border-rose-200 p-3">
+        <div className="grid gap-2 rounded-xl border border-rose-200 p-3">
           <p className="text-xs text-muted-foreground">
             As peças voltam para o estoque do técnico e o valor sai da conta dele.
             {sale.status === 'paid' ? ' O estorno ao cliente é feito pelo técnico no Mercado Pago.' : ''}
           </p>
-          <input className={inputClassName} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo" />
-          <Button variant="destructive" size="sm" onClick={() => act('cancel', { reason })} disabled={busy !== null || !reason.trim()}>
-            Confirmar cancelamento
-          </Button>
+          <input className={inputClassName} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Motivo do cancelamento" />
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" onClick={() => setCancelOpen(false)} disabled={busy !== null}>
+              Voltar
+            </Button>
+            <Button variant="destructive" onClick={() => act('cancel', { reason })} disabled={busy !== null || !reason.trim()}>
+              Cancelar venda
+            </Button>
+          </div>
         </div>
       ) : null}
     </div>
   );
+}
+
+function formatPhone(value: string | null) {
+  if (!value) return '—';
+  const digits = value.replace(/\D/g, '');
+  const national = digits.startsWith('55') && digits.length >= 12 ? digits.slice(2) : digits;
+  if (national.length === 11) return `(${national.slice(0, 2)}) ${national.slice(2, 7)}-${national.slice(7)}`;
+  if (national.length === 10) return `(${national.slice(0, 2)}) ${national.slice(2, 6)}-${national.slice(6)}`;
+  return value;
 }

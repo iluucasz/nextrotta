@@ -161,9 +161,9 @@ export async function getIntegrationsStatus(): Promise<IntegrationStatus[]> {
   )[0];
   result.push(
     mercadoPagoMissing.length
-      ? { name: 'Mercado Pago (Controle de Peças)', state: 'missing', detail: `Falta ${mercadoPagoMissing.join(', ')} no ambiente.` }
+      ? { name: 'Mercado Pago (Venda de Peças)', state: 'missing', detail: `Falta ${mercadoPagoMissing.join(', ')} no ambiente.` }
       : {
-          name: 'Mercado Pago (Controle de Peças)',
+          name: 'Mercado Pago (Venda de Peças)',
           state: 'ok',
           detail:
             `${mercadoPago.accounts} conta(s) de técnico conectada(s). ` +

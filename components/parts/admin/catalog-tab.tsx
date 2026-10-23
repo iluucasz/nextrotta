@@ -10,6 +10,7 @@ import {
   ImagePlus,
   Loader2,
   MoreHorizontal,
+  Minus,
   PackagePlus,
   Pencil,
   Plus,
@@ -89,19 +90,19 @@ export function CatalogTab() {
       {notice ? <Alert tone="success">{notice}</Alert> : null}
       {error || actionError ? <Alert>{error || actionError}</Alert> : null}
       <DataPanel
-        title="Catálogo e estoque central"
-        description="Custo = quanto a empresa pagou. Preço de técnico = quanto o técnico deve por peça vendida. Sugerido = preço ao cliente (o técnico pode mudar)."
+        title="Peças e estoque central"
+        description="Preços por unidade. O técnico pode vender por outro valor que não o sugerido."
         action={
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: 'import' })}>
+            <Button variant="outline" size="lg" onClick={() => setDialog({ kind: 'import' })}>
               <Upload className="h-4 w-4" />
               Importar planilha
             </Button>
-            <Button variant="outline" size="sm" onClick={() => setDialog({ kind: 'purchase', part: null })}>
+            <Button variant="outline" size="lg" onClick={() => setDialog({ kind: 'purchase', part: null })}>
               <PackagePlus className="h-4 w-4" />
               Entrada de estoque
             </Button>
-            <Button size="sm" onClick={() => setDialog({ kind: 'edit', part: null })}>
+            <Button size="lg" onClick={() => setDialog({ kind: 'edit', part: null })}>
               <Plus className="h-4 w-4" />
               Nova peça
             </Button>
@@ -221,7 +222,7 @@ export function CatalogTab() {
       </DataPanel>
 
       <Dialog open={dialog !== null} onOpenChange={(open) => !open && setDialog(null)}>
-        <DialogContent className="max-h-[92vh] overflow-y-auto sm:max-w-2xl">
+        <DialogContent className="max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto p-4 sm:p-6 sm:max-w-2xl">
           {dialog?.kind === 'edit' ? <PartForm part={dialog.part} parts={data?.parts ?? []} onSaved={(part, created) => done(created ? `"${part.name}" cadastrada.` : `"${part.name}" salva.`)} /> : null}
           {dialog?.kind === 'purchase' && data ? <PurchaseForm parts={data.parts} initial={dialog.part} onSaved={() => done('Entrada registrada no estoque central.')} /> : null}
           {dialog?.kind === 'adjust' && data ? <AdjustForm part={dialog.part} technicians={data.technicians} onSaved={() => done('Estoque ajustado.')} /> : null}
@@ -336,7 +337,7 @@ function AffixInput({
       {prefix ? <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">{prefix}</span> : null}
       <input
         {...rest}
-        className={inputClass(`text-right tabular-nums ${prefix ? 'pl-10' : ''} ${suffix ? 'pr-8' : ''}`)}
+        className={inputClass(`h-11 text-base sm:text-sm text-right tabular-nums ${prefix ? 'pl-10' : ''} ${suffix ? 'pr-8' : ''}`)}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         onBlur={() => {
@@ -363,14 +364,31 @@ function FormSection({ title, children }: { title: string; children: React.React
   );
 }
 
-function PriceRow({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
+/** One price: the question and its hint on top, the amount (and optional margin) beneath. */
+function PriceRow({ label, hint, margin, error, children }: { label: string; hint: string; margin?: React.ReactNode; error?: string; children: React.ReactNode }) {
   return (
-    <div className="grid items-center gap-x-3 gap-y-1.5 sm:grid-cols-[minmax(0,1fr)_9.5rem_7.5rem]">
+    <div className="grid gap-3 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
       <div className="min-w-0">
         <p className="text-sm font-medium">{label}</p>
         <p className="text-xs text-muted-foreground">{hint}</p>
       </div>
-      {children}
+      <div className="grid grid-cols-[minmax(0,1fr)_7.5rem] items-end gap-3 sm:grid-cols-[11rem_7.5rem]">
+        <div className="grid gap-1">
+          <span className="text-xs text-muted-foreground">Valor</span>
+          {children}
+        </div>
+        {margin ?? <span aria-hidden="true" />}
+      </div>
+      {error ? <p className="text-xs text-rose-700 sm:col-span-2">{error}</p> : null}
+    </div>
+  );
+}
+
+function MarginInput({ value, onChange, label }: { value: string; onChange: (value: string) => void; label: string }) {
+  return (
+    <div className="grid gap-1">
+      <span className="text-xs text-muted-foreground">Margem</span>
+      <AffixInput suffix="%" value={value} onChange={onChange} inputMode="decimal" placeholder="0" aria-label={label} />
     </div>
   );
 }
@@ -393,7 +411,14 @@ function PartForm({ part, parts, onSaved }: { part: Part | null; parts: Part[]; 
   const [scanning, setScanning] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [step, setStep] = useState(0);
+  const [fieldErrors, setFieldErrors] = useState<{ name?: string; tech?: string; quantity?: string }>({});
+  // How many units the company has right now (new parts only; later changes go through stock entries).
+  const [initialStock, setInitialStock] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  // If a later step of a save fails (stock, photo), a retry must not create the part or the stock twice.
+  const createdRef = useRef<Part | null>(null);
+  const stockAddedRef = useRef(false);
 
   const set = (key: keyof typeof form) => (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
     setForm((current) => ({ ...current, [key]: event.target.value }));
@@ -412,8 +437,26 @@ function PartForm({ part, parts, onSaved }: { part: Part | null; parts: Part[]; 
   const companyGain = technician - cost;
   const technicianGain = suggested - technician;
 
+  // The required fields are checked here (not with `required`) because the inactive step is hidden,
+  // and the browser can't focus a hidden invalid field.
+  function validateStep(index: number) {
+    const next: { name?: string; tech?: string; quantity?: string } = {};
+    if (index === 0 && !form.name.trim()) next.name = 'Informe o nome da peça.';
+    if (index === 0 && !part && initialStock.trim() && !/^\d+$/.test(initialStock.trim())) next.quantity = 'Use só números inteiros, como 5.';
+    if (index === 1 && parseAmount(pricing.tech) === null) next.tech = 'Informe quanto o técnico paga à empresa.';
+    setFieldErrors(next);
+    return Object.keys(next).length === 0;
+  }
+
   async function submit(event: React.FormEvent) {
     event.preventDefault();
+    // Creating a part walks through the steps; Enter on the first one goes to the prices.
+    if (!part && step === 0) {
+      if (validateStep(0)) setStep(1);
+      return;
+    }
+    if (!validateStep(0)) return setStep(0);
+    if (!validateStep(1)) return setStep(1);
     setBusy(true);
     setError('');
     try {
@@ -424,10 +467,24 @@ function PartForm({ part, parts, onSaved }: { part: Part | null; parts: Part[]; 
         suggestedPrice: pricing.suggested,
         minStock: form.minStock === '' ? null : form.minStock,
       };
-      const result = part
-        ? await partsApi<{ part: Part }>(`/api/parts/${part.id}`, { method: 'PATCH', json: body })
+      const existing = part ?? createdRef.current;
+      const result = existing
+        ? await partsApi<{ part: Part }>(`/api/parts/${existing.id}`, { method: 'PATCH', json: body })
         : await partsApi<{ part: Part }>('/api/parts', { method: 'POST', json: body });
       let saved = result.part;
+      if (!part) createdRef.current = saved;
+      const units = Number(initialStock.trim() || 0);
+      if (!part && units > 0 && !stockAddedRef.current) {
+        try {
+          await partsApi('/api/parts/stock', {
+            method: 'POST',
+            json: { action: 'purchase', note: 'Estoque inicial', updateCost: false, items: [{ partId: saved.id, quantity: units, unitCost: parseAmount(pricing.cost) ?? '' }] },
+          });
+          stockAddedRef.current = true;
+        } catch (reason) {
+          throw new Error(`Peça salva, mas a quantidade não entrou no estoque: ${reason instanceof Error ? reason.message : String(reason)} Tente de novo.`);
+        }
+      }
       if (image) {
         const data = new FormData();
         const resized = await resizeImage(image);
@@ -445,122 +502,99 @@ function PartForm({ part, parts, onSaved }: { part: Part | null; parts: Part[]; 
   }
 
   return (
-    <form onSubmit={submit} className="grid gap-5">
+    <form onSubmit={submit} className="grid gap-6">
       <DialogHeader>
         <DialogTitle>{part ? 'Editar peça' : 'Nova peça'}</DialogTitle>
-        <DialogDescription>Mudar preços vale para as próximas remessas e vendas; o que já aconteceu mantém o preço da época.</DialogDescription>
+        <DialogDescription>Mudar preços vale só para as próximas vendas. O que já foi vendido não muda.</DialogDescription>
       </DialogHeader>
 
-      <div className="flex items-start gap-4">
-        <div className="grid shrink-0 justify-items-center gap-1.5">
-          <PartImage src={preview} alt={form.name || 'Peça'} className="h-24 w-24" />
-          <input
-            ref={fileRef}
-            type="file"
-            accept="image/jpeg,image/png,image/webp"
-            capture="environment"
-            className="hidden"
-            onChange={(event) => {
-              const file = event.target.files?.[0];
-              if (!file) return;
-              setImage(file);
-              setPreview(URL.createObjectURL(file));
-            }}
-          />
-          <Button type="button" variant="outline" size="sm" onClick={() => fileRef.current?.click()}>
-            <ImagePlus className="h-4 w-4" />
-            {preview ? 'Trocar' : 'Imagem'}
-          </Button>
-        </div>
-        <div className="grid min-w-0 flex-1 gap-3">
-          <Field label="Nome da peça">
-            <input className={inputClassName} value={form.name} onChange={set('name')} required autoFocus={!part} placeholder="Ex.: Cabo de aço 3 m" />
-          </Field>
-          <p className="text-xs text-muted-foreground">A imagem aparece para o técnico no app de vendas.</p>
-        </div>
+      <div role="tablist" aria-label="Etapas do cadastro" className="grid grid-cols-2 gap-1 rounded-xl bg-muted p-1">
+        {['Peça', 'Preços'].map((label, index) => (
+          <button
+            key={label}
+            type="button"
+            role="tab"
+            aria-selected={step === index}
+            onClick={() => setStep(index)}
+            className={`flex min-h-11 items-center justify-center gap-2 rounded-lg text-sm font-medium transition ${
+              step === index ? 'bg-card text-primary shadow-sm' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs ${step === index ? 'bg-primary/10' : 'bg-foreground/5'}`}>{index + 1}</span>
+            {label}
+          </button>
+        ))}
       </div>
 
-      <FormSection title="Identificação">
-        <div className="grid items-start gap-3 sm:grid-cols-2">
-          <Field label="Código de barras (EAN)" hint={barcodeOwner ? undefined : 'Leia com a câmera ou um leitor, ou digite.'}>
-            <div className="flex gap-2">
-              <input className={inputClassName} value={form.barcode} onChange={set('barcode')} inputMode="numeric" placeholder="Somente números" />
-              <Button type="button" variant="outline" size="icon" className="shrink-0" onClick={() => setScanning(true)} aria-label="Ler código de barras">
-                <ScanBarcode className="h-4 w-4" />
-              </Button>
-            </div>
-            {barcodeOwner ? <span className="text-xs text-amber-700">Já usado em “{barcodeOwner.name}”. Cada código só pode ter uma peça.</span> : null}
-          </Field>
-          <Field label="Código interno (opcional)" hint="Sua referência, se tiver.">
-            <input className={inputClassName} value={form.sku} onChange={set('sku')} />
-          </Field>
-          <Field label="Categoria">
-            <input className={inputClassName} value={form.category} onChange={set('category')} list="part-categories" placeholder="Ex.: Hidráulica" />
-            <datalist id="part-categories">
-              {categories.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
-          </Field>
-          <Field label="Marca">
-            <input className={inputClassName} value={form.brand} onChange={set('brand')} list="part-brands" />
-            <datalist id="part-brands">
-              {brands.map((value) => (
-                <option key={value} value={value} />
-              ))}
-            </datalist>
-          </Field>
-        </div>
-      </FormSection>
-
-      <FormSection title="Preços">
-        <div className="hidden gap-x-3 text-xs font-medium text-muted-foreground sm:grid sm:grid-cols-[minmax(0,1fr)_9.5rem_7.5rem]">
-          <span />
-          <span className="text-right">Valor</span>
-          <span className="text-right">Margem</span>
-        </div>
-        <PriceRow label="Custo" hint="O que a empresa pagou pela peça. O técnico nunca vê.">
-          <AffixInput prefix="R$" value={pricing.cost} onChange={setPrice('cost')} format={formatMoneyInput} inputMode="decimal" placeholder="0,00" aria-label="Custo" />
-          <span />
-        </PriceRow>
-        <PriceRow label="Preço de técnico" hint="O que o técnico deve à empresa por unidade vendida. Digite a margem e o preço é calculado.">
-          <AffixInput prefix="R$" value={pricing.tech} onChange={setPrice('tech')} format={formatMoneyInput} inputMode="decimal" placeholder="0,00" required aria-label="Preço de técnico" />
-          <AffixInput suffix="%" value={pricing.techPercent} onChange={setPrice('techPercent')} inputMode="decimal" placeholder="sobre o custo" aria-label="Margem do preço de técnico sobre o custo" />
-        </PriceRow>
-        <PriceRow label="Preço sugerido ao cliente" hint="Já vem preenchido para o técnico na venda, que pode mudar. Margem sobre o preço de técnico.">
-          <AffixInput prefix="R$" value={pricing.suggested} onChange={setPrice('suggested')} format={formatMoneyInput} inputMode="decimal" placeholder="0,00" aria-label="Preço sugerido ao cliente" />
-          <AffixInput suffix="%" value={pricing.suggestedPercent} onChange={setPrice('suggestedPercent')} inputMode="decimal" placeholder="sobre o técnico" aria-label="Margem do preço sugerido sobre o preço de técnico" />
-        </PriceRow>
-
-        {technician > 0 ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <div className="rounded-lg border bg-muted/40 px-3 py-2">
-              <p className="text-xs text-muted-foreground">Empresa ganha por unidade</p>
-              <p className={`text-base font-semibold tabular-nums ${companyGain < 0 ? 'text-rose-700' : ''}`}>
-                {formatCurrency(companyGain)}
-                {cost > 0 ? <span className="ml-1.5 text-xs font-normal text-muted-foreground">{fmtPercent((companyGain / cost) * 100)}% sobre o custo</span> : null}
-              </p>
-            </div>
-            {suggested > 0 ? (
-              <div className="rounded-lg border bg-muted/40 px-3 py-2">
-                <p className="text-xs text-muted-foreground">Técnico fica com, vendendo pelo sugerido</p>
-                <p className={`text-base font-semibold tabular-nums ${technicianGain < 0 ? 'text-rose-700' : ''}`}>{formatCurrency(technicianGain)}</p>
-              </div>
-            ) : null}
+      <div className={step === 0 ? 'grid gap-6' : 'hidden'}>
+        <div className="flex items-center gap-4">
+          <div className="grid shrink-0 justify-items-center gap-2">
+            <PartImage src={preview} alt={form.name || 'Peça'} className="h-24 w-24" />
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              capture="environment"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                if (!file) return;
+                setImage(file);
+                setPreview(URL.createObjectURL(file));
+              }}
+            />
+            <Button type="button" variant="outline" size="lg" onClick={() => fileRef.current?.click()}>
+              <ImagePlus className="h-4 w-4" />
+              {preview ? 'Trocar foto' : 'Foto'}
+            </Button>
           </div>
-        ) : null}
-        {cost > 0 && technician > 0 && technician < cost ? (
-          <Alert tone="warning">O preço de técnico está abaixo do custo: a empresa perde {formatCurrency(cost - technician)} a cada unidade vendida.</Alert>
-        ) : null}
-        {technician > 0 && suggested > 0 && suggested < technician ? (
-          <Alert tone="warning">O preço sugerido está abaixo do preço de técnico: o técnico teria prejuízo de {formatCurrency(technician - suggested)} por unidade.</Alert>
-        ) : null}
-      </FormSection>
+          <div className="min-w-0 flex-1">
+            <Field label="Nome da peça" hint="Aparece para o técnico na hora de vender.">
+              <input
+                className={inputClass('h-11 text-base sm:text-sm')}
+                value={form.name}
+                onChange={(event) => {
+                  set('name')(event);
+                  if (fieldErrors.name) setFieldErrors((current) => ({ ...current, name: undefined }));
+                }}
+                autoFocus={!part}
+                placeholder="Ex.: Cabo de aço 3 m"
+                aria-invalid={Boolean(fieldErrors.name)}
+              />
+              {fieldErrors.name ? <span className="text-xs text-rose-700">{fieldErrors.name}</span> : null}
+            </Field>
+          </div>
+        </div>
 
-      <FormSection title="Estoque e situação">
-        <div className="grid items-start gap-3 sm:grid-cols-2">
+        <Field label="Código de barras (opcional)" hint={barcodeOwner ? undefined : 'Leia com a câmera ou digite os números.'}>
+          <div className="flex gap-2">
+            <input className={inputClass('h-11 text-base sm:text-sm')} value={form.barcode} onChange={set('barcode')} inputMode="numeric" placeholder="Somente números" />
+            <Button type="button" variant="outline" size="icon" className="h-11 w-11 shrink-0" onClick={() => setScanning(true)} aria-label="Ler código de barras">
+              <ScanBarcode className="h-4 w-4" />
+            </Button>
+          </div>
+          {barcodeOwner ? <span className="text-xs text-amber-700">Já usado em “{barcodeOwner.name}”. Cada código só pode ter uma peça.</span> : null}
+        </Field>
+
+        <div className="grid items-start gap-4 sm:grid-cols-2">
+          {!part ? (
+            <Field label="Quantidade em estoque" hint="Quantas você tem agora. Pode deixar vazio e dar entrada depois.">
+              <input
+                className={inputClass('h-11 text-base sm:text-sm')}
+                value={initialStock}
+                onChange={(event) => {
+                  setInitialStock(event.target.value);
+                  if (fieldErrors.quantity) setFieldErrors((current) => ({ ...current, quantity: undefined }));
+                }}
+                inputMode="numeric"
+                placeholder="0"
+                aria-invalid={Boolean(fieldErrors.quantity)}
+              />
+              {fieldErrors.quantity ? <span className="text-xs text-rose-700">{fieldErrors.quantity}</span> : null}
+            </Field>
+          ) : null}
           <Field label="Unidade de medida">
-            <select className={inputClassName} value={form.unit} onChange={set('unit')}>
+            <select className={inputClass('h-11 text-base sm:text-sm')} value={form.unit} onChange={set('unit')}>
               {unitOptions.map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
@@ -568,31 +602,136 @@ function PartForm({ part, parts, onSaved }: { part: Part | null; parts: Part[]; 
               ))}
             </select>
           </Field>
-          <Field label="Estoque mínimo (central)" hint="Abaixo disso a peça aparece como “repor”. Deixe vazio para não avisar.">
-            <input className={inputClass('text-right tabular-nums')} value={form.minStock} onChange={set('minStock')} inputMode="numeric" placeholder="Sem mínimo" />
-          </Field>
         </div>
-        <Field label="Descrição (opcional)">
-          <textarea className={inputClass('min-h-16 py-2')} value={form.description} onChange={set('description')} />
-        </Field>
-        <label className="flex items-center justify-between gap-4 rounded-lg border px-3 py-2.5">
-          <span className="grid gap-0.5">
-            <span className="text-sm font-medium">Peça ativa</span>
-            <span className="text-xs text-muted-foreground">Desativada, não pode ser enviada aos técnicos.</span>
-          </span>
-          <Switch checked={form.active} onCheckedChange={(checked) => setForm((current) => ({ ...current, active: checked }))} />
-        </label>
-      </FormSection>
 
-      {error ? <Alert>{error}</Alert> : null}
-      <DialogFooter>
-        <Button type="submit" disabled={busy}>
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          {part ? 'Salvar alterações' : 'Cadastrar peça'}
-        </Button>
-      </DialogFooter>
+        {part ? (
+          <label className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3.5">
+            <span className="grid gap-0.5">
+              <span className="text-sm font-medium">Peça ativa</span>
+              <span className="text-xs text-muted-foreground">Desativada, não pode ser enviada aos técnicos.</span>
+            </span>
+            <Switch checked={form.active} onCheckedChange={(checked) => setForm((current) => ({ ...current, active: checked }))} />
+          </label>
+        ) : null}
+
+        <details className="rounded-xl border px-4 py-3.5 text-sm">
+          <summary className="cursor-pointer select-none font-medium">Mais detalhes (opcional)</summary>
+          <div className="mt-4 grid gap-4">
+            <div className="grid items-start gap-4 sm:grid-cols-2">
+              <Field label="Categoria">
+                <input className={inputClass('h-11')} value={form.category} onChange={set('category')} list="part-categories" placeholder="Ex.: Hidráulica" />
+                <datalist id="part-categories">
+                  {categories.map((value) => (
+                    <option key={value} value={value} />
+                  ))}
+                </datalist>
+              </Field>
+              <Field label="Marca">
+                <input className={inputClass('h-11')} value={form.brand} onChange={set('brand')} list="part-brands" />
+                <datalist id="part-brands">
+                  {brands.map((value) => (
+                    <option key={value} value={value} />
+                  ))}
+                </datalist>
+              </Field>
+              <Field label="Código interno" hint="Sua referência, se tiver.">
+                <input className={inputClass('h-11')} value={form.sku} onChange={set('sku')} />
+              </Field>
+              <Field label="Avisar para repor abaixo de" hint="Vazio = não avisar.">
+                <input className={inputClass('h-11 text-right tabular-nums')} value={form.minStock} onChange={set('minStock')} inputMode="numeric" placeholder="Sem mínimo" />
+              </Field>
+            </div>
+            <Field label="Descrição">
+              <textarea className={inputClass('min-h-20 py-2')} value={form.description} onChange={set('description')} />
+            </Field>
+          </div>
+        </details>
+      </div>
+
+      <div className={step === 1 ? 'grid gap-6' : 'hidden'}>
+        <div className="divide-y rounded-xl border">
+          <PriceRow label="Quanto a empresa pagou" hint="O técnico não vê este valor.">
+            <AffixInput prefix="R$" value={pricing.cost} onChange={setPrice('cost')} format={formatMoneyInput} inputMode="decimal" placeholder="0,00" aria-label="Custo" />
+          </PriceRow>
+          <PriceRow
+            label="Quanto o técnico paga à empresa"
+            hint="Por peça vendida. A margem é sobre o custo."
+            error={fieldErrors.tech}
+            margin={<MarginInput value={pricing.techPercent} onChange={setPrice('techPercent')} label="Margem sobre o custo" />}
+          >
+            <AffixInput
+              prefix="R$"
+              value={pricing.tech}
+              onChange={(value) => {
+                setPrice('tech')(value);
+                if (fieldErrors.tech) setFieldErrors((current) => ({ ...current, tech: undefined }));
+              }}
+              format={formatMoneyInput}
+              inputMode="decimal"
+              placeholder="0,00"
+              aria-label="Preço de técnico"
+              aria-invalid={Boolean(fieldErrors.tech)}
+            />
+          </PriceRow>
+          <PriceRow
+            label="Preço sugerido ao cliente"
+            hint="O técnico pode mudar na venda. A margem é sobre o preço do técnico."
+            margin={<MarginInput value={pricing.suggestedPercent} onChange={setPrice('suggestedPercent')} label="Margem sobre o preço do técnico" />}
+          >
+            <AffixInput prefix="R$" value={pricing.suggested} onChange={setPrice('suggested')} format={formatMoneyInput} inputMode="decimal" placeholder="0,00" aria-label="Preço sugerido ao cliente" />
+          </PriceRow>
+        </div>
+        <p className="-mt-3 text-xs text-muted-foreground">Digite o valor ou a margem: o outro é calculado sozinho.</p>
+
+        <div className="grid gap-3 rounded-xl bg-muted/40 p-4 sm:grid-cols-2">
+          <div>
+            <p className="text-xs text-muted-foreground">A empresa ganha por peça</p>
+            {technician > 0 && cost > 0 ? (
+              <>
+                <p className={`text-xl font-semibold tabular-nums ${companyGain < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatCurrency(companyGain)}</p>
+                <p className="text-xs text-muted-foreground">{fmtPercent((companyGain / cost) * 100)}% sobre o custo</p>
+              </>
+            ) : (
+              <p className="text-xl font-semibold text-muted-foreground">—</p>
+            )}
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground">O técnico ganha por peça</p>
+            {suggested > 0 && technician > 0 ? (
+              <>
+                <p className={`text-xl font-semibold tabular-nums ${technicianGain < 0 ? 'text-rose-700' : 'text-emerald-700'}`}>{formatCurrency(technicianGain)}</p>
+                <p className="text-xs text-muted-foreground">se vender pelo preço sugerido</p>
+              </>
+            ) : (
+              <p className="text-xl font-semibold text-muted-foreground">—</p>
+            )}
+          </div>
+        </div>
+
+        {cost > 0 && technician > 0 && technician < cost ? (
+          <Alert tone="warning">O preço do técnico está abaixo do custo: a empresa perde {formatCurrency(cost - technician)} a cada peça vendida.</Alert>
+        ) : null}
+        {technician > 0 && suggested > 0 && suggested < technician ? (
+          <Alert tone="warning">O sugerido está abaixo do preço do técnico: o técnico teria prejuízo de {formatCurrency(technician - suggested)} por peça.</Alert>
+        ) : null}
+      </div>
+
+      <div className="sticky -bottom-4 -mx-4 -mb-4 grid gap-2 border-t bg-card px-4 py-3 sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6">
+        {error ? <Alert>{error}</Alert> : null}
+        <div className={`grid gap-2 ${step > 0 && !part ? 'grid-cols-[auto_minmax(0,1fr)]' : ''}`}>
+          {step > 0 && !part ? (
+            <Button type="button" variant="outline" size="lg" onClick={() => setStep(step - 1)}>
+              Voltar
+            </Button>
+          ) : null}
+          <Button type="submit" size="lg" disabled={busy}>
+            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            {part ? 'Salvar alterações' : step === 0 ? 'Continuar para os preços' : 'Cadastrar peça'}
+          </Button>
+        </div>
+      </div>
       <Dialog open={scanning} onOpenChange={setScanning}>
-        <DialogContent className="sm:max-w-md">
+        <DialogContent className="grid-cols-[minmax(0,1fr)] p-4 sm:p-6 sm:max-w-md">
           <DialogHeader className="sr-only">
             <DialogTitle>Ler código de barras</DialogTitle>
           </DialogHeader>
@@ -679,63 +818,126 @@ function PurchaseForm({ parts, initial, onSaved }: { parts: Part[]; initial: Par
     }
   }
 
+  const filled = lines.filter((line) => line.partId && Number(line.quantity) > 0);
+  const totalUnits = filled.reduce((sum, line) => sum + Number(line.quantity), 0);
+  const totalCost = filled.reduce((sum, line) => sum + Number(line.quantity) * (parseAmount(line.unitCost) ?? 0), 0);
+
   return (
-    <form onSubmit={submit} className="grid gap-4">
+    <form onSubmit={submit} className="grid gap-5">
       <DialogHeader>
         <DialogTitle>Entrada no estoque central</DialogTitle>
-        <DialogDescription>Peças compradas pela empresa. Leia os códigos de barras ou escolha na lista.</DialogDescription>
+        <DialogDescription>Registre as peças que a empresa comprou. Escolha na lista ou leia o código de barras.</DialogDescription>
       </DialogHeader>
+
       {scanning ? <BarcodeScanner continuous title="Leia cada peça (cada leitura soma 1)" onDetect={onScan} onClose={() => setScanning(false)} /> : null}
-      <div className="grid gap-2">
-        {lines.map((line, index) => (
-          <div key={index} className="grid grid-cols-[1fr_80px_100px_auto] items-end gap-2">
-            <Field label={index === 0 ? 'Peça' : ''}>
-              <select className={inputClassName} value={line.partId} onChange={(event) => setLine(index, { partId: event.target.value })}>
-                {active.map((part) => (
-                  <option key={part.id} value={part.id}>
-                    {part.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={index === 0 ? 'Qtd.' : ''}>
-              <input className={inputClassName} value={line.quantity} onChange={(event) => setLine(index, { quantity: event.target.value })} inputMode="numeric" />
-            </Field>
-            <Field label={index === 0 ? 'Custo un.' : ''}>
-              <input className={inputClassName} value={line.unitCost} onChange={(event) => setLine(index, { unitCost: event.target.value })} inputMode="decimal" />
-            </Field>
-            <Button type="button" variant="ghost" size="icon" onClick={() => setLines((current) => current.filter((_, position) => position !== index))} disabled={lines.length === 1} aria-label="Remover linha">
-              <Trash2 className="h-4 w-4" />
-            </Button>
-          </div>
-        ))}
-        <div className="flex flex-wrap gap-2">
-          <Button type="button" variant="outline" size="sm" onClick={() => setLines((current) => [...current, { partId: active[0]?.id ?? '', quantity: '', unitCost: active[0] ? money(active[0].costPrice) : '' }])}>
+
+      <div className="grid gap-3">
+        {lines.map((line, index) => {
+          const part = parts.find((item) => item.id === line.partId);
+          const quantity = Number(line.quantity) || 0;
+          const lineTotal = quantity * (parseAmount(line.unitCost) ?? 0);
+          return (
+            <div key={index} className="grid gap-3 rounded-xl border bg-muted/20 p-3.5">
+              <div className="flex items-center gap-3">
+                <PartImage src={part?.imageUrl ?? null} alt={part?.name ?? 'Peça'} className="h-11 w-11 shrink-0" />
+                <select
+                  className={inputClass('h-11 min-w-0 flex-1 text-base sm:text-sm')}
+                  value={line.partId}
+                  onChange={(event) => setLine(index, { partId: event.target.value })}
+                  aria-label="Peça"
+                >
+                  {active.map((item) => (
+                    <option key={item.id} value={item.id}>
+                      {item.name}
+                    </option>
+                  ))}
+                </select>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 shrink-0"
+                  onClick={() => setLines((current) => current.filter((_, position) => position !== index))}
+                  disabled={lines.length === 1}
+                  aria-label="Remover esta peça"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <Field label="Quantas entraram?">
+                  <div className="flex items-center gap-1.5">
+                    <Button type="button" variant="outline" size="icon" className="h-11 w-11 shrink-0" onClick={() => setLine(index, { quantity: String(Math.max(0, quantity - 1) || '') })} disabled={quantity === 0} aria-label="Menos uma">
+                      <Minus className="h-4 w-4" />
+                    </Button>
+                    <input
+                      className={inputClass('h-11 min-w-0 text-center text-base tabular-nums sm:text-sm')}
+                      value={line.quantity}
+                      onChange={(event) => setLine(index, { quantity: event.target.value.replace(/\D/g, '') })}
+                      inputMode="numeric"
+                      placeholder="0"
+                    />
+                    <Button type="button" variant="outline" size="icon" className="h-11 w-11 shrink-0" onClick={() => setLine(index, { quantity: String(quantity + 1) })} aria-label="Mais uma">
+                      <Plus className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </Field>
+                <Field label="Quanto custou cada uma?">
+                  <AffixInput prefix="R$" value={line.unitCost} onChange={(value) => setLine(index, { unitCost: value })} format={formatMoneyInput} inputMode="decimal" placeholder="0,00" />
+                </Field>
+              </div>
+
+              {lineTotal > 0 ? (
+                <p className="text-right text-xs text-muted-foreground">
+                  {quantity} × {formatCurrency(parseAmount(line.unitCost) ?? 0)} = <strong className="tabular-nums text-foreground">{formatCurrency(lineTotal)}</strong>
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+
+        <div className="grid gap-2 sm:grid-cols-2">
+          <Button type="button" variant="outline" size="lg" className="h-11" onClick={() => setLines((current) => [...current, { partId: active[0]?.id ?? '', quantity: '', unitCost: active[0] ? money(active[0].costPrice) : '' }])}>
             <Plus className="h-4 w-4" />
-            Outra peça
+            Adicionar outra peça
           </Button>
           {!scanning ? (
-            <Button type="button" variant="outline" size="sm" onClick={() => setScanning(true)}>
+            <Button type="button" variant="outline" size="lg" className="h-11" onClick={() => setScanning(true)}>
               <ScanBarcode className="h-4 w-4" />
-              Ler códigos
+              Ler códigos de barras
             </Button>
           ) : null}
         </div>
       </div>
-      <Field label="Observação (nota fiscal, fornecedor…)">
-        <input className={inputClassName} value={note} onChange={(event) => setNote(event.target.value)} />
+
+      <Field label="Observação (opcional)" hint="Nota fiscal, fornecedor…">
+        <input className={inputClass('h-11 text-base sm:text-sm')} value={note} onChange={(event) => setNote(event.target.value)} />
       </Field>
-      <label className="flex items-center gap-2 text-sm">
-        <input type="checkbox" checked={updateCost} onChange={(event) => setUpdateCost(event.target.checked)} />
-        Atualizar o custo da peça com o custo desta compra
+
+      <label className="flex items-center justify-between gap-4 rounded-xl border px-4 py-3.5">
+        <span className="grid gap-0.5">
+          <span className="text-sm font-medium">Atualizar o custo cadastrado</span>
+          <span className="text-xs text-muted-foreground">O custo de cada peça passa a ser o desta compra.</span>
+        </span>
+        <Switch checked={updateCost} onCheckedChange={setUpdateCost} />
       </label>
-      {error ? <Alert>{error}</Alert> : null}
-      <DialogFooter>
-        <Button type="submit" disabled={busy || !lines.some((line) => line.partId && Number(line.quantity) > 0)}>
+
+      <div className="sticky -bottom-4 -mx-4 -mb-4 grid gap-2 border-t bg-card px-4 py-3 sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6">
+        {error ? <Alert>{error}</Alert> : null}
+        {filled.length ? (
+          <p className="flex justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">
+              {filled.length} peça(s) · {totalUnits} unidade(s)
+            </span>
+            <strong className="tabular-nums">{formatCurrency(totalCost)}</strong>
+          </p>
+        ) : null}
+        <Button type="submit" size="lg" disabled={busy || !filled.length}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           Registrar entrada
         </Button>
-      </DialogFooter>
+      </div>
     </form>
   );
 }
@@ -840,18 +1042,18 @@ function PartDetailView({ part, onAction }: { part: Part; onAction: (kind: 'edit
       {error ? <Alert>{error}</Alert> : null}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <DetailStat label="Em estoque" value={`${inStock} ${current.unit}`} hint={`${current.centralStock} na empresa · ${current.technicianStock} com técnicos`} />
+        <DetailStat label="Em estoque" value={`${inStock} ${current.unit}`} hint={`Empresa ${current.centralStock} · Técnicos ${current.technicianStock}`} />
         <DetailStat
           label="Vendidas"
           value={totals ? `${totals.sold} ${current.unit}` : '…'}
-          hint={totals ? (totals.sold ? `${totals.soldPaid} pagas · ${totals.soldAwaiting} aguardando` : 'Nenhuma venda ainda') : undefined}
+          hint={totals ? (totals.sold ? `${totals.soldPaid} paga(s) · ${totals.soldAwaiting} esperando` : 'Nenhuma ainda') : undefined}
         />
-        <DetailStat label="Vendido aos clientes" value={totals ? formatCurrency(totals.revenue) : '…'} hint={totals?.averagePrice ? `preço médio ${formatCurrency(totals.averagePrice)}` : undefined} />
+        <DetailStat label="Faturado" value={totals ? formatCurrency(totals.revenue) : '…'} hint={totals?.averagePrice ? `Preço médio ${formatCurrency(totals.averagePrice)}` : 'Nenhuma venda'} />
         <DetailStat
           label="Lucro da empresa"
           value={totals ? formatCurrency(totals.companyProfit) : '…'}
-          tone={totals && totals.companyProfit < 0 ? 'danger' : undefined}
-          hint={totals ? `técnicos ficaram com ${formatCurrency(totals.technicianProfit)}` : undefined}
+          tone={totals && totals.companyProfit < 0 ? 'danger' : totals && totals.companyProfit > 0 ? 'success' : undefined}
+          hint={totals ? `Técnicos: ${formatCurrency(totals.technicianProfit)}` : undefined}
         />
       </div>
 
@@ -893,24 +1095,30 @@ function PartDetailView({ part, onAction }: { part: Part; onAction: (kind: 'edit
       </section>
 
       <section className="grid gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preços e histórico</h3>
-        <dl className="grid gap-x-6 gap-y-1.5 text-sm sm:grid-cols-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Preços</h3>
+        <div className="grid grid-cols-3 gap-3">
+          <DetailStat label="Custo" value={formatCurrency(current.costPrice)} hint="A empresa pagou" />
+          <DetailStat label="Técnico" value={formatCurrency(current.technicianPrice)} hint={margin !== null ? `+${Math.round(margin)}% sobre o custo` : 'Técnico deve'} />
+          <DetailStat label="Sugerido" value={current.suggestedPrice > 0 ? formatCurrency(current.suggestedPrice) : '—'} hint="Ao cliente" />
+        </div>
+      </section>
+
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Histórico</h3>
+        <dl className="grid gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
           {(
             [
-              ['Custo', formatCurrency(current.costPrice)],
-              ['Preço de técnico', `${formatCurrency(current.technicianPrice)}${margin !== null ? ` (${Math.round(margin)}% sobre o custo)` : ''}`],
-              ['Preço sugerido', current.suggestedPrice > 0 ? formatCurrency(current.suggestedPrice) : '—'],
-              ['Estoque mínimo (empresa)', current.minStock === null ? 'Sem mínimo' : String(current.minStock)],
               ['Comprada (entradas)', totals ? `${totals.purchased} ${current.unit}` : '…'],
               ['Vendas realizadas', totals ? String(totals.sales) : '…'],
               ['Primeira venda', totals?.firstSaleAt ? formatDateTime(totals.firstSaleAt) : '—'],
               ['Última venda', totals?.lastSaleAt ? formatDateTime(totals.lastSaleAt) : '—'],
               ['Faltas em inventário', totals ? `${totals.missing} ${current.unit}` : '…'],
+              ['Estoque mínimo', current.minStock === null ? 'Sem mínimo' : String(current.minStock)],
             ] as Array<[string, string]>
           ).map(([label, value]) => (
-            <div key={label} className="flex items-baseline justify-between gap-3 border-b py-1">
+            <div key={label} className="flex items-baseline justify-between gap-3 border-b py-1.5">
               <dt className="text-muted-foreground">{label}</dt>
-              <dd className="font-medium tabular-nums">{value}</dd>
+              <dd className="text-right font-medium tabular-nums">{value}</dd>
             </div>
           ))}
         </dl>
@@ -940,24 +1148,24 @@ function PartDetailView({ part, onAction }: { part: Part; onAction: (kind: 'edit
         </section>
       ) : null}
 
-      <DialogFooter className="gap-2 sm:justify-start">
-        <Button type="button" variant="outline" size="sm" onClick={() => onAction('edit')}>
+      <div className="grid grid-cols-2 gap-2 border-t pt-4 sm:grid-cols-4">
+        <Button type="button" onClick={() => onAction('edit')}>
           <Pencil className="h-4 w-4" />
           Editar
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => onAction('purchase')}>
+        <Button type="button" variant="outline" onClick={() => onAction('purchase')}>
           <PackagePlus className="h-4 w-4" />
-          Entrada de estoque
+          Entrada
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => onAction('adjust')}>
+        <Button type="button" variant="outline" onClick={() => onAction('adjust')}>
           <SlidersHorizontal className="h-4 w-4" />
-          Ajustar estoque
+          Ajustar
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => onAction('history')}>
+        <Button type="button" variant="outline" onClick={() => onAction('history')}>
           <History className="h-4 w-4" />
-          Movimentações
+          Histórico
         </Button>
-      </DialogFooter>
+      </div>
     </div>
   );
 }
@@ -1104,7 +1312,7 @@ function ImportForm({ onSaved }: { onSaved: (message: string) => void }) {
         </DialogDescription>
       </DialogHeader>
       <div className="flex flex-wrap gap-2">
-        <Button type="button" variant="outline" size="sm" onClick={downloadTemplate}>
+        <Button type="button" variant="outline" size="lg" onClick={downloadTemplate}>
           <Download className="h-4 w-4" />
           Baixar modelo
         </Button>
