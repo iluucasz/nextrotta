@@ -27,7 +27,7 @@ Módulo de vendas de peças em **consignação** com os técnicos (criado como "
 - A aba **Financeiro** (`/api/parts/finance`, `lib/parts/finance.ts`) mostra o resultado para a organização, mensal ou anual, comparado ao período anterior: faturamento (preço de técnico), lucro bruto e margem, vendido aos clientes, custo das peças vendidas, caixa (recebido dos técnicos, compras de peças, resultado de caixa), perdas por faltas assumidas e a posição atual (saldo em aberto e estoque a custo). Critérios: vendas por mês da venda, sem canceladas; custo gravado em cada item da venda; recebido = pagamentos do Acerto no dia do registro; compras = entradas × custo unitário; perdas = faltas de inventário do estoque central ou com `resolution = absorb`, ao custo atual da peça; saldo e estoque são posição, não fluxo. Quatro seções (Visão geral, Técnicos, Peças, Caixa), filtro por técnico (compras e estoque central, que são da organização toda, saem da conta quando há técnicos selecionados), atualização a cada minuto e exportação em planilha.
 - O técnico **nunca vê o custo** da organização (as rotas tiram `totalCost`/`unitCost` das respostas dele).
 - Nada é excluído: exclusão lógica nas peças; movimentos e lançamentos são imutáveis (correção = novo lançamento).
-- Botão **"Ver vídeo"** (admin, por aba, e técnico): `components/parts/admin/tab-video.tsx`, player próprio sobre o YouTube em modal. **A lista de vídeos está vazia** (os da produção mostram a marca do Central Operacional); sem id, o botão não aparece. Preencher `TAB_VIDEOS` e `TECHNICIAN_VIDEO` quando houver gravações do NextRotta.
+- Botão **"Ver vídeo"** (admin, por aba, e técnico): `components/parts/admin/tab-video.tsx`, player próprio sobre o YouTube em modal. Os vídeos são os do Central Operacional, reaproveitados com a aprovação do dono (mostram a marca dele); sem id, o botão não aparece. Trocar `TAB_VIDEOS` e `TECHNICIAN_VIDEO` quando houver gravações do NextRotta.
 
 ## Integridade (o que o código garante)
 
@@ -95,7 +95,7 @@ Link de pagamento (Pix: link + copia e cola numa mensagem só dele) e **recibo**
 
 - O Mercado Pago real **nunca foi testado** (nem aqui nem na produção): faltam o aplicativo do NextRotta e as variáveis `MERCADOPAGO_*`. Validar Pix, link, Point, "Conferir pagamento" e webhook em sandbox antes de liberar a técnicos reais.
 - O recurso `parts` ainda não está em nenhum plano.
-- Vídeos de tutorial: lista vazia (decisão do dono).
+- Vídeos de tutorial: são os do Central Operacional (mostram a marca dele); trocar quando houver os do NextRotta.
 - Os técnicos veem "Minhas peças" no menu sempre; a página não é ocultável pelas regras de visibilidade do técnico.
 
 ## Teste de 22–23/10/2026 (API, banco e Chrome, sem Mercado Pago)

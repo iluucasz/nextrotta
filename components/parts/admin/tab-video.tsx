@@ -8,19 +8,19 @@ import { cn } from '@/lib/utils';
 
 /**
  * One tutorial per tab of Venda de Peças (YouTube, unlisted). Keys are the tab values of the admin page.
- * An empty `id` hides the "Ver vídeo" button of that tab: NextRotta has no tutorial videos yet (the ones
- * of the Central Operacional show another brand), so fill the ids in as they are recorded.
+ * These are the Central Operacional's videos, reused with the owner's approval; an empty `id` hides the
+ * "Ver vídeo" button of that tab, so swap them as NextRotta's own are recorded.
  */
 const TAB_VIDEOS: Record<string, { id: string; label: string }> = {
-  overview: { id: '', label: 'Resumo' },
-  sales: { id: '', label: 'Vendas' },
-  catalog: { id: '', label: 'Peças' },
-  movements: { id: '', label: 'Movimentações' },
-  technicians: { id: '', label: 'Técnicos' },
-  inventory: { id: '', label: 'Inventário' },
-  account: { id: '', label: 'Acerto' },
-  finance: { id: '', label: 'Financeiro' },
-  settings: { id: '', label: 'Ajustes' },
+  overview: { id: 'G1rkY_Xfm8c', label: 'Resumo' },
+  sales: { id: 'dnyfodFQcqk', label: 'Vendas' },
+  catalog: { id: '41QJx5UTj0M', label: 'Peças' },
+  movements: { id: '5ydxsbJkg0o', label: 'Movimentações' },
+  technicians: { id: 'siiltiAaJv4', label: 'Técnicos' },
+  inventory: { id: 'sY23VaOGXl0', label: 'Inventário' },
+  account: { id: 'Gn_MfML90ss', label: 'Acerto' },
+  finance: { id: 'SynyTaGq_W8', label: 'Financeiro' },
+  settings: { id: 'hqUdhjJLHVM', label: 'Ajustes' },
 };
 
 const SPEEDS = [0.75, 1, 1.25, 1.5, 2];
@@ -338,7 +338,7 @@ function VideoPlayer({ videoId, vertical = false, onUnavailable }: { videoId: st
 // ---------------------------------------------------------------- button + modal
 
 /** The tutorial of the technician's "Minhas peças" screen: one video for the computer and a vertical one for phones. Empty hides the button. */
-const TECHNICIAN_VIDEO = { desktop: '', mobile: '' };
+const TECHNICIAN_VIDEO = { desktop: 'ugExX4-YM9s', mobile: 'IszisQ8-rDY' };
 
 /**
  * A "Ver vídeo" button that opens a tutorial in a modal. The player is only created while the modal is open, so
