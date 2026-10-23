@@ -37,6 +37,28 @@ async function verifyPortoSession(page: Page): Promise<{ ok: boolean; status: nu
 }
 
 /**
+ * Opens the login page. `networkidle` is the normal, strict wait, but a slow portal (or one analytics
+ * request that never answers) can keep the network busy for the whole 30s while the form is already
+ * usable — which used to fail the run with "página de login" (seen live 2026-10-13). A form that is
+ * on screen is what the login needs, so that case goes on; a page that really didn't open still fails.
+ */
+export async function openLoginPage(page: Page): Promise<void> {
+  try {
+    await page.goto('https://prestador.portoseguro.com.br/portal/site/pdp/template.LOGIN/', {
+      waitUntil: 'networkidle',
+      timeout: 30000,
+    });
+  } catch (error) {
+    const formReady = await page
+      .locator('#cpf')
+      .waitFor({ state: 'visible', timeout: 10000 })
+      .then(() => true)
+      .catch(() => false);
+    if (!formReady) throw new PortoLoginError('Não foi possível abrir a página de login do Porto.', error);
+  }
+}
+
+/**
  * Logs into the Porto Seguro provider portal (prestador.portoseguro.com.br) using a real page,
  * so the browser executes the site's own scripts naturally. Validated against production: a plain
  * HTTP-only login (no page rendering) authenticates on this subdomain but the session is never
@@ -44,14 +66,7 @@ async function verifyPortoSession(page: Page): Promise<{ ok: boolean; status: nu
  * only a full page-driven login consistently works for both.
  */
 export async function loginToPorto(page: Page, credentials: { cpf: string; password: string }): Promise<void> {
-  try {
-    await page.goto('https://prestador.portoseguro.com.br/portal/site/pdp/template.LOGIN/', {
-      waitUntil: 'networkidle',
-      timeout: 30000,
-    });
-  } catch (error) {
-    throw new PortoLoginError('Não foi possível abrir a página de login do Porto.', error);
-  }
+  await openLoginPage(page);
 
   await page.fill('#cpf', credentials.cpf);
   await page.fill('input[name="password"]', credentials.password);

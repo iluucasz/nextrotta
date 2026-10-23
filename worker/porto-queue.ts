@@ -10,6 +10,7 @@ import { sendOwnerAlert } from '../lib/platform/alerts';
 import { getPlatformSettings } from '../lib/platform/settings';
 import { brasiliaNow, timeToMinutes } from '../lib/whatsapp/dates';
 import { isJobDue, JOB_CATCH_UP_MINUTES } from './job-schedule';
+import { runWithRetries, type RetryInfo } from './job-retry';
 import { portoLockInfo, setMaxBrowsers, waitForPortoLock } from './porto-lock';
 
 /**
@@ -22,6 +23,9 @@ import { portoLockInfo, setMaxBrowsers, waitForPortoLock } from './porto-lock';
  * - Organizations that become due together are ordered by a hash of the night, so the order turns
  *   and the same one isn't always last.
  * - A failure in one organization never stops the others.
+ * - An automatic run that fails (slow portal, brief outage) is tried again after a few minutes
+ *   (job-retry.ts). The Porto lock is taken per attempt, so the wait never holds a browser slot and
+ *   the new attempt queues behind whoever is already waiting: it never jumps the other organizations.
  */
 
 type JobKind = 'hours' | 'schedule';
@@ -61,6 +65,9 @@ async function loadLastRuns(today: string) {
     FROM porto_sync_log
     WHERE started_at > NOW() - INTERVAL '36 hours'
       AND COALESCE(run_trigger, 'auto') = 'auto'
+      -- A run that ended in error, or was still 'running' when the worker stopped (a deploy mid-import),
+      -- isn't done: it is tried again while the catch-up window is open.
+      AND status NOT IN ('error', 'running')
     GROUP BY organization_id, job_type
   `;
   for (const row of rows) {
@@ -78,25 +85,41 @@ function enqueue(hooks: Hooks, organizationId: string, job: JobKind, runDay: str
   tasks.set(key, task);
   if (job === 'schedule') lastScheduleAt.set(organizationId, Date.now());
 
-  // Started right away: waitForPortoLock queues it (FIFO) behind the browser slots.
-  void waitForPortoLock(organizationId, job === 'hours' ? 'apontamento de horas (automático)' : 'escala (automática)', async () => {
-    task.startedAt = Date.now();
-    const runDayDate = new Date();
+  const lockName = job === 'hours' ? 'apontamento de horas (automático)' : 'escala (automática)';
+  const jobLabel = job === 'hours' ? 'importação de horas' : 'importação da escala';
+  // The day this run imports: taken when the first attempt gets its slot, so a retry after midnight
+  // still reports the day that was imported.
+  let runDayDate: Date | null = null;
+  let attemptsMade = 1;
+  const attempt = <R extends { status: string }>(run: () => Promise<R>) =>
+    // Started right away: waitForPortoLock queues each attempt (FIFO) behind the browser slots.
+    waitForPortoLock(organizationId, lockName, async () => {
+      task.startedAt ??= Date.now();
+      runDayDate ??= new Date();
+      return run();
+    });
+  const onRetry = (info: RetryInfo) => {
+    attemptsMade = info.attempt + 1;
+    logRetry(hooks, `${job === 'hours' ? 'Horas' : 'Escala'} (${organizationId})`, info);
+  };
+
+  void (async () => {
     if (job === 'hours') {
-      const result = await runHoursJob({ organizationId, manual: false });
-      hooks.log(`Resultado (horas, ${organizationId}):`, JSON.stringify({ status: result.status, rows_written: result.rows_written, warnings: result.warnings?.length ?? 0 }));
-      await handleProblems(hooks, organizationId, 'importação de horas', result, runDay);
-      if (result.status === 'success' || result.status === 'partial') await hooks.afterHours(organizationId, runDayDate);
+      const { result, attempts } = await runWithRetries({ run: () => attempt(() => runHoursJob({ organizationId, manual: false })), onRetry });
+      hooks.log(`Resultado (horas, ${organizationId}):`, JSON.stringify({ status: result.status, rows_written: result.rows_written, warnings: result.warnings?.length ?? 0, attempts }));
+      await handleProblems(hooks, organizationId, jobLabel, result, runDay, attempts);
+      if (result.status === 'success' || result.status === 'partial') await hooks.afterHours(organizationId, runDayDate ?? new Date());
     } else {
-      const result = await runScheduleJob({ organizationId, manual: false });
-      hooks.log(`Resultado (escala, ${organizationId}):`, JSON.stringify({ status: result.status, warnings: result.warnings?.length ?? 0 }));
-      await handleProblems(hooks, organizationId, 'importação da escala', result, runDay);
+      const { result, attempts } = await runWithRetries({ run: () => attempt(() => runScheduleJob({ organizationId, manual: false })), onRetry });
+      hooks.log(`Resultado (escala, ${organizationId}):`, JSON.stringify({ status: result.status, warnings: result.warnings?.length ?? 0, attempts }));
+      await handleProblems(hooks, organizationId, jobLabel, result, runDay, attempts);
     }
-  })
+  })()
     .catch(async (error) => {
       hooks.log(`Porto (${job}, ${organizationId}) falhou:`, error);
-      await sendPortoAlert(organizationId, `a ${job === 'hours' ? 'importação de horas' : 'importação da escala'} falhou`, [
+      await sendPortoAlert(organizationId, `a ${jobLabel} falhou`, [
         error instanceof Error ? error.message : String(error),
+        ...attemptsNote(attemptsMade),
       ]);
     })
     .finally(() => {
@@ -109,11 +132,21 @@ function enqueue(hooks: Hooks, organizationId: string, job: JobKind, runDay: str
 
 type RunResult = { status: string; error?: string; warnings?: string[]; layout_suspect?: boolean };
 
+/** Logs why an unattended run is being tried again (the admin only hears about the final outcome). */
+function logRetry(hooks: Hooks, label: string, { attempt, maxAttempts, delayMs, reason }: RetryInfo) {
+  hooks.log(`${label}: tentativa ${attempt}/${maxAttempts} não deu certo (${reason}). Nova tentativa em ${Math.round(delayMs / 60000)} min.`);
+}
+
+/** Said only when it matters: the problem survived the automatic retries. */
+function attemptsNote(attempts: number) {
+  return attempts > 1 ? [`Já foram feitas ${attempts} tentativas automáticas.`] : [];
+}
+
 /**
  * A screen change is the platform's problem (every organization fails together): it's gathered into
  * one owner alert per night. Everything else goes to the organization's own alert number.
  */
-async function handleProblems(hooks: Hooks, organizationId: string, jobLabel: string, result: RunResult, runDay: string) {
+async function handleProblems(hooks: Hooks, organizationId: string, jobLabel: string, result: RunResult, runDay: string, attempts = 1) {
   if (result.layout_suspect) {
     const incident = layoutIncidents.get(runDay) ?? new Set<string>();
     incident.add(organizationId);
@@ -122,9 +155,9 @@ async function handleProblems(hooks: Hooks, organizationId: string, jobLabel: st
   }
   let alert: { sent: boolean; reason?: string } | null = null;
   if (result.status === 'error') {
-    alert = await sendPortoAlert(organizationId, `a ${jobLabel} falhou`, [result.error ?? 'Erro sem detalhe.']);
+    alert = await sendPortoAlert(organizationId, `a ${jobLabel} falhou`, [result.error ?? 'Erro sem detalhe.', ...attemptsNote(attempts)]);
   } else if (result.warnings?.length) {
-    alert = await sendPortoAlert(organizationId, `a ${jobLabel} terminou com avisos`, result.warnings);
+    alert = await sendPortoAlert(organizationId, `a ${jobLabel} terminou com avisos`, [...result.warnings, ...attemptsNote(attempts)]);
   }
   if (alert && !alert.sent) hooks.log(`Alerta da ${jobLabel} (${organizationId}) não enviado:`, alert.reason);
 }

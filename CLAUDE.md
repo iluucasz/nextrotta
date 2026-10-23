@@ -57,6 +57,7 @@
 
 **Porte das correções da produção (06/10/2026):** os 10 commits que a produção recebeu depois do clone (pacote em `docs/saas/porte-producao/`: `PROMPT.md`; os diffs e a cópia de referência foram arquivados fora do repo) foram portados por merge de 3 vias, já por organização.
 - **Porto:**
+  - **Atualização de 23/10/2026** (correções da produção de 07/10 e 13/10): prazo do laudo + `LAUDO PENDENTE:` (`lib/porto-laudo.ts`, `getPendingLaudoDates`, migração `0026`, campo nas Configurações), dias reprocessados 1–7, "Fim do expediente" pelo dia encerrado (`dailyHoursDay`/`dailyHoursReady`) e lembretes que esperam a escala (`scheduleImportPending`); login (`openLoginPage`) e busca de serviços (60 s, `domcontentloaded`) tolerantes a portal lento; `worker/job-retry.ts` aplicado no `worker/porto-queue.ts` (a nova tentativa volta ao fim da fila, sem furar a vez das outras organizações) e execução que terminou em `error`/`running` não conta como feita após reiniciar o worker. Testes: `scripts/test-porto-{retry,queue-retry,laudo,login,service-search}.cjs`. O Porto real não foi testado.
   - fim do dia pela assinatura do laudo, ou pelo Concluído com `ADVERTÊNCIA:`, que nunca é recalculado;
   - só serviços concluídos contam; dia só com serviço cancelado vira `cancelled_service` (`attendanceHasHours`);
   - dias manuais intocáveis; período lido de volta da busca; deduplicação por código;
@@ -135,7 +136,7 @@ Arquivos muito grandes — leia por trechos (Grep primeiro), nunca inteiros:
 - Comissão: `base = total de OS × commission_percentage`; `comissão = max(0, base − salário base − VA − VR)`. Valores do técnico (ou o padrão da organização quando vazios). Detalhes em `docs/calculo-folha.md` (exemplo com os valores do cliente original).
 - Hora extra: horas acima da jornada mensal × (salário base ÷ jornada) × adicional. Prêmio: valor da maior faixa de OS atingida no mês.
 - Folha tem status `draft`/`closed`; relatórios gerenciais usam só folhas fechadas por padrão.
-- Horas (escala e importação do Porto) descontam o intervalo diário da organização. O job de horas reprocessa os últimos 2 dias.
+- Horas (escala e importação do Porto) descontam o intervalo diário da organização. O job de horas reprocessa hoje e os `portoReprocessDays` (1 a 7) dias anteriores, e todo dia `LAUDO PENDENTE:` (laudo ausente dentro do prazo `portoLaudoGraceHours`, padrão 6 h após o Concluído) até ele virar normal ou, vencido o prazo, advertência — a advertência nunca é recalculada. "Fim do expediente" relata o dia já encerrado (2 h depois do fim do turno padrão da organização); a importação automática que falha é tentada de novo (3 tentativas, 5 e 15 min, trava e navegador por tentativa). Detalhes em `docs/integracao-porto-seguro.md` ("Horários livres" e "Tentativas automáticas").
 - Horários do job seguem o fuso de Brasília real (não offset UTC fixo).
 - **Modo preview** (admin vendo como técnico): o middleware bloqueia qualquer método não-GET. Exceções em `previewEscapeRoutes`/`previewAdminRoutes` em `middleware.ts`. Não confundir com o acesso do `platform_owner` à conta de uma organização, que pode alterar dados.
 - Visibilidade por técnico: `lib/technician-visibility*.ts`.

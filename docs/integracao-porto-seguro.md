@@ -349,7 +349,7 @@ refazer a busca do dia.
   esperam; pedidos da tela daquela organização (testar login, buscar técnicos, testar/rodar agora)
   recebem 409 "já existe uma execução em andamento". Além disso, no máximo N navegadores ao mesmo tempo
   na VPS inteira (ver "Fila do worker"). Um `docker exec ... --run=` é outro processo e não entra nessa trava.
-- **"Fim do expediente" (WhatsApp):** o horário configurado só dispara depois que a importação da
+- **"Fim do expediente" (WhatsApp)** (regra atual em "Horários livres", abaixo): o horário configurado só dispara depois que a importação da
   noite terminou para o dia (`porto_sync_log`: `range_end` ≥ dia e terminada no dia ou depois). Antes,
   um horário anterior às 23:00 (em produção estava 17:30) marcava o dia como enviado sem horas, e o
   envio após a importação era bloqueado — a mensagem nunca saía. O envio após a importação usa o dia
@@ -456,3 +456,59 @@ dia combinado).
   (automáticas e "Rodar agora") contam no limite `portoRunsMonth` do plano; testes e execuções puladas não.
 - **Painel do dono:** `GET /api/platform/porto-queue` mostra navegadores ocupados, execuções em
   andamento e na fila; `getNightCapacity` (Operação → VPS) mostra a ocupação da janela 23:00–06:00.
+
+## Horários livres (07/10/2026, portado em 23/10/2026)
+
+O admin pode pôr a importação de horas e a de escala da organização em qualquer horário (Configurações).
+Para nenhum horário gerar dado errado:
+
+- **Advertência com prazo** (`portoLaudoGraceHours`, padrão 6h, de 0 a 48, contado do Concluído; coluna
+  `porto_laudo_grace_hours`, migração `0026`): se o robô passa antes do prazo, o dia é gravado pelo
+  Concluído **sem** advertência e com `LAUDO PENDENTE: serviço X concluído sem laudo; prazo para preencher
+  até DD/MM HH:MM` na observação (o registro leva `laudoPendingUntil`). Esses dias são recalculados em toda
+  execução (`getPendingLaudoDates`, mesmo fora da janela de reprocessamento, e a busca recua até o dia
+  pendente mais antigo, no máximo 14 dias: `getOldestPendingLaudoDate`). Laudo preenchido → dia normal;
+  prazo vencido sem laudo → advertência, que **nunca** sai. A conta do prazo está em `lib/porto-laudo.ts`
+  (`laudoGraceWindow`), os marcadores em `lib/organization-settings.ts`
+  (`PORTO_WARNING_MARKER`, `PORTO_LAUDO_PENDING_MARKER`). Tudo filtrado pela organização.
+- **Dias reprocessados: de 1 a 7** (antes 0–7; a migração leva 0 para 1) — o dia de hoje, importado antes
+  de acabar, é completado na execução seguinte.
+- **"Fim do expediente" fala do dia já encerrado**: o dia "acaba" 2h depois do fim do turno padrão da
+  organização (`endOfWorkDayMinutes`, 18:00 → 20:00). Importação antes disso (madrugada, manhã) manda a
+  mensagem do dia anterior (`dailyHoursDay`, e o período da mensagem é esse dia); o envio pelo horário
+  configurado só sai depois de uma importação **automática** da organização que começou após o fim daquele
+  dia (`dailyHoursReady`). Um "Rodar agora" ou uma importação anterior não liberam a mensagem.
+- **Lembretes que leem a escala** ("Horário do dia seguinte", "Folga"): se a importação da escala da
+  organização está marcada para antes do lembrete e ainda não terminou (ex.: esperando a importação de
+  horas, ou a vez na fila), o lembrete espera até 60 min por ela (`scheduleImportPending`).
+
+## Tentativas automáticas (13/10/2026, portado em 23/10/2026)
+
+O portal do Prestador fica lento ou fora do ar em rajadas (um login estourou 2 min às 01:39 de 13/10 e, nas
+noites de 08/10 e 10/10, a busca do mês demorou mais de 20s e virou o falso aviso "o portal pode ter
+mudado"). Por isso a execução automática (não o teste manual) tenta de novo:
+
+- **Quando** (`worker/job-retry.ts`): erro da execução (login que não abriu, busca que não terminou,
+  exceção como falha de banco), resultado com `layout_suspect`, ou serviços que não puderam ser abertos
+  (`service_detail_failed`). **Não** repete login rejeitado ("Login no Porto falhou…", já são 2 tentativas
+  por execução e repetir senha errada trava a conta) nem credenciais ausentes.
+- **Quanto**: 3 tentativas no total, com 5 e 15 minutos de espera. **No NextRotta** (`worker/porto-queue.ts`)
+  cada tentativa pega a trava do Porto da organização e um navegador **por tentativa**: a espera entre elas
+  não segura nem a trava nem navegador, e a nova tentativa entra no fim da fila (FIFO), atrás de quem já
+  esperava — nunca fura a vez das outras organizações. Cada tentativa gera sua linha no histórico.
+- **Alerta**: só depois da última tentativa, informando quantas foram feitas ("Já foram feitas N tentativas
+  automáticas."). Mudança de tela continua sendo um alerta único ao dono, depois das tentativas.
+- **Reinício do worker**: uma execução do dia que terminou em `error` ou ficou `running` (worker parado no
+  meio, por exemplo num deploy) **não** conta como feita; roda de novo enquanto a janela de recuperação
+  depois do horário configurado ainda estiver aberta.
+- **Login** (`openLoginPage`): se o `networkidle` não chega em 30s mas o campo `#cpf` já está visível,
+  segue em frente; se a página não abriu, lança "Não foi possível abrir a página de login do Porto.".
+- **Busca de serviços** (`runServiceSearch`): espera `domcontentloaded` por até 60 s. Estouro vira "A busca
+  de serviços do Porto não terminou em tempo hábil. Tente novamente." e resposta ausente ou não-OK vira "A
+  busca de serviços do Porto falhou (HTTP …). Tente novamente." — nenhum dos dois é classificado como
+  mudança de layout (`isPortoLayoutError`).
+
+Testes (`PW_CHANNEL=chrome` usa o Chrome instalado quando o Chromium do worker não está):
+`node scripts/test-porto-retry.cjs` (regras), `scripts/test-porto-queue-retry.cjs` (retentativa na fila
+com várias organizações), `scripts/test-porto-laudo.cjs` (prazo do laudo, configurações, dia do "Fim do
+expediente"), `scripts/test-porto-login.cjs` (~40s) e `scripts/test-porto-service-search.cjs` (~25s).

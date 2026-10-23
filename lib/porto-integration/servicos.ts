@@ -101,10 +101,24 @@ async function runServiceSearch(page: Page, range: PortoDateRange): Promise<Fram
     await frame.fill('input[name="dataInicialInputDate"]', brStart);
     await frame.fill('input[name="dataFinalInputDate"]', brEnd);
 
-    await Promise.all([
-      frame.waitForNavigation({ waitUntil: 'networkidle', timeout: 20000 }).catch(() => null),
+    // A month-to-date search can take longer than 20s. Never read the old search form
+    // after a navigation timeout: its date inputs already cover the request, but it has
+    // no result rows yet, which used to produce a false "portal changed" warning.
+    // DOMContentLoaded is enough for this server-rendered table; unrelated background
+    // requests must not hold up the search. A timeout is a search failure, not a layout
+    // change (isPortoLayoutError otherwise classifies Playwright TimeoutError as one).
+    const [searchResponse] = await Promise.all([
+      frame.waitForNavigation({ waitUntil: 'domcontentloaded', timeout: 60000 }).catch((error: unknown) => {
+        if (error instanceof Error && error.name === 'TimeoutError') {
+          throw new Error('A busca de serviços do Porto não terminou em tempo hábil. Tente novamente.', { cause: error });
+        }
+        throw error;
+      }),
       frame.locator('input[name="pesquisar"]').click(),
     ]);
+    if (!searchResponse || !searchResponse.ok()) {
+      throw new Error(`A busca de serviços do Porto falhou (HTTP ${searchResponse?.status() ?? 'sem resposta'}). Tente novamente.`);
+    }
 
     used = await frame.evaluate(() => ({
       start: (document.querySelector('input[name="dataInicialInputDate"]') as HTMLInputElement | null)?.value ?? '',
