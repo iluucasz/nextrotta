@@ -12,8 +12,10 @@ import { useAppSession } from '@/hooks/use-app-session';
 import { resetOrganizationSettingsCache } from '@/hooks/use-organization-settings';
 import {
   DEFAULT_ORGANIZATION_SETTINGS,
+  PORTO_LAUDO_PENDING_MARKER,
   PORTO_WARNING_MARKER,
   buildPortoWarningNote,
+  endOfWorkDayMinutes,
   normalizeOrganizationSettings,
   overtimeMultiplierFromPercent,
   overtimePercentFromMultiplier,
@@ -34,6 +36,7 @@ type NumericKey =
   | 'portoMaxShiftHours'
   | 'portoNextMonthLookaheadDays'
   | 'portoFullDayOffPercent'
+  | 'portoLaudoGraceHours'
   | 'financeDueSoonDays';
 
 type TimeKey = 'defaultShiftStart' | 'defaultShiftEnd' | 'portoHoursImportTime' | 'portoScheduleImportTime';
@@ -81,6 +84,7 @@ function toForm(settings: OrganizationSettings): FormState {
     portoMaxShiftHours: formatNumber(settings.portoMaxShiftHours),
     portoNextMonthLookaheadDays: String(settings.portoNextMonthLookaheadDays),
     portoFullDayOffPercent: formatNumber(settings.portoFullDayOffPercent),
+    portoLaudoGraceHours: formatNumber(settings.portoLaudoGraceHours),
     financeDueSoonDays: String(settings.financeDueSoonDays),
     defaultShiftStart: settings.defaultShiftStart,
     defaultShiftEnd: settings.defaultShiftEnd,
@@ -119,6 +123,7 @@ function toPayload(form: FormState) {
     portoMaxShiftHours: number('portoMaxShiftHours'),
     portoNextMonthLookaheadDays: number('portoNextMonthLookaheadDays'),
     portoFullDayOffPercent: number('portoFullDayOffPercent'),
+    portoLaudoGraceHours: number('portoLaudoGraceHours'),
     portoUseLaudoConclusion: form.portoUseLaudoConclusion,
     portoWarningEnabled: form.portoWarningEnabled,
     portoWarningText: form.portoWarningText,
@@ -288,6 +293,14 @@ export default function ConfiguracoesPage() {
   }
 
   const warningPreview = buildPortoWarningNote(form.portoWarningText || '…', '6054881/26');
+  // Before today's work is over, "Fim do expediente" reports the previous day (see endOfWorkDayMinutes).
+  const endOfDay = /^\d{2}:\d{2}$/.test(form.defaultShiftEnd) ? endOfWorkDayMinutes({ defaultShiftEnd: form.defaultShiftEnd }) : null;
+  const endOfDayLabel = endOfDay === null ? '' : `${String(Math.floor(endOfDay / 60)).padStart(2, '0')}:${String(endOfDay % 60).padStart(2, '0')}`;
+  const hoursRunBeforeEndOfDay =
+    endOfDay !== null && /^\d{2}:\d{2}$/.test(form.portoHoursImportTime) && Number(form.portoHoursImportTime.slice(0, 2)) * 60 + Number(form.portoHoursImportTime.slice(3, 5)) < endOfDay;
+  const hoursTimeHint = hoursRunBeforeEndOfDay
+    ? `Horário de Brasília em que a importação entra na fila do robô. Antes das ${endOfDayLabel} (2h após o fim do turno padrão) o dia ainda não acabou: a mensagem de fim de expediente sai com o dia anterior, e o dia de hoje é completado na próxima execução.`
+    : 'Horário de Brasília em que a importação entra na fila do robô (pode começar alguns minutos depois, se houver outras empresas na frente). Ao terminar, sai a mensagem de fim de expediente. Pode ser qualquer horário: o dia de hoje é sempre conferido de novo na próxima execução.';
 
   return (
     <AppShell role="admin" userName={user.name || user.email}>
@@ -367,9 +380,9 @@ export default function ConfiguracoesPage() {
           description="Regras da importação automática de horas e escala do Portal do Prestador. As credenciais e o liga/desliga da automação ficam em Config. Porto."
         >
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            <TimeField id="porto-hours-time" label="Importação de horas" hint="Horário de Brasília em que a importação entra na fila do robô (pode começar alguns minutos depois, se houver outras empresas na frente). Ao terminar, sai a mensagem de fim de expediente." value={form.portoHoursImportTime} onChange={(value) => update('portoHoursImportTime', value)} />
+            <TimeField id="porto-hours-time" label="Importação de horas" hint={hoursTimeHint} value={form.portoHoursImportTime} onChange={(value) => update('portoHoursImportTime', value)} />
             <TimeField id="porto-schedule-time" label="Importação da escala" hint="A escala é importada logo depois das horas, de hoje até o fim do mês. Este horário só vale quando a importação de horas não rodou." value={form.portoScheduleImportTime} onChange={(value) => update('portoScheduleImportTime', value)} />
-            <NumberField id="porto-reprocess" label="Dias reprocessados" unit="dias" hint="Além de hoje, quantos dias para trás são recalculados em toda execução (1 = ontem e hoje)." value={form.portoReprocessDays} onChange={(value) => update('portoReprocessDays', value)} />
+            <NumberField id="porto-reprocess" label="Dias reprocessados" unit="dias" hint="Além de hoje, quantos dias para trás são recalculados em toda execução (mínimo 1 = ontem e hoje). Dias manuais e com advertência nunca são recalculados." value={form.portoReprocessDays} onChange={(value) => update('portoReprocessDays', value)} />
             <NumberField id="porto-max-hours" label="Máximo de horas por dia" unit="horas" hint="Um dia calculado acima disso é rejeitado como inválido." value={form.portoMaxShiftHours} onChange={(value) => update('portoMaxShiftHours', value)} />
             <NumberField id="porto-lookahead" label="Escala do mês seguinte" unit="dias" hint="Nos últimos N dias do mês também importa o mês seguinte, se já estiver publicado (0 = não importa)." value={form.portoNextMonthLookaheadDays} onChange={(value) => update('portoNextMonthLookaheadDays', value)} />
             <NumberField id="porto-day-off" label="Folga integral a partir de" unit="%" hint="Quanto do turno uma indisponibilidade precisa cobrir para o dia contar como folga." value={form.portoFullDayOffPercent} onChange={(value) => update('portoFullDayOffPercent', value)} />
@@ -425,6 +438,16 @@ export default function ConfiguracoesPage() {
             <p className="text-xs text-muted-foreground">
               Exemplo na observação: <span className="font-medium text-foreground">{warningPreview}</span>
             </p>
+            <div className="sm:max-w-xs">
+              <NumberField
+                id="porto-laudo-grace"
+                label="Prazo para preencher o laudo"
+                unit="horas"
+                hint={`Contado do Concluído. Se o robô passar antes, o dia fica como "${PORTO_LAUDO_PENDING_MARKER}" e é conferido de novo na próxima execução; a advertência só é dada se o prazo vencer sem laudo. 0 = advertência na hora.`}
+                value={form.portoLaudoGraceHours}
+                onChange={(value) => update('portoLaudoGraceHours', value)}
+              />
+            </div>
           </div>
         </DataPanel>
 

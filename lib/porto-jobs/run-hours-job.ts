@@ -5,10 +5,11 @@ import { PortoLoginError } from '../porto-integration/login';
 import { listSocorristas } from '../porto-integration/socorristas';
 import { getServicoEndTime, searchServicosByDateRange, type PortoServiceEndTime, type PortoServiceRow } from '../porto-integration/servicos';
 import { resolveTechnicianByQra } from '../porto-integration/technician-match';
+import { formatBrasiliaDateTime, laudoGraceWindow } from '../porto-laudo';
 import { isPortoLayoutError } from '../porto-layout';
 import { finishSyncLog, getPortoConfig, recordHoursImportResult, startSyncLog } from '../porto-sync-log';
 import { sql } from '../db';
-import { buildPortoWarningNote, netOfDailyBreak } from '../organization-settings';
+import { PORTO_LAUDO_PENDING_MARKER, buildPortoWarningNote, netOfDailyBreak } from '../organization-settings';
 import { getOrganizationSettings } from '../organization-settings-store';
 import { checkLimit } from '../billing/entitlements';
 import {
@@ -16,6 +17,8 @@ import {
   getExistingPortoImportedDates,
   getIsoWeekNumber,
   getManualWorkHourDates,
+  getOldestPendingLaudoDate,
+  getPendingLaudoDates,
   getPortoWarningDates,
   getStoredPlannedTimes,
   type WorkHourEntry,
@@ -27,6 +30,8 @@ import type { Technician } from '../types';
 const SEARCH_CHUNK_DAYS = 15; // matches the site's own client-side range cap (see servicos.ts)
 // How many of the day's last concluded services (by Hora Prev.) are opened to find the end of work.
 const END_CANDIDATE_SERVICES = 3;
+// How far back an unattended run reaches for days still waiting for their laudo.
+const PENDING_LAUDO_LOOKBACK_DAYS = 14;
 
 function horaPrevMinutes(service: PortoServiceRow): number {
   return /^\d{1,2}:\d{2}$/.test(service.horaAtendimento) ? timeToMinutes(service.horaAtendimento) : -1;
@@ -231,7 +236,13 @@ export async function runHoursJob(options: HoursJobOptions): Promise<HoursJobRes
       // month's last day, which otherwise never got the reprocess every other day gets below.
       const monthStartKey = getMonthStartKey();
       const yesterdayKey = addDaysToKey(todayKey, -1);
-      const rangeStartKey = options.dateRange?.startDateKey ?? (yesterdayKey < monthStartKey ? yesterdayKey : monthStartKey);
+      let rangeStartKey = options.dateRange?.startDateKey ?? (yesterdayKey < monthStartKey ? yesterdayKey : monthStartKey);
+      // A day still waiting for its laudo must be finished even when it falls before this range
+      // (e.g. pending on the 30th, next run on the 1st).
+      if (!options.dateRange) {
+        const oldestPending = await getOldestPendingLaudoDate(options.organizationId, addDaysToKey(todayKey, -PENDING_LAUDO_LOOKBACK_DAYS));
+        if (oldestPending && oldestPending < rangeStartKey) rangeStartKey = oldestPending;
+      }
 
       const socorristas = await listSocorristas(page);
       if (!socorristas.length) {
@@ -302,11 +313,18 @@ export async function runHoursJob(options: HoursJobOptions): Promise<HoursJobRes
       // discrepancy. Force a reprocess of the last two calendar days regardless of the "already
       // imported" dedup so each day's previsto self-corrects the next time it's swept, once
       // Porto's escala has caught up, instead of being stuck forever with the same-day fallback.
-      const reprocessWindowStart = addDaysToKey(todayKey, -settings.portoReprocessDays);
+      // At least yesterday: a run can happen before the day is over (the time is configurable), so
+      // today's partial day must always be finished by the next run.
+      const reprocessWindowStart = addDaysToKey(todayKey, -Math.max(1, settings.portoReprocessDays));
       for (const key of Array.from(existingDates)) {
         if (key.slice(-10) >= reprocessWindowStart) {
           existingDates.delete(key);
         }
+      }
+      // Days waiting for their laudo are recomputed every run until it's filled in or the grace
+      // period ends, whatever the reprocess window.
+      for (const key of await getPendingLaudoDates(options.organizationId, technicianIds, rangeStartKey, todayKey)) {
+        existingDates.delete(key);
       }
 
       // One search per 15-day chunk covers the whole month-to-date, instead of one per day.
@@ -622,7 +640,17 @@ export async function runHoursJob(options: HoursJobOptions): Promise<HoursJobRes
           // Only a magnifier found and disabled is the technician's fault. `not_found`/`failed` mean
           // we couldn't read the laudo — logged above, never turned into a warning. The warning
           // itself can be switched off in Configurações (the end still comes from "Concluído").
-          const laudoMissing = endInfo.laudo === 'unavailable' && settings.portoWarningEnabled;
+          // The technician gets `portoLaudoGraceHours` after "Concluído" to fill it in: a run
+          // inside that window marks the day pending instead of giving a warning that's never undone,
+          // so the configured import time doesn't decide who gets warned.
+          const laudoUnavailable = endInfo.laudo === 'unavailable' && settings.portoWarningEnabled;
+          const { graceEndsAt, pending } = laudoGraceWindow({
+            endDate: endInfo.endDate ?? dateKey.split('-').reverse().join('/'),
+            workEnd,
+            graceHours: settings.portoLaudoGraceHours,
+          });
+          const laudoPending = laudoUnavailable && pending;
+          const laudoMissing = laudoUnavailable && !laudoPending;
 
           // Real start of the day's work: the earliest "Hora Prevista" (cap_horaAtendimento)
           // among the day's concluded services — re-validated live (05/10/2026) against the
@@ -661,9 +689,12 @@ export async function runHoursJob(options: HoursJobOptions): Promise<HoursJobRes
           }
 
           // The fixed "ADVERTÊNCIA:" marker is what getPortoWarningDates keys on — never recompute.
+          // "LAUDO PENDENTE:" is what getPendingLaudoDates keys on — recompute every run.
           const notes = laudoMissing
             ? `Importado automaticamente do Porto Seguro. ${buildPortoWarningNote(settings.portoWarningText, serviceCode)}`
-            : 'Importado automaticamente do Porto Seguro.';
+            : laudoPending
+              ? `Importado automaticamente do Porto Seguro. ${PORTO_LAUDO_PENDING_MARKER} serviço ${serviceCode} concluído sem laudo; prazo para preencher até ${formatBrasiliaDateTime(graceEndsAt)}.`
+              : 'Importado automaticamente do Porto Seguro.';
 
           await recordDay(
             qra,
@@ -677,7 +708,15 @@ export async function runHoursJob(options: HoursJobOptions): Promise<HoursJobRes
               attendance_status: 'worked',
               notes,
             }),
-            { start: actualStart, end: workEnd, endSource: endInfo.endSource, service: serviceCode, laudo: endInfo.laudo, warning: laudoMissing || undefined },
+            {
+              start: actualStart,
+              end: workEnd,
+              endSource: endInfo.endSource,
+              service: serviceCode,
+              laudo: endInfo.laudo,
+              warning: laudoMissing || undefined,
+              laudoPendingUntil: laudoPending ? graceEndsAt.toISOString() : undefined,
+            },
           );
         }
       }

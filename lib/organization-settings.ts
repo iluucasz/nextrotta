@@ -42,7 +42,11 @@ export type OrganizationSettings = {
   /** "HH:MM", Brasília time. */
   portoHoursImportTime: string;
   portoScheduleImportTime: string;
-  /** Days before today that every run recomputes (1 = yesterday and today). */
+  /**
+   * Days before today that every run recomputes (1 = yesterday and today). At least 1: a run can
+   * happen before the day is over (any time can be configured), so today's partial day must be
+   * finished by the next run.
+   */
   portoReprocessDays: number;
   /** A computed day above this many hours is rejected as implausible. */
   portoMaxShiftHours: number;
@@ -54,6 +58,12 @@ export type OrganizationSettings = {
   portoUseLaudoConclusion: boolean;
   /** Flag the day when the last service's laudo wasn't filled in. */
   portoWarningEnabled: boolean;
+  /**
+   * Hours after the service's "Concluído" the technician has to fill in the laudo. A run inside
+   * that window records the day as "LAUDO PENDENTE" and recomputes it next time, instead of
+   * giving a warning that would never be undone — so the import time never decides the warning.
+   */
+  portoLaudoGraceHours: number;
   /** Text after the fixed "ADVERTÊNCIA:" marker. `{servico}` = the service code. */
   portoWarningText: string;
   /** Record days whose services were all cancelled as "Serviço cancelado". */
@@ -70,6 +80,22 @@ export type OrganizationSettings = {
 
 /** Fixed marker the hours job and the "never recompute a warned day" rule look for. Never editable. */
 export const PORTO_WARNING_MARKER = 'ADVERTÊNCIA:';
+
+/** Marks a day whose laudo is still within its grace period: the hours job recomputes it next run. */
+export const PORTO_LAUDO_PENDING_MARKER = 'LAUDO PENDENTE:';
+
+/**
+ * Minutes after the default shift end before a day counts as over for "Fim do expediente": an
+ * import (or the message's own time) earlier than that reports the previous day, never a partial
+ * today — e.g. shift ending 18:00 → from 20:00 on it's today's message.
+ */
+export const END_OF_DAY_MARGIN_MINUTES = 120;
+
+/** From this time of day (minutes since midnight, Brasília) today's work counts as finished. */
+export function endOfWorkDayMinutes(settings: Pick<OrganizationSettings, 'defaultShiftEnd'>): number {
+  const [hours, minutes] = settings.defaultShiftEnd.split(':').map(Number);
+  return Math.min(23 * 60 + 59, hours * 60 + minutes + END_OF_DAY_MARGIN_MINUTES);
+}
 
 /**
  * A new organization's starting values. Salary, VA, VR and the award tiers start empty: they are the
@@ -100,6 +126,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   portoFullDayOffPercent: 90,
   portoUseLaudoConclusion: true,
   portoWarningEnabled: true,
+  portoLaudoGraceHours: 6,
   portoWarningText: 'laudo digital não preenchido no serviço {servico} — fim de jornada pelo horário de Concluído.',
   portoRecordCancelledDays: true,
   portoAlertPhone: '',
@@ -252,6 +279,7 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
     portoFullDayOffPercent: number('portoFullDayOffPercent'),
     portoUseLaudoConclusion: bool('portoUseLaudoConclusion'),
     portoWarningEnabled: bool('portoWarningEnabled'),
+    portoLaudoGraceHours: number('portoLaudoGraceHours'),
     portoWarningText: text('portoWarningText'),
     portoRecordCancelledDays: bool('portoRecordCancelledDays'),
     portoAlertPhone: text('portoAlertPhone'),
@@ -297,7 +325,9 @@ function validateField(key: keyof OrganizationSettings, value: unknown, all: Org
     case 'portoScheduleImportTime':
       return typeof value === 'string' && TIME_PATTERN.test(value) ? null : 'Os horários do robô do Porto precisam estar no formato HH:MM.';
     case 'portoReprocessDays':
-      return isInteger(n) && n >= 0 && n <= 7 ? null : 'Os dias reprocessados pelo robô devem ser um número inteiro entre 0 e 7.';
+      return isInteger(n) && n >= 1 && n <= 7 ? null : 'Os dias reprocessados pelo robô devem ser um número inteiro entre 1 e 7.';
+    case 'portoLaudoGraceHours':
+      return n >= 0 && n <= 48 ? null : 'O prazo para preencher o laudo deve ficar entre 0 e 48 horas.';
     case 'portoMaxShiftHours':
       return n >= 1 && n <= 24 ? null : 'O máximo de horas por dia deve ficar entre 1 e 24.';
     case 'portoNextMonthLookaheadDays':
@@ -368,7 +398,8 @@ const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
   serviceAwardTiers: 'Cada faixa de prêmio precisa de quantidade de OS e valor maiores que zero.',
   portoHoursImportTime: 'Os horários do robô do Porto precisam estar no formato HH:MM.',
   portoScheduleImportTime: 'Os horários do robô do Porto precisam estar no formato HH:MM.',
-  portoReprocessDays: 'Os dias reprocessados pelo robô devem ser um número inteiro entre 0 e 7.',
+  portoReprocessDays: 'Os dias reprocessados pelo robô devem ser um número inteiro entre 1 e 7.',
+  portoLaudoGraceHours: 'O prazo para preencher o laudo deve ficar entre 0 e 48 horas.',
   portoMaxShiftHours: 'O máximo de horas por dia deve ficar entre 1 e 24.',
   portoNextMonthLookaheadDays: 'A antecedência da escala do mês seguinte deve ser um número inteiro de 0 a 28 dias.',
   portoFullDayOffPercent: 'O percentual para contar folga integral deve ficar entre 50 e 100.',

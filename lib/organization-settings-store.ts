@@ -38,7 +38,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
       monthly_hours_warning_floor, fortnight_split_day, charge_cancelled_service_planned, service_award_tiers,
       porto_hours_import_time, porto_schedule_import_time, porto_reprocess_days, porto_max_shift_hours,
       porto_next_month_lookahead_days, porto_full_day_off_percent, porto_use_laudo_conclusion,
-      porto_warning_enabled, porto_warning_text, porto_record_cancelled_days, porto_alert_phone,
+      porto_warning_enabled, porto_laudo_grace_hours, porto_warning_text, porto_record_cancelled_days, porto_alert_phone,
       finance_due_soon_days, finance_categories, updated_at, updated_by
     )
     VALUES (
@@ -47,7 +47,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
       ${s.monthlyHoursWarningFloor}, ${s.fortnightSplitDay}, ${s.chargeCancelledServicePlanned}, ${JSON.stringify(s.serviceAwardTiers)}::jsonb,
       ${s.portoHoursImportTime}, ${s.portoScheduleImportTime}, ${s.portoReprocessDays}, ${s.portoMaxShiftHours},
       ${s.portoNextMonthLookaheadDays}, ${s.portoFullDayOffPercent}, ${s.portoUseLaudoConclusion},
-      ${s.portoWarningEnabled}, ${s.portoWarningText}, ${s.portoRecordCancelledDays}, ${s.portoAlertPhone},
+      ${s.portoWarningEnabled}, ${s.portoLaudoGraceHours}, ${s.portoWarningText}, ${s.portoRecordCancelledDays}, ${s.portoAlertPhone},
       ${s.financeDueSoonDays}, ${JSON.stringify(s.financeCategories)}::jsonb, NOW(), ${updatedBy}
     )
     ON CONFLICT (organization_id) DO UPDATE
@@ -72,6 +72,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
         porto_full_day_off_percent = EXCLUDED.porto_full_day_off_percent,
         porto_use_laudo_conclusion = EXCLUDED.porto_use_laudo_conclusion,
         porto_warning_enabled = EXCLUDED.porto_warning_enabled,
+        porto_laudo_grace_hours = EXCLUDED.porto_laudo_grace_hours,
         porto_warning_text = EXCLUDED.porto_warning_text,
         porto_record_cancelled_days = EXCLUDED.porto_record_cancelled_days,
         porto_alert_phone = EXCLUDED.porto_alert_phone,

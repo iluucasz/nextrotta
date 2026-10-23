@@ -1,4 +1,5 @@
 import { sql } from './db';
+import { PORTO_LAUDO_PENDING_MARKER } from './organization-settings';
 
 /**
  * `cancelled_service`: a day whose services were all cancelled (set by the Porto import, or by
@@ -185,6 +186,60 @@ export async function getPortoWarningDates(
   );
 
   return new Set(rows.map((row) => `${String(row.technician_id)}::${toDateKey(row.date)}`));
+}
+
+/**
+ * Porto-imported days still waiting for their laudo ("LAUDO PENDENTE" in the note): the hours job
+ * recomputes them every run, even outside the reprocess window, until the laudo is filled in or
+ * the grace period ends (then the warning applies).
+ */
+export async function getPendingLaudoDates(
+  organizationId: string,
+  technicianIds: string[],
+  startDate: string,
+  endDate: string,
+): Promise<Set<string>> {
+  if (!technicianIds.length) return new Set();
+
+  const rows = await sql.query(
+    `
+      SELECT s.technician_id, s.date
+      FROM schedule s
+      JOIN work_hours w
+        ON w.organization_id = s.organization_id
+       AND w.technician_id = s.technician_id
+       AND w.date = s.date
+       AND w.source = 'porto'
+       AND w.deleted_at IS NULL
+      WHERE s.organization_id = $1
+        AND s.notes LIKE $5
+        AND s.technician_id = ANY($2)
+        AND s.date >= $3
+        AND s.date <= $4
+        AND s.deleted_at IS NULL
+    `,
+    [organizationId, technicianIds, startDate, endDate, `%${PORTO_LAUDO_PENDING_MARKER}%`],
+  );
+
+  return new Set(rows.map((row) => `${String(row.technician_id)}::${toDateKey(row.date)}`));
+}
+
+/** The oldest pending-laudo day of the organization since `sinceDate`, so a run's range reaches back to it. */
+export async function getOldestPendingLaudoDate(organizationId: string, sinceDate: string): Promise<string | null> {
+  const rows = await sql`
+    SELECT MIN(s.date) AS date FROM schedule s
+    JOIN work_hours w
+      ON w.organization_id = s.organization_id
+     AND w.technician_id = s.technician_id
+     AND w.date = s.date
+     AND w.source = 'porto'
+     AND w.deleted_at IS NULL
+    WHERE s.organization_id = ${organizationId}
+      AND s.notes LIKE ${`%${PORTO_LAUDO_PENDING_MARKER}%`}
+      AND s.date >= ${sinceDate}
+      AND s.deleted_at IS NULL
+  `;
+  return rows[0]?.date ? toDateKey(rows[0].date) : null;
 }
 
 /** The "previsto" already recorded per "technicianId::date" (from the schedule note), when there is one. */
