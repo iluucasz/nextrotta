@@ -42,7 +42,7 @@ export async function POST(request: NextRequest, { params }: Params) {
         if (!technicianId) break;
         const sale = await retryPayment(organizationId, id, technicianId, { paymentMethod: body.paymentMethod }, actor);
         const delivery =
-          (sale.paymentMethod === 'pix' || sale.paymentMethod === 'card_link') && !sale.paymentError
+          sale.status === 'awaiting_payment' && (sale.paymentMethod === 'pix' || sale.paymentMethod === 'card_link') && !sale.paymentError
             ? await sendPaymentLink(organizationId, sale.id, technicianId, actor.id).catch(() => null)
             : null;
         return NextResponse.json({ sale, delivery });

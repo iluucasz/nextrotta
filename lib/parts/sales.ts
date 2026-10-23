@@ -396,6 +396,20 @@ export async function startPayment(organizationId: string, saleId: string, techn
 export async function retryPayment(organizationId: string, saleId: unknown, technicianId: string, input: { paymentMethod?: unknown }, actor: PartsActor) {
   const row = await loadSaleRow(organizationId, saleId, technicianId);
   if (row.status !== 'awaiting_payment') throw new PartsError('Esta venda não está aguardando pagamento.', 409);
+
+  // The customer may have paid the charge being replaced since the screen last looked: a paid order can't
+  // be canceled, so a new charge would orphan that payment (money received, sale still open). Same
+  // reasoning and scope as the check in cancelSale.
+  if (row.mp_order_id || row.payment_method === 'card_link') {
+    try {
+      const checked = await checkPayment(organizationId, row.id, technicianId);
+      if (checked.sale.status === 'paid') return checked.sale;
+    } catch (error) {
+      // Mercado Pago unreachable (or the charge never existed): go on and charge again.
+      console.warn('[parts] check before retry:', error instanceof Error ? error.message : error);
+    }
+  }
+
   if (input.paymentMethod !== undefined && input.paymentMethod !== row.payment_method) {
     const settings = await getPartsSettings(organizationId);
     if (!isPaymentMethod(input.paymentMethod) || !settings.paymentMethods.includes(input.paymentMethod)) {
@@ -704,23 +718,30 @@ export async function handleMercadoPagoNotification(input: { type: string | null
 
   if (type === 'payment') {
     if (!input.mpUserId) return null;
-    const account = (
-      await sql`SELECT organization_id, technician_id FROM mercadopago_accounts WHERE mp_user_id = ${input.mpUserId} AND disconnected_at IS NULL LIMIT 1`
-    )[0];
-    if (!account) return null;
-    const { token } = await getAccessToken(String(account.organization_id), String(account.technician_id));
-    const payment = await getPayment(token, input.dataId).catch((error) => {
-      if (error instanceof MercadoPagoError) return null;
-      throw error;
-    });
-    const reference = payment?.external_reference;
-    if (!reference || !isUuid(reference)) return null;
-    const sale = (
-      await sql`SELECT id FROM part_sales WHERE id = ${reference} AND organization_id = ${account.organization_id}`
-    )[0];
-    if (!sale) return null;
-    await checkPayment(String(account.organization_id), String(sale.id));
-    return String(sale.id);
+    // The same Mercado Pago account may be connected in more than one organization (a technician who works
+    // for two companies; mp_user_id is not unique), so every active connection is tried until one of them
+    // owns the sale named by the payment's external reference.
+    const accounts = await sql`
+      SELECT organization_id, technician_id FROM mercadopago_accounts
+      WHERE mp_user_id = ${input.mpUserId} AND disconnected_at IS NULL
+      ORDER BY connected_at DESC
+    `;
+    for (const account of accounts) {
+      const { token } = await getAccessToken(String(account.organization_id), String(account.technician_id));
+      const payment = await getPayment(token, input.dataId).catch((error) => {
+        if (error instanceof MercadoPagoError) return null;
+        throw error;
+      });
+      const reference = payment?.external_reference;
+      if (!reference || !isUuid(reference)) continue;
+      const sale = (
+        await sql`SELECT id FROM part_sales WHERE id = ${reference} AND organization_id = ${account.organization_id} AND technician_id = ${account.technician_id}`
+      )[0];
+      if (!sale) continue;
+      await checkPayment(String(account.organization_id), String(sale.id));
+      return String(sale.id);
+    }
+    return null;
   }
   return null;
 }
