@@ -12,7 +12,8 @@
  * busy (409), and after a short wait when every browser slot is taken.
  */
 
-type Holder = { name: string; startedAt: number; done: Promise<void> };
+/** `startedAt` is null while the holder still waits for a browser slot: it hasn't started running yet. */
+type Holder = { name: string; startedAt: number | null; done: Promise<void> };
 
 const organizationLocks = new Map<string, Holder>();
 
@@ -68,12 +69,13 @@ function releaseSlot() {
 
 function takeOrganizationLock(organizationId: string, name: string) {
   let release!: () => void;
-  const holder: Holder = { name, startedAt: Date.now(), done: new Promise<void>((resolve) => (release = resolve)) };
+  const holder: Holder = { name, startedAt: null, done: new Promise<void>((resolve) => (release = resolve)) };
   organizationLocks.set(organizationId, holder);
-  return () => {
+  const releaseLock = () => {
     if (organizationLocks.get(organizationId) === holder) organizationLocks.delete(organizationId);
     release();
   };
+  return { releaseLock, markStarted: () => void (holder.startedAt = Date.now()) };
 }
 
 /** How long an admin request waits for a free browser before being told to try again. */
@@ -89,11 +91,12 @@ export async function runWithPortoLock<T>(organizationId: string, name: string, 
   if (held) {
     throw new PortoBusyError(`Já existe uma execução do Porto em andamento (${held.name}). Tente de novo quando ela terminar.`);
   }
-  const releaseLock = takeOrganizationLock(organizationId, name);
+  const { releaseLock, markStarted } = takeOrganizationLock(organizationId, name);
   try {
     if (!(await acquireSlot(ADMIN_SLOT_WAIT_MS))) {
       throw new PortoBusyError('O robô do Porto está ocupado com as importações de outras empresas. Tente de novo em alguns minutos.');
     }
+    markStarted();
     try {
       return await fn();
     } finally {
@@ -109,9 +112,11 @@ export async function waitForPortoLock<T>(organizationId: string, name: string, 
   for (let held = organizationLocks.get(organizationId); held; held = organizationLocks.get(organizationId)) {
     await held.done;
   }
-  const releaseLock = takeOrganizationLock(organizationId, name);
+  const { releaseLock, markStarted } = takeOrganizationLock(organizationId, name);
   try {
     await acquireSlot();
+    // Only now does the run start: waiting for a browser behind other organizations isn't "running".
+    markStarted();
     try {
       return await fn();
     } finally {
@@ -122,12 +127,17 @@ export async function waitForPortoLock<T>(organizationId: string, name: string, 
   }
 }
 
-/** What each organization is running and for how long — for the stuck-run watchdog and the panel. */
-export function portoLockInfo(): Array<{ organizationId: string; name: string; heldForMs: number }> {
+/**
+ * What each organization is running and for how long — for the stuck-run watchdog and the panel.
+ * One still waiting for a browser slot is listed with `running: false` and `heldForMs: 0`, so the
+ * watchdog never calls a queued run stuck.
+ */
+export function portoLockInfo(): Array<{ organizationId: string; name: string; heldForMs: number; running: boolean }> {
   return Array.from(organizationLocks, ([organizationId, holder]) => ({
     organizationId,
     name: holder.name,
-    heldForMs: Date.now() - holder.startedAt,
+    heldForMs: holder.startedAt === null ? 0 : Date.now() - holder.startedAt,
+    running: holder.startedAt !== null,
   }));
 }
 

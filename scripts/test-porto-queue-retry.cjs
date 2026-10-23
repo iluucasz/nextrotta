@@ -14,7 +14,7 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(
   filename,
 );
 const { runWithRetries } = require('../worker/job-retry.ts');
-const { setMaxBrowsers, waitForPortoLock, runWithPortoLock, PortoBusyError } = require('../worker/porto-lock.ts');
+const { setMaxBrowsers, waitForPortoLock, runWithPortoLock, portoLockInfo, PortoBusyError } = require('../worker/porto-lock.ts');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -82,4 +82,26 @@ test('the pause between attempts holds neither the browser slot nor the organiza
     })(),
     PortoBusyError,
   );
+});
+
+test('organizations waiting for a browser are not "running", so the stuck-run watchdog ignores them', async () => {
+  setMaxBrowsers(2);
+  const releases = {};
+  const hold = (org) => waitForPortoLock(org, `horas ${org}`, () => new Promise((resolve) => (releases[org] = resolve)));
+  const [a, b, c] = [hold('F1'), hold('F2'), hold('F3')]; // 3 organizations, 2 browsers
+  await sleep(10);
+  const info = Object.fromEntries(portoLockInfo().map((item) => [item.organizationId, item]));
+  assert.equal(info.F1.running, true);
+  assert.equal(info.F2.running, true);
+  assert.equal(info.F3.running, false, 'F3 holds its own lock but is still queued');
+  assert.equal(info.F3.heldForMs, 0, 'a queued run never accumulates "held for" time');
+  releases.F1();
+  await a;
+  await sleep(10);
+  const after = Object.fromEntries(portoLockInfo().map((item) => [item.organizationId, item]));
+  assert.equal(after.F3.running, true, 'it starts running once a slot frees');
+  releases.F2();
+  releases.F3();
+  await Promise.all([b, c]);
+  assert.deepEqual(portoLockInfo().filter((item) => item.organizationId.startsWith('F')), []);
 });

@@ -56,12 +56,18 @@ function rotationKey(day: string, organizationId: string) {
   return createHash('sha1').update(`${day}:${organizationId}`).digest('hex');
 }
 
-/** On (re)start: what already ran today, so a restart right after the scheduled time doesn't repeat it. */
-async function loadLastRuns(today: string) {
+/**
+ * On (re)start: what already ran today, so a restart right after the scheduled time doesn't repeat it.
+ * The hours import only counts as done today when a finished automatic run started at or after the
+ * organization's configured time (an earlier one, e.g. before the time was changed, doesn't).
+ */
+export async function loadLastRuns(today: string) {
   const rows = await sql`
     SELECT organization_id, job_type,
            MAX(started_at) AS last_started,
-           MAX(to_char(started_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD')) AS last_day
+           MAX(to_char(started_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD')) AS last_day,
+           MAX(to_char(started_at AT TIME ZONE 'America/Sao_Paulo', 'HH24:MI'))
+             FILTER (WHERE to_char(started_at AT TIME ZONE 'America/Sao_Paulo', 'YYYY-MM-DD') = ${today}) AS last_time_today
     FROM porto_sync_log
     WHERE started_at > NOW() - INTERVAL '36 hours'
       AND COALESCE(run_trigger, 'auto') = 'auto'
@@ -72,7 +78,10 @@ async function loadLastRuns(today: string) {
   `;
   for (const row of rows) {
     const organizationId = String(row.organization_id);
-    if (row.job_type === 'hours' && row.last_day === today) lastHoursDay.set(organizationId, today);
+    if (row.job_type === 'hours' && row.last_day === today && row.last_time_today) {
+      const settings = await getOrganizationSettings(organizationId);
+      if (String(row.last_time_today) >= settings.portoHoursImportTime) lastHoursDay.set(organizationId, today);
+    }
     if (row.job_type === 'schedule') lastScheduleAt.set(organizationId, new Date(row.last_started as string).getTime());
   }
   loadedDay = today;
@@ -277,4 +286,9 @@ export function portoQueueSnapshot() {
     enqueuedAt: new Date(task.enqueuedAt).toISOString(),
     startedAt: task.startedAt ? new Date(task.startedAt).toISOString() : null,
   }));
+}
+
+/** The Brasília day of the organization's last automatic hours run known to this process (null = none today). */
+export function lastHoursRunDay(organizationId: string) {
+  return lastHoursDay.get(organizationId) ?? null;
 }

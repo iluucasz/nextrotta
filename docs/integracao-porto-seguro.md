@@ -452,6 +452,14 @@ dia combinado).
 - **Pedidos da tela** esperam até 20 s por um navegador livre; depois respondem 409 "o robô está
   ocupado com as importações de outras empresas".
 - **Falha isolada:** a falha de uma organização nunca para as outras.
+- **Esperar na fila não é "rodar":** a trava da organização é tomada antes de esperar um navegador livre, mas
+  o relógio da execução (`startedAt`, usado pelo alerta de "execução travada") só começa quando o navegador é
+  obtido (`portoLockInfo()` devolve `running: false` e `heldForMs: 0` para quem ainda espera). Com mais
+  organizações do que navegadores ninguém é anunciado como travado só por estar na fila.
+- **Reinício do worker** (`loadLastRuns`): as horas só contam como "já rodou hoje" se houve uma execução
+  **automática, terminada sem erro** (`status NOT IN ('error','running')`) que começou **no horário de horas
+  da organização ou depois**. Log `running` (deploy no meio da importação), erro, execução manual ou uma
+  anterior ao horário configurado não impedem a nova execução dentro da janela de recuperação.
 - **Plano:** organização suspensa ou sem o recurso `porto` não entra na fila; só as execuções que gravam
   (automáticas e "Rodar agora") contam no limite `portoRunsMonth` do plano; testes e execuções puladas não.
 - **Painel do dono:** `GET /api/platform/porto-queue` mostra navegadores ocupados, execuções em
