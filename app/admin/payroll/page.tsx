@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatCurrency, normalizeText, resolveCompetenceMonth } from '@/lib/formatters';
+import { brasiliaDateKey, formatCurrency, normalizeText, resolveCompetenceMonth } from '@/lib/formatters';
 import type { Discount, Payroll, Service, ServiceFortnight, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
@@ -388,7 +388,7 @@ export default function PayrollPage() {
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [query, setQuery] = useState('');
   const [openingTechnicianId, setOpeningTechnicianId] = useState('');
-  const [competenceMonth, setCompetenceMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [competenceMonth, setCompetenceMonth] = useState(brasiliaDateKey().slice(0, 7));
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
   const [selectedRow, setSelectedRow] = useState<PayrollRow | null>(null);

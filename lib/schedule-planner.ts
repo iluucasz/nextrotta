@@ -1,4 +1,9 @@
 import type { ScheduleStatus } from './types';
+import { brasiliaNow } from './whatsapp/dates';
+
+// Defaults mean Brasília's month/year: the server (UTC) is already in the next one from 21:00 on the last day.
+const currentBrasiliaMonth = () => Number(brasiliaNow().monthKey.slice(5, 7));
+const currentBrasiliaYear = () => Number(brasiliaNow().dateKey.slice(0, 4));
 
 export type SchedulePeriodMode = 'day' | 'week' | 'month' | 'year';
 export type ScheduleScopeMode = 'all' | 'selected';
@@ -131,7 +136,7 @@ function getReferenceDate(date: string | undefined, year: number, month?: number
     }
   }
 
-  const safeMonth = Math.min(Math.max(month ?? new Date().getMonth() + 1, 1), 12);
+  const safeMonth = Math.min(Math.max(month ?? currentBrasiliaMonth(), 1), 12);
   return new Date(Date.UTC(year, safeMonth - 1, 1));
 }
 
@@ -140,7 +145,7 @@ function formatDateKey(date: Date) {
 }
 
 export function getScheduleRange(periodMode: SchedulePeriodMode, year: number, month?: number, date?: string) {
-  const safeYear = Number.isFinite(year) ? year : new Date().getFullYear();
+  const safeYear = Number.isFinite(year) ? year : currentBrasiliaYear();
 
   if (periodMode === 'day') {
     const reference = getReferenceDate(date, safeYear, month);
@@ -173,7 +178,7 @@ export function getScheduleRange(periodMode: SchedulePeriodMode, year: number, m
     };
   }
 
-  const safeMonth = Math.min(Math.max(month ?? new Date().getMonth() + 1, 1), 12);
+  const safeMonth = Math.min(Math.max(month ?? currentBrasiliaMonth(), 1), 12);
   const start = new Date(Date.UTC(safeYear, safeMonth - 1, 1));
   const end = new Date(Date.UTC(safeYear, safeMonth, 0));
 

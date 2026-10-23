@@ -11,7 +11,7 @@ import { MetricCard } from '@/components/metric-card';
 import { PageHeader } from '@/components/page-header';
 import { ProgressGauge } from '@/components/progress-gauge';
 import { StatusBadge } from '@/components/status-badge';
-import { formatCurrency, formatDate, formatHours, formatNumber, formatTime, formatTimeRange, monthKeyFromDate, resolveCompetenceMonth } from '@/lib/formatters';
+import { brasiliaDateKey, formatCurrency, formatDate, formatHours, formatNumber, formatTime, formatTimeRange, monthKeyFromDate, resolveCompetenceMonth } from '@/lib/formatters';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { fortnightForDay } from '@/lib/organization-settings';
 import type { Payroll, Schedule, Service, ServiceFortnight, WorkHours } from '@/lib/types';
@@ -21,7 +21,7 @@ import { resolveAllowedMonth } from '@/lib/technician-visibility';
 import { CHART_COLORS as chartColors } from '@/lib/chart-theme';
 
 const SERVICES_PAGE_SIZE = 12;
-const defaultCompetenceMonth = new Date().toISOString().slice(0, 7);
+const defaultCompetenceMonth = brasiliaDateKey().slice(0, 7);
 const monthNames = [
   'Janeiro',
   'Fevereiro',
@@ -256,7 +256,7 @@ export default function TechnicianDashboard() {
   const q2ServicesCount = monthlyServices.filter((service) => getServicePeriod(service, splitDay) === 'Q2').length;
   const currentPayroll = payroll.find((item) => resolveCompetenceMonth(item.competence_month) === competenceMonth);
   const nextSchedule = useMemo(() => {
-    const todayKey = getDateKey(new Date());
+    const todayKey = brasiliaDateKey();
 
     return schedule
       .filter((item) => item.status !== 'cancelled' && getDateKey(item.date) >= todayKey)

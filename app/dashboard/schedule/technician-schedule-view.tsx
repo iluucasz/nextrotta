@@ -9,7 +9,7 @@ import { LoadingShell } from '@/components/page-skeleton';
 import { MetricCard } from '@/components/metric-card';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
-import { formatDate, formatTime, formatTimeRange } from '@/lib/formatters';
+import { brasiliaDateKey, formatDate, formatTime, formatTimeRange } from '@/lib/formatters';
 import { enumerateDateKeys, normalizeDateKey } from '@/lib/schedule-planner';
 import type { Schedule } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
@@ -246,9 +246,9 @@ export function TechnicianScheduleViewPage() {
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
   const [calendarPeriodMode, setCalendarPeriodMode] = useState<PeriodMode>('month');
-  const [calendarSelectedMonth, setCalendarSelectedMonth] = useState(() => getMonthValue(new Date().toISOString()));
+  const [calendarSelectedMonth, setCalendarSelectedMonth] = useState(() => getMonthValue(brasiliaDateKey()));
   const [listPeriodMode, setListPeriodMode] = useState<PeriodMode>('month');
-  const [listSelectedMonth, setListSelectedMonth] = useState(() => getMonthValue(new Date().toISOString()));
+  const [listSelectedMonth, setListSelectedMonth] = useState(() => getMonthValue(brasiliaDateKey()));
 
   useEffect(() => {
     let mounted = true;
@@ -298,7 +298,7 @@ export function TechnicianScheduleViewPage() {
       .sort((left, right) => normalizeDateKey(left.date).localeCompare(normalizeDateKey(right.date)));
   }, [allowedMonth, schedule]);
 
-  const todayKey = normalizeDateKey(new Date().toISOString());
+  const todayKey = brasiliaDateKey();
   const currentMonthValue = getMonthValue(todayKey);
   const referenceDateKey = useMemo(() => {
     const upcoming = sortedSchedule.find((item) => normalizeDateKey(item.date) >= todayKey && item.status !== 'cancelled');

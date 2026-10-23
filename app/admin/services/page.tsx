@@ -27,14 +27,14 @@ import {
 import { Progress } from '@/components/ui/progress';
 import { Spinner } from '@/components/ui/spinner';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { formatCurrency, formatDate, formatTime, normalizeText, parseMoney, resolveCompetenceMonth, yearFromCompetence } from '@/lib/formatters';
+import { brasiliaDateKey, formatCurrency, formatDate, formatTime, normalizeText, parseMoney, resolveCompetenceMonth, yearFromCompetence } from '@/lib/formatters';
 import type { Service, ServiceFortnight, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 
 const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
 const serviceFortnightOptions: ServiceFortnight[] = ['Q1', 'Q2'];
 const importStageOrder = ['prepare', 'upload', 'process', 'finalize'] as const;
-const defaultCompetenceMonth = new Date().toISOString().slice(0, 7);
+const defaultCompetenceMonth = brasiliaDateKey().slice(0, 7);
 
 type ImportStageKey = (typeof importStageOrder)[number];
 type BulkDeletePeriod = 'monthly' | ServiceFortnight;
@@ -97,7 +97,7 @@ const initialFormData = {
   technician_id: '',
   service_type: '',
   value: 0,
-  date_performed: new Date().toISOString().split('T')[0],
+  date_performed: brasiliaDateKey(),
   time_performed: new Date().toTimeString().slice(0, 5),
   competence_month: defaultCompetenceMonth,
   fortnight_period: '' as '' | ServiceFortnight,

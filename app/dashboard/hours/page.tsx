@@ -9,14 +9,14 @@ import { LoadingShell } from '@/components/page-skeleton';
 import { MetricCard } from '@/components/metric-card';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
-import { formatDate, formatHours, formatTime, formatTimeRange, monthKeyFromDate, normalizeText, resolveCompetenceMonth } from '@/lib/formatters';
+import { brasiliaDateKey, formatDate, formatHours, formatTime, formatTimeRange, monthKeyFromDate, normalizeText, resolveCompetenceMonth } from '@/lib/formatters';
 import type { Payroll, Schedule, WorkHours } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { useTechnicianVisibility } from '@/hooks/use-technician-visibility';
 import { resolveAllowedMonth } from '@/lib/technician-visibility';
 
-const defaultCompetenceMonth = new Date().toISOString().slice(0, 7);
+const defaultCompetenceMonth = brasiliaDateKey().slice(0, 7);
 const monthNames = [
   'Janeiro',
   'Fevereiro',

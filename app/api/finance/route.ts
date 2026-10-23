@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { brasiliaDateKey } from '@/lib/formatters';
 import type { FinancialEntryStatus, FinancialEntryType } from '@/lib/types';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
 
@@ -32,8 +33,8 @@ function roundCurrency(value: number | string | null | undefined) {
 }
 
 function getTodayKey() {
-  const date = new Date();
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  // Brasília, not the server's UTC clock: a payment entered at 22:00 must not get tomorrow's date.
+  return brasiliaDateKey();
 }
 
 function normalizeDateValue(value: unknown) {

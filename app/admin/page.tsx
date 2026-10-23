@@ -22,12 +22,13 @@ import {
   formatNumber,
   normalizeText,
   resolveCompetenceMonth,
+  brasiliaDateKey,
 } from '@/lib/formatters';
 import type { Payroll, Service, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import './overview.css';
 
-const defaultCompetenceMonth = new Date().toISOString().slice(0, 7);
+const defaultCompetenceMonth = brasiliaDateKey().slice(0, 7);
 const monthNames = [
   'Janeiro',
   'Fevereiro',

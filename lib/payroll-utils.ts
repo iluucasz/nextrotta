@@ -2,6 +2,15 @@ import { sql } from './db';
 import { calculateServiceAward, valueOrDefault, type OrganizationSettings } from './organization-settings';
 import { getOrganizationSettings } from './organization-settings-store';
 
+/**
+ * "YYYY-MM" of the month before `competenceMonth`. Pure arithmetic: new Date("YYYY-MM-01") + setMonth
+ * depends on the machine's zone (in Brasília 2026-10 became 2026-08).
+ */
+export function previousCompetenceMonth(competenceMonth: string): string {
+  const [year, month] = competenceMonth.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7);
+}
+
 function roundCurrency(value: number | string | null | undefined): number {
   const numericValue = Number(value ?? 0);
   if (!Number.isFinite(numericValue)) return 0;
@@ -260,9 +269,7 @@ export async function calculateHourBank(
   const extraHours = Math.max(0, totalHours - monthlyHours);
 
   // Get current bank balance
-  const previousMonth = new Date(competenceMonth + '-01');
-  previousMonth.setMonth(previousMonth.getMonth() - 1);
-  const previousMonthStr = previousMonth.toISOString().slice(0, 7);
+  const previousMonthStr = previousCompetenceMonth(competenceMonth);
 
   const previousPayroll = await sql`
     SELECT hour_bank_balance

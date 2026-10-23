@@ -44,12 +44,30 @@ export function formatTimeRange(startTime: string | null | undefined, endTime: s
   return `${formatTime(startTime)} - ${formatTime(endTime)}`;
 }
 
+// A DATE column reaches the browser as an instant at midnight UTC ("2026-10-13T00:00:00.000Z",
+// the server runs in UTC). It is a calendar day, not a moment: converting it to the browser's
+// zone (Brasília, UTC-3) showed the day before.
+const DATE_AT_UTC_MIDNIGHT = /^(\d{4})-(\d{2})-(\d{2})T00:00:00(?:\.0+)?Z$/;
+
+/** Today's "YYYY-MM-DD" in Brasília — `new Date().toISOString()` is UTC and flips to tomorrow at 21:00. */
+export function brasiliaDateKey(date: Date = new Date()): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date);
+}
+
 export function formatDate(value: string | Date | null | undefined): string {
   if (!value) return '-';
 
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day).toLocaleDateString('pt-BR');
+  if (typeof value === 'string') {
+    const calendarDay = value.match(/^(\d{4})-(\d{2})-(\d{2})$/) ?? value.match(DATE_AT_UTC_MIDNIGHT);
+    if (calendarDay) {
+      const [year, month, day] = calendarDay.slice(1).map(Number);
+      return new Date(year, month - 1, day).toLocaleDateString('pt-BR');
+    }
   }
 
   const date = value instanceof Date ? value : new Date(value);
