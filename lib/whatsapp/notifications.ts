@@ -44,6 +44,27 @@ const PAUSE_BETWEEN_SENDS_MS = 350;
 const CATCH_UP_WINDOW_MINUTES = 180;
 
 /**
+ * Whether any enabled scheduled notification of this configuration is inside the first
+ * `windowMinutes` after its time (same day / day-of-month rules as runDueNotifications). The worker
+ * uses it on a cached configuration to touch the database only when something may be due.
+ */
+export function hasScheduledNotificationInWindow(
+  config: Pick<WhatsAppConfig, 'enabled' | 'notifications'>,
+  windowMinutes = CATCH_UP_WINDOW_MINUTES,
+  now = new Date(),
+): boolean {
+  if (!config.enabled) return false;
+  const current = brasiliaNow(now);
+  return NOTIFICATION_TYPES.some((type) => {
+    const setting = config.notifications[type];
+    if (!SCHEDULED_RUNNERS[type] || !setting.enabled) return false;
+    if (NOTIFICATION_DEFINITIONS[type].trigger === 'monthly' && current.day !== setting.dayOfMonth) return false;
+    const scheduledAt = timeToMinutes(setting.time);
+    return scheduledAt !== null && current.minutes >= scheduledAt && current.minutes < scheduledAt + windowMinutes;
+  });
+}
+
+/**
  * The work day "Fim do expediente" reports at `now`: today once it's over (the default shift end
  * plus a margin, see endOfWorkDayMinutes), otherwise yesterday. The import time is configurable, so
  * a run at 00:30 or 10:00 must talk about the finished day, never a partial today.

@@ -3,6 +3,7 @@ import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { encryptPortoPassword } from '@/lib/porto-crypto';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
+import { notifyWorkerRefresh } from '@/lib/porto-worker-client';
 
 export const runtime = 'nodejs';
 
@@ -116,6 +117,7 @@ export async function PUT(request: NextRequest) {
       RETURNING *
     `;
 
+    await notifyWorkerRefresh();
     return NextResponse.json({ config: serializeConfigRow(rows[0] as Record<string, unknown>) });
   } catch (error) {
     console.error('[porto-config] Update config error:', error);

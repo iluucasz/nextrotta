@@ -1,5 +1,5 @@
 import { organizationHasFeature } from './billing/entitlements';
-import { sql } from './db';
+import { checkWorkerHealth } from './worker-health';
 import { evolutionServer } from './whatsapp/store';
 
 /**
@@ -17,16 +17,12 @@ export interface SystemStatus {
 
 const CACHE_MS = 60_000;
 const TIMEOUT_MS = 6_000;
-/** The worker records a heartbeat every minute; three missed ones mean it's down. */
-const HEARTBEAT_STALE_MS = 3 * 60_000;
 
 let cached: { at: number; promise: Promise<Omit<SystemStatus, 'checkedAt'> & { checkedAt: string }> } | null = null;
 
-async function checkPortoWorker(): Promise<ModuleState> {
-  if (!process.env.PORTO_WORKER_URL || !process.env.PORTO_WORKER_SECRET) return 'not_configured';
-  const rows = await sql`SELECT MAX(last_seen_at) AS last FROM worker_heartbeats`;
-  const last = rows[0]?.last ? new Date(rows[0].last as string).getTime() : 0;
-  return Date.now() - last < HEARTBEAT_STALE_MS ? 'ok' : 'down';
+/** Asks the worker itself (no database): this runs on every admin's status poll. */
+function checkPortoWorker(): Promise<ModuleState> {
+  return checkWorkerHealth();
 }
 
 /** Any answer from the server itself means it's up; Caddy answers 502/503 when the container is down. */

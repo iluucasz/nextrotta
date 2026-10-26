@@ -4,6 +4,7 @@ import { validatePhone } from '@/lib/whatsapp/phone';
 import { requireWhatsAppAdmin } from '@/lib/whatsapp/require-admin';
 import { getWhatsAppConfig, saveWhatsAppConfig } from '@/lib/whatsapp/store';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
+import { notifyWorkerRefresh } from '@/lib/porto-worker-client';
 
 export const runtime = 'nodejs';
 
@@ -67,6 +68,7 @@ export async function PUT(request: NextRequest) {
       },
       auth.userId,
     );
+    await notifyWorkerRefresh();
 
     return NextResponse.json({ success: true });
   } catch (error) {

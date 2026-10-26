@@ -201,6 +201,25 @@ function brasiliaDay() {
   return new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Sao_Paulo' }).format(new Date());
 }
 
+type MetricsSample = { at: string; host: VpsHost; containers: VpsContainer[] };
+
+/**
+ * Samples are taken every 5 minutes but written to the database in batches (flushVpsMetrics, from the
+ * worker's 30-minute maintenance tick): a write every 5 minutes would keep Neon awake all day.
+ * Bounded, so an unreachable database doesn't grow it forever.
+ */
+const pendingSamples: MetricsSample[] = [];
+const MAX_PENDING_SAMPLES = 48;
+
+/** An alert already raised by this process isn't sent again: each attempt would wake the database just to say "duplicate". */
+const raisedAlerts = new Set<string>();
+async function alertOnce(alert: Parameters<typeof sendOwnerAlert>[0]) {
+  if (raisedAlerts.has(alert.key)) return;
+  raisedAlerts.add(alert.key);
+  if (raisedAlerts.size > 500) raisedAlerts.clear();
+  await sendOwnerAlert(alert);
+}
+
 export async function collectVpsMetrics() {
   const day = brasiliaDay();
   let host: VpsHost;
@@ -209,7 +228,7 @@ export async function collectVpsMetrics() {
     [host, containers] = await Promise.all([getVpsHost(), getVpsContainers()]);
   } catch (error) {
     // The worker runs on the same VPS, so the agent (not the whole machine) is what stopped answering.
-    await sendOwnerAlert({
+    await alertOnce({
       key: `vps-agent-down:${day}:${new Date().getUTCHours()}`,
       kind: 'vps',
       title: 'o agente da VPS não está respondendo',
@@ -218,40 +237,12 @@ export async function collectVpsMetrics() {
     throw error;
   }
 
-  await sql`
-    INSERT INTO vps_metrics (
-      cpu_percent, load_1, memory_used_bytes, memory_total_bytes, memory_available_bytes,
-      disk_used_bytes, disk_total_bytes, disk_percent, network_rx_bytes, network_tx_bytes
-    )
-    VALUES (
-      ${host.cpu.percent}, ${host.cpu.load[0] ?? null}, ${host.memory.used}, ${host.memory.total}, ${host.memory.available},
-      ${host.disk.used}, ${host.disk.total}, ${host.disk.percent}, ${host.network.rxBytes}, ${host.network.txBytes}
-    )
-  `;
-  if (containers.length) {
-    await sql`
-      INSERT INTO vps_container_metrics (container_name, owner, state, cpu_percent, memory_bytes, memory_limit_bytes, restart_count, log_bytes)
-      SELECT * FROM jsonb_to_recordset(${JSON.stringify(
-        containers.map((container) => ({
-          container_name: container.name,
-          owner: container.owner,
-          state: container.state,
-          cpu_percent: container.cpuPercent,
-          memory_bytes: container.memoryBytes,
-          memory_limit_bytes: container.memoryLimitBytes,
-          restart_count: container.restartCount,
-          log_bytes: container.logBytes,
-        })),
-      )}::jsonb) AS item(
-        container_name text, owner text, state text, cpu_percent numeric, memory_bytes bigint,
-        memory_limit_bytes bigint, restart_count integer, log_bytes bigint
-      )
-    `;
-  }
+  pendingSamples.push({ at: new Date().toISOString(), host, containers });
+  if (pendingSamples.length > MAX_PENDING_SAMPLES) pendingSamples.splice(0, pendingSamples.length - MAX_PENDING_SAMPLES);
 
   if (host.disk.percent >= 80) {
     const critical = host.disk.percent >= 90;
-    await sendOwnerAlert({
+    await alertOnce({
       key: `vps-disk-${critical ? 'critical' : 'warning'}:${day}`,
       kind: 'vps',
       title: `disco da VPS em ${host.disk.percent}%${critical ? ' (crítico)' : ''}`,
@@ -259,7 +250,7 @@ export async function collectVpsMetrics() {
     });
   }
   if (host.memory.available < GB) {
-    await sendOwnerAlert({
+    await alertOnce({
       key: `vps-memory:${day}:${new Date().getUTCHours()}`,
       kind: 'vps',
       title: 'pouca memória disponível na VPS',
@@ -267,7 +258,7 @@ export async function collectVpsMetrics() {
     });
   }
   for (const container of containers.filter((item) => item.owner === 'nextrotta' && item.state !== 'running' && !/^nextrotta-worker-[0-9a-f]{7}$/.test(item.name))) {
-    await sendOwnerAlert({
+    await alertOnce({
       key: `vps-container-down:${container.name}:${day}`,
       kind: 'vps',
       title: `o container ${container.name} do NextRotta está parado`,
@@ -275,6 +266,67 @@ export async function collectVpsMetrics() {
     });
   }
   return { host, containers: containers.length };
+}
+
+/** Writes the samples collected since the last flush (one round of queries however many there are). */
+export async function flushVpsMetrics() {
+  const samples = pendingSamples.splice(0, pendingSamples.length);
+  if (!samples.length) return 0;
+  try {
+    await sql`
+      INSERT INTO vps_metrics (
+        collected_at, cpu_percent, load_1, memory_used_bytes, memory_total_bytes, memory_available_bytes,
+        disk_used_bytes, disk_total_bytes, disk_percent, network_rx_bytes, network_tx_bytes
+      )
+      SELECT * FROM jsonb_to_recordset(${JSON.stringify(
+        samples.map(({ at, host }) => ({
+          collected_at: at,
+          cpu_percent: host.cpu.percent,
+          load_1: host.cpu.load[0] ?? null,
+          memory_used_bytes: host.memory.used,
+          memory_total_bytes: host.memory.total,
+          memory_available_bytes: host.memory.available,
+          disk_used_bytes: host.disk.used,
+          disk_total_bytes: host.disk.total,
+          disk_percent: host.disk.percent,
+          network_rx_bytes: host.network.rxBytes,
+          network_tx_bytes: host.network.txBytes,
+        })),
+      )}::jsonb) AS item(
+        collected_at timestamptz, cpu_percent numeric, load_1 numeric, memory_used_bytes bigint, memory_total_bytes bigint,
+        memory_available_bytes bigint, disk_used_bytes bigint, disk_total_bytes bigint, disk_percent numeric,
+        network_rx_bytes bigint, network_tx_bytes bigint
+      )
+    `;
+    const containerRows = samples.flatMap(({ at, containers }) =>
+      containers.map((container) => ({
+        collected_at: at,
+        container_name: container.name,
+        owner: container.owner,
+        state: container.state,
+        cpu_percent: container.cpuPercent,
+        memory_bytes: container.memoryBytes,
+        memory_limit_bytes: container.memoryLimitBytes,
+        restart_count: container.restartCount,
+        log_bytes: container.logBytes,
+      })),
+    );
+    if (containerRows.length) {
+      await sql`
+        INSERT INTO vps_container_metrics (collected_at, container_name, owner, state, cpu_percent, memory_bytes, memory_limit_bytes, restart_count, log_bytes)
+        SELECT * FROM jsonb_to_recordset(${JSON.stringify(containerRows)}::jsonb) AS item(
+          collected_at timestamptz, container_name text, owner text, state text, cpu_percent numeric, memory_bytes bigint,
+          memory_limit_bytes bigint, restart_count integer, log_bytes bigint
+        )
+      `;
+    }
+    return samples.length;
+  } catch (error) {
+    // Keep them for the next flush (bounded by MAX_PENDING_SAMPLES).
+    pendingSamples.unshift(...samples);
+    if (pendingSamples.length > MAX_PENDING_SAMPLES) pendingSamples.splice(0, pendingSamples.length - MAX_PENDING_SAMPLES);
+    throw error;
+  }
 }
 
 export type MetricsRange = '24h' | '7d' | '30d';

@@ -74,7 +74,7 @@ plataforma, `platform_alerts`) quando:
 desligada por padrão).
 
 Se a VPS inteira cai, ninguém lá dentro consegue avisar (o WhatsApp também está nela): o painel do dono
-mostra o worker offline (sinal de vida) e as empresas veem "Módulo(s) em manutenção".
+mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco) e as empresas veem "Módulo(s) em manutenção".
 
 ## Estado da implantação
 

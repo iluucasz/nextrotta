@@ -415,7 +415,7 @@ refazer a busca do dia.
   para ninguém. A mudança de tela é problema da plataforma (todas as organizações falham juntas): vai
   um alerta só para o dono, e cada organização vê o aviso na Config. Porto dela até a próxima execução limpa.
 - **VPS fora do ar** (`lib/system-status.ts`, `/api/system-status`): a cada 2 min (cache de 60s) o app
-  confere o sinal de vida do worker (`worker_heartbeats`, 3 minutos sem sinal = fora) e se o servidor
+  pergunta ao `/health` do worker (sem consultar o banco; sem resposta = fora) e se o servidor
   do WhatsApp responde; o admin vê "Módulo(s) … em manutenção" no topo de toda tela, só para os módulos
   que o plano dele tem. As ações do Porto na tela respondem "Módulo Porto em manutenção".
 

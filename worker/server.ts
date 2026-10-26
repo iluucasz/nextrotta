@@ -9,6 +9,7 @@ import { getPortoConfig } from '../lib/porto-sync-log';
 import { runHoursJob } from '../lib/porto-jobs/run-hours-job';
 import { runScheduleJob } from '../lib/porto-jobs/run-schedule-job';
 import { PortoBusyError, portoCapacity, portoLockInfo, runWithPortoLock } from './porto-lock';
+import { invalidateCachedReads } from './cached-reads';
 import { portoQueueSnapshot } from './porto-queue';
 
 // 8091, not the original client's 8090: both workers run side by side on the shared VPS.
@@ -185,6 +186,13 @@ export function startWorkerServer() {
 
         // Polled by the app (lib/system-status.ts) to tell admins when the VPS is down.
         if (req.method === 'GET' && url.pathname === '/health') {
+          sendJson(res, 200, { ok: true });
+          return;
+        }
+        // The app saved something the schedulers keep in memory (times, automation on/off, WhatsApp
+        // notifications, browsers): the next minute's tick reads it again from the database.
+        if (req.method === 'POST' && url.pathname === '/refresh') {
+          invalidateCachedReads();
           sendJson(res, 200, { ok: true });
           return;
         }

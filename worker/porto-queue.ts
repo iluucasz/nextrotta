@@ -1,14 +1,12 @@
 import { createHash } from 'node:crypto';
 import { sql } from '../lib/db';
-import { getOrganizationSettings } from '../lib/organization-settings-store';
 import { sendPortoAlert } from '../lib/porto-alerts';
 import { runHoursJob } from '../lib/porto-jobs/run-hours-job';
 import { runScheduleJob } from '../lib/porto-jobs/run-schedule-job';
-import { listOrganizationsWithPortoAutomation } from '../lib/porto-sync-log';
 import { PORTO_LAYOUT_ALERT_TITLE } from '../lib/porto-layout';
 import { sendOwnerAlert } from '../lib/platform/alerts';
-import { getPlatformSettings } from '../lib/platform/settings';
 import { brasiliaNow, timeToMinutes } from '../lib/whatsapp/dates';
+import { cachedOrganizationSettings, cachedPlatformSettings, cachedPortoOrganizations } from './cached-reads';
 import { isJobDue, JOB_CATCH_UP_MINUTES } from './job-schedule';
 import { runWithRetries, type RetryInfo } from './job-retry';
 import { portoLockInfo, setMaxBrowsers, waitForPortoLock } from './porto-lock';
@@ -79,7 +77,7 @@ export async function loadLastRuns(today: string) {
   for (const row of rows) {
     const organizationId = String(row.organization_id);
     if (row.job_type === 'hours' && row.last_day === today && row.last_time_today) {
-      const settings = await getOrganizationSettings(organizationId);
+      const settings = await cachedOrganizationSettings(organizationId);
       if (String(row.last_time_today) >= settings.portoHoursImportTime) lastHoursDay.set(organizationId, today);
     }
     if (row.job_type === 'schedule') lastScheduleAt.set(organizationId, new Date(row.last_started as string).getTime());
@@ -238,10 +236,14 @@ async function checkQueueDeadline(today: string, nowMinutes: number) {
   });
 }
 
-/** Called once a minute by the worker. */
+/**
+ * Called once a minute by the worker. Everything it reads (platform settings, the organizations with
+ * the automation on, their times) comes from memory (cached-reads.ts), so a quiet minute never
+ * touches the database — Neon can sleep until a job is really due.
+ */
 export async function runPortoScheduler(hooks: Hooks) {
   try {
-    const platform = await getPlatformSettings();
+    const platform = await cachedPlatformSettings();
     setMaxBrowsers(platform.porto.maxBrowsers);
 
     const now = brasiliaNow();
@@ -250,8 +252,8 @@ export async function runPortoScheduler(hooks: Hooks) {
     await checkQueueDeadline(now.dateKey, now.minutes);
 
     const due: Array<{ organizationId: string; job: JobKind }> = [];
-    for (const organizationId of await listOrganizationsWithPortoAutomation()) {
-      const settings = await getOrganizationSettings(organizationId);
+    for (const organizationId of await cachedPortoOrganizations()) {
+      const settings = await cachedOrganizationSettings(organizationId);
       if (isJobDue({ scheduledTime: settings.portoHoursImportTime, nowMinutes: now.minutes, today: now.dateKey, lastRunDay: lastHoursDay.get(organizationId) ?? null })) {
         lastHoursDay.set(organizationId, now.dateKey);
         due.push({ organizationId, job: 'hours' });
@@ -274,7 +276,7 @@ export async function runPortoScheduler(hooks: Hooks) {
 /** Runs every organization's job now (the `--run=` one-off command), one queue for all. */
 export async function runAllNow(hooks: Hooks, job: JobKind) {
   const today = brasiliaNow().dateKey;
-  for (const organizationId of await listOrganizationsWithPortoAutomation()) enqueue(hooks, organizationId, job, today);
+  for (const organizationId of await cachedPortoOrganizations()) enqueue(hooks, organizationId, job, today);
   while (tasks.size) await new Promise((resolve) => setTimeout(resolve, 2000));
 }
 

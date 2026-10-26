@@ -3,6 +3,7 @@ import { recordAudit } from '@/lib/audit';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { parseOrganizationSettingsInput, pickTechnicianSettings } from '@/lib/organization-settings';
 import { getOrganizationSettings, getOrganizationSettingsMeta, saveOrganizationSettings } from '@/lib/organization-settings-store';
+import { notifyWorkerRefresh } from '@/lib/porto-worker-client';
 
 export const runtime = 'nodejs';
 
@@ -45,6 +46,7 @@ export async function PUT(request: NextRequest) {
     }
 
     const settings = await saveOrganizationSettings(auth.organizationId, parsed.settings, auth.userId);
+    await notifyWorkerRefresh();
 
     await recordAudit({
       organizationId: auth.organizationId,

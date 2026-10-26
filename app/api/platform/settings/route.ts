@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getIntegrationsStatus } from '@/lib/platform/operations';
 import { readJson, withPlatformOwner } from '@/lib/platform/route';
+import { notifyWorkerRefresh } from '@/lib/porto-worker-client';
 import { getPlatformSettings, updatePlatformSettings } from '@/lib/platform/settings';
 
 export const runtime = 'nodejs';
@@ -15,7 +16,9 @@ export async function GET(request: NextRequest) {
 
 /** Any of { defaultGraceDays, reservedSubdomains, maintenance: { enabled, message }, ai: {…}, reason }. */
 export async function PUT(request: NextRequest) {
-  return withPlatformOwner(request, async (owner) =>
-    NextResponse.json({ settings: await updatePlatformSettings(await readJson(request), { id: owner.userId }) }),
-  );
+  return withPlatformOwner(request, async (owner) => {
+    const settings = await updatePlatformSettings(await readJson(request), { id: owner.userId });
+    await notifyWorkerRefresh();
+    return NextResponse.json({ settings });
+  });
 }

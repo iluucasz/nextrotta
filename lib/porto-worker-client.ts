@@ -52,6 +52,27 @@ export async function callPortoWorker(
   return { status: response.status, body };
 }
 
+/**
+ * Tells the worker to read the schedulers' settings again. It keeps them in memory so a quiet minute
+ * never wakes the database, which means a saved change would otherwise wait for its next 30-minute
+ * refresh. Best effort: it never fails the save that called it.
+ */
+export async function notifyWorkerRefresh(): Promise<void> {
+  const baseUrl = process.env.PORTO_WORKER_URL;
+  const secret = process.env.PORTO_WORKER_SECRET;
+  if (!baseUrl || !secret) return;
+  try {
+    await fetch(`${baseUrl.replace(/\/+$/, '')}/refresh`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${secret}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3_000),
+    });
+  } catch {
+    // The worker refreshes by itself within 30 minutes.
+  }
+}
+
 /** Platform-wide worker endpoints (the owner panel's view of the Porto queue): no organization. */
 export async function callPortoWorkerPlatform(path: string): Promise<{ status: number; body: unknown }> {
   const baseUrl = process.env.PORTO_WORKER_URL;

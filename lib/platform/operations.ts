@@ -1,10 +1,8 @@
 import { asaasEnvironment, getBalance } from '../billing/asaas';
 import { sql } from '../db';
 import { mercadoPagoMissingConfig } from '../mercadopago/config';
+import { checkWorkerHealth } from '../worker-health';
 import { getPlatformSettings } from './settings';
-
-/** The worker beats every minute; three missed beats and it's shown offline. */
-const OFFLINE_AFTER_MS = 3 * 60 * 1000;
 
 function iso(value: unknown) {
   return value ? new Date(value as string).toISOString() : null;
@@ -12,7 +10,7 @@ function iso(value: unknown) {
 
 /** Worker health, recent job runs, WhatsApp/automation/storage per organization and database size. */
 export async function getOperations() {
-  const [heartbeats, runs, organizations, database, settings] = await Promise.all([
+  const [heartbeats, runs, organizations, database, settings, workerHealth] = await Promise.all([
     sql`SELECT * FROM worker_heartbeats ORDER BY last_seen_at DESC`,
     sql`
       SELECT * FROM (
@@ -45,15 +43,17 @@ export async function getOperations() {
     `,
     sql`SELECT pg_database_size(current_database())::float AS bytes`,
     getPlatformSettings(),
+    // Online comes from asking the worker (no heartbeat read): its record in the database is only
+    // refreshed every 30 minutes, so the newest record is the live one when the worker answers.
+    checkWorkerHealth(),
   ]);
 
-  const now = Date.now();
-  const workers = heartbeats.map((row) => ({
+  const workers = heartbeats.map((row, index) => ({
     id: String(row.worker_id),
     version: (row.version as string | null) ?? null,
     startedAt: iso(row.started_at)!,
     lastSeenAt: iso(row.last_seen_at)!,
-    online: now - new Date(row.last_seen_at).getTime() < OFFLINE_AFTER_MS,
+    online: workerHealth === 'ok' && index === 0,
   }));
 
   return {
@@ -173,13 +173,13 @@ export async function getIntegrationsStatus(): Promise<IntegrationStatus[]> {
         },
   );
 
-  const heartbeat = (await sql`SELECT MAX(last_seen_at) AS last FROM worker_heartbeats`)[0]?.last;
+  const workerHealth = await checkWorkerHealth();
   result.push(
     !process.env.PORTO_WORKER_URL
       ? { name: 'Worker de automações', state: 'missing', detail: 'Falta PORTO_WORKER_URL no ambiente.' }
-      : heartbeat && Date.now() - new Date(heartbeat).getTime() < OFFLINE_AFTER_MS
+      : workerHealth === 'ok'
         ? { name: 'Worker de automações', state: 'ok', detail: 'Online.' }
-        : { name: 'Worker de automações', state: 'error', detail: heartbeat ? 'Sem sinal de vida há mais de 3 minutos.' : 'Nunca se comunicou.' },
+        : { name: 'Worker de automações', state: 'error', detail: 'O worker não respondeu ao teste de vida.' },
   );
 
   return result;

@@ -3,11 +3,12 @@ import { isBalanceConfigured, recordBalance } from '../lib/ai/balance';
 import { runBillingMaintenance } from '../lib/billing/billing';
 import { grantMonthlyCredits } from '../lib/platform/ai-credits';
 import { expireCoupons } from '../lib/platform/coupons';
-import { collectVpsMetrics, runAutomaticVpsCleanup, vpsAgentConfigured } from '../lib/platform/vps';
+import { collectVpsMetrics, flushVpsMetrics, runAutomaticVpsCleanup, vpsAgentConfigured } from '../lib/platform/vps';
 import { recordHeartbeat, trackRun } from '../lib/worker-health';
 import { refreshAllInstanceStatuses } from '../lib/whatsapp/instance';
-import { runDueNotifications } from '../lib/whatsapp/notifications';
-import { evolutionServer, listOrganizationsWithWhatsApp } from '../lib/whatsapp/store';
+import { hasScheduledNotificationInWindow, runDueNotifications } from '../lib/whatsapp/notifications';
+import { evolutionServer } from '../lib/whatsapp/store';
+import { cachedWhatsAppConfig, cachedWhatsAppOrganizations, invalidateCachedReads } from './cached-reads';
 import { runAllNow, runPortoScheduler } from './porto-queue';
 import { startWorkerServer } from './server';
 
@@ -28,18 +29,23 @@ async function runWhatsApp(organizationId: string, options: Parameters<typeof ru
   }
 }
 
-async function runAllWhatsApp() {
+/** A notification is picked up on the first 5-minute check after its time. */
+const NOTIFICATION_FIRST_CHECK_MINUTES = 5;
+
+/**
+ * Checks every 5 minutes, but from the cached configurations: the database is only touched for an
+ * organization with a notification whose time just came (`catchUp` widens that to the whole catch-up
+ * window, used by the 30-minute maintenance to pick up anything that was postponed or missed).
+ */
+async function runAllWhatsApp(catchUp = false) {
   try {
-    await refreshAllInstanceStatuses();
-  } catch (error) {
-    log('Falha ao atualizar o estado das instâncias de WhatsApp:', error);
-  }
-  try {
-    for (const organizationId of await listOrganizationsWithWhatsApp()) {
+    for (const organizationId of await cachedWhatsAppOrganizations()) {
+      const config = await cachedWhatsAppConfig(organizationId);
+      if (!hasScheduledNotificationInWindow(config, catchUp ? undefined : NOTIFICATION_FIRST_CHECK_MINUTES)) continue;
       await runWhatsApp(organizationId);
     }
   } catch (error) {
-    log('Falha ao listar organizações com WhatsApp:', error);
+    log('Falha ao verificar as notificações de WhatsApp:', error);
   }
 }
 
@@ -83,8 +89,36 @@ async function heartbeat() {
   try {
     await recordHeartbeat();
   } catch (error) {
-    log('Falha ao registrar o sinal de vida do worker:', error);
+    log('Falha ao registrar o worker no banco:', error);
   }
+}
+
+/**
+ * Everything that has to read or write the database on a clock goes here, twice an hour, instead of
+ * every minute: Neon bills (and keeps the compute running) for the time the database stays awake, and
+ * a query every minute keeps it awake all day. Between ticks the worker lives on memory — see
+ * cached-reads.ts — and wakes the database only when a job or notification is really due.
+ */
+async function maintenance() {
+  invalidateCachedReads();
+  await heartbeat();
+  if (vpsAgentConfigured()) {
+    try {
+      const written = await flushVpsMetrics();
+      if (written) log(`Métricas da VPS: ${written} amostra(s) gravada(s).`);
+    } catch (error) {
+      log('Gravação das métricas da VPS falhou (tenta de novo na próxima):', error);
+    }
+  }
+  if (whatsappConfigured) {
+    try {
+      await refreshAllInstanceStatuses();
+    } catch (error) {
+      log('Falha ao atualizar o estado das instâncias de WhatsApp:', error);
+    }
+    await runAllWhatsApp(true);
+  }
+  if (isBalanceConfigured() && new Date().getMinutes() < 30) void readAiBalance();
 }
 
 /** The daily VPS cleanup, once the owner switched it on (Configurações da plataforma → VPS). */
@@ -132,29 +166,22 @@ if (runArg) {
   // Each organization's Porto times are edited in its Configurações (Brasília time), so instead of
   // fixed cron expressions a once-a-minute tick checks what is due and queues it (porto-queue.ts).
   // No maxDuration here: each run goes to completion.
-  cron.schedule(
-    '* * * * *',
-    () => {
-      void heartbeat();
-      void runPortoScheduler(portoHooks);
-    },
-    { timezone: 'America/Sao_Paulo' },
-  );
+  // Reads from memory (cached-reads.ts); the database is only touched when something is due.
+  cron.schedule('* * * * *', () => void runPortoScheduler(portoHooks), { timezone: 'America/Sao_Paulo' });
+  cron.schedule('0,30 * * * *', () => void maintenance(), { timezone: 'America/Sao_Paulo' });
   cron.schedule('0 6 * * *', runBilling, { timezone: 'America/Sao_Paulo' });
   // WhatsApp notification times are edited in the admin UI, so rather than one cron entry per
   // notification this checks every few minutes what is due. Each notification claims its day/month
   // before running, so it's once only.
   if (whatsappConfigured) {
-    cron.schedule('*/5 * * * *', () => runAllWhatsApp(), { timezone: 'America/Sao_Paulo' });
+    cron.schedule('*/5 * * * *', () => void runAllWhatsApp(), { timezone: 'America/Sao_Paulo' });
   }
-  // VPS usage history for the owner panel (Operação → VPS), when the VPS agent is configured.
+  // VPS usage history for the owner panel (Operação → VPS), when the VPS agent is configured. Samples
+  // are taken every 5 minutes and written in batches by the maintenance tick.
   if (vpsAgentConfigured()) {
     cron.schedule('*/5 * * * *', () => void collectMetrics(), { timezone: 'America/Sao_Paulo' });
     // Same time as the old vps-cleanup.timer it replaces: after the night queue, before the day.
     cron.schedule('30 4 * * *', () => void cleanVps(), { timezone: 'America/Sao_Paulo' });
-  }
-  if (isBalanceConfigured()) {
-    cron.schedule('7 * * * *', () => void readAiBalance(), { timezone: 'America/Sao_Paulo' });
   }
   void heartbeat();
   void runPortoScheduler(portoHooks);

@@ -5,7 +5,31 @@ import { sql } from './db';
 const WORKER_ID = process.env.WORKER_ID || hostname();
 const STARTED_AT = new Date().toISOString();
 
-/** The worker's pulse: the Operation screen shows it offline when this stops. */
+/**
+ * Whether the worker answers right now: asks its own /health instead of reading a heartbeat from the
+ * database, so checking it never wakes Neon. 'down' also covers Caddy answering 502/503 for a stopped
+ * container.
+ */
+export async function checkWorkerHealth(): Promise<'ok' | 'down' | 'not_configured'> {
+  const baseUrl = process.env.PORTO_WORKER_URL;
+  const secret = process.env.PORTO_WORKER_SECRET;
+  if (!baseUrl || !secret) return 'not_configured';
+  try {
+    const response = await fetch(`${baseUrl.replace(/\/+$/, '')}/health`, {
+      headers: { Authorization: `Bearer ${secret}` },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(5_000),
+    });
+    return response.ok ? 'ok' : 'down';
+  } catch {
+    return 'down';
+  }
+}
+
+/**
+ * The worker's record in the database, written at its maintenance tick (every 30 minutes): when it
+ * started and which version runs. Whether it is online comes from checkWorkerHealth, not from here.
+ */
 export async function recordHeartbeat(version: string | null = process.env.npm_package_version ?? null) {
   await sql`
     INSERT INTO worker_heartbeats (worker_id, started_at, last_seen_at, version)
