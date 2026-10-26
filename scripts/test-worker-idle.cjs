@@ -15,6 +15,19 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(
   }).outputText,
   filename,
 );
+const path = require('node:path');
+let queries = 0;
+const fakeRows = (text) => (/organization_id/.test(text) && /porto_config/.test(text) ? [{ organization_id: '00000000-0000-0000-0000-000000000001' }] : []);
+const fakeSql = (strings) => { queries++; return Promise.resolve(fakeRows(Array.isArray(strings) ? strings.join('?') : String(strings))); };
+fakeSql.query = (text) => { queries++; return Promise.resolve(fakeRows(String(text))); };
+const stub = (relative, exports) => {
+  const filename = require.resolve(path.join(__dirname, '..', relative));
+  require.cache[filename] = { id: filename, filename, loaded: true, exports, children: [], paths: [] };
+};
+stub('lib/db.ts', { sql: fakeSql });
+stub('lib/porto-jobs/run-hours-job.ts', { runHoursJob: async () => ({ status: 'success' }) });
+stub('lib/porto-jobs/run-schedule-job.ts', { runScheduleJob: async () => ({ status: 'success' }) });
+
 const { cached, invalidateCachedReads } = require('../worker/cached-reads.ts');
 const { hasScheduledNotificationInWindow } = require('../lib/whatsapp/notifications.ts');
 const { NOTIFICATION_TYPES } = require('../lib/whatsapp/notification-types.ts');
@@ -60,4 +73,25 @@ test('a disabled configuration or no enabled notification never touches the data
   const cfg = config({ next_day_shift: { enabled: true, time: '09:00', dayOfMonth: 5, template: '' } });
   assert.equal(hasScheduledNotificationInWindow({ ...cfg, enabled: false }, 180, at('12:03')), false);
   assert.equal(hasScheduledNotificationInWindow(config(), 180, at('12:03')), false);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The Porto scheduler on a quiet minute never reaches the database. The database is replaced by a
+// counter (and the Playwright-backed jobs by stubs): the first tick loads, the following ones don't.
+// ---------------------------------------------------------------------------------------------
+test('quiet minutes of the Porto scheduler do not query the database', async () => {
+  const { runPortoScheduler } = require('../worker/porto-queue.ts');
+  const hooks = { log: () => {}, afterHours: async () => {} };
+  invalidateCachedReads();
+
+  await runPortoScheduler(hooks); // first minute: loads the settings, the organizations and the day's runs
+  const afterFirst = queries;
+  assert.ok(afterFirst > 0, 'the first tick has to read the settings');
+
+  for (let minute = 0; minute < 20; minute++) await runPortoScheduler(hooks);
+  assert.equal(queries, afterFirst, 'twenty more quiet minutes made no queries');
+
+  invalidateCachedReads(); // the maintenance tick, or the app saying something was saved
+  await runPortoScheduler(hooks);
+  assert.ok(queries > afterFirst, 'after an invalidation the next tick reads again');
 });
