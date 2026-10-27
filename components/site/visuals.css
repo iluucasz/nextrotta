@@ -120,13 +120,13 @@
 /* ---------- Segurança ---------- */
 .nrv-sec-band {
   display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 52px; align-items: center;
-  padding: 54px; border-radius: 26px; color: #fff; overflow: hidden; position: relative;
+  padding: 72px max(40px, calc((100vw / var(--z, 1) - 1190px) / 2)); margin-block: 20px; color: #fff; overflow: hidden; position: relative;
   background-color: #0d2a1f;
   background-image: linear-gradient(rgba(127, 224, 181, 0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(127, 224, 181, 0.035) 1px, transparent 1px), radial-gradient(circle at 12% 20%, rgba(31, 157, 116, 0.35), transparent 55%), linear-gradient(145deg, #0d2a1f, #173d2d);
   background-size: var(--nr-grid-size, 56px) var(--nr-grid-size, 56px), var(--nr-grid-size, 56px) var(--nr-grid-size, 56px), auto, auto; background-position: center top;
 }
-.nr-marketing .nr-public-section .nrv-sec-band h2 { color: #fff; font-size: 31px; margin: 0; }
-.nr-marketing .nr-public-section .nrv-sec-band p { color: #a9c9b7; font-size: 14px; margin: 4px 0 0; line-height: 1.65; }
+.nr-marketing .nrv-sec-band h2 { color: #fff; font-size: 34px; font-weight: 650; line-height: 1.12; letter-spacing: -1px; margin: 0; }
+.nr-marketing .nrv-sec-band p { color: #a9c9b7; font-size: 14px; margin: 4px 0 0; line-height: 1.65; }
 .nrv-sec-band h3 { margin: 0; font-size: 16.5px; font-weight: 650; color: #fff; }
 .nrv-shield { position: relative; display: grid; place-items: center; width: 230px; height: 230px; margin-top: 22px; }
 .nrv-orbit { position: absolute; inset: 0; animation: nrt-spin 18s linear infinite; }
@@ -198,7 +198,7 @@
 @media (max-width: 960px) {
   .nrv-steps { grid-template-columns: 1fr; gap: 40px; }
   .nrv-steps article:not(:last-child)::after { display: none; }
-  .nrv-sec-band { grid-template-columns: 1fr; padding: 34px 24px; gap: 30px; }
+  .nrv-sec-band { grid-template-columns: 1fr; padding: 52px 35px; gap: 30px; }
   .nrv-shield { margin-inline: auto; }
   .nr-update-section { flex-direction: column; align-items: stretch; }
   .nrv-feed { flex: 0 0 auto; max-width: none; width: 100%; height: 240px; }
@@ -234,14 +234,13 @@
 /* O miolo da página não pinta fundo próprio: a grade da página aparece por ele. */
 .nr-marketing .nr-theme-page { background: transparent; }
 .nr-marketing .nr-benefits-strip.nr-benefits-strip,
-.nr-marketing .nr-final-cta.nr-final-cta,
-.nr-marketing .nr-update-section.nr-update-section {
+.nr-marketing .nr-how.nr-how-band,
+.nr-marketing .nr-final-cta.nr-final-cta {
   background-image: linear-gradient(var(--nr-line) 1px, transparent 1px), linear-gradient(90deg, var(--nr-line) 1px, transparent 1px);
   background-size: var(--nr-grid-size) var(--nr-grid-size); background-position: center top;
 }
-.nr-marketing .nr-benefits-strip.nr-benefits-strip { --nr-line: #ecf0e4; }
+.nr-marketing .nr-benefits-strip.nr-benefits-strip, .nr-marketing .nr-how.nr-how-band { --nr-line: #ecf0e4; }
 .nr-marketing .nr-final-cta.nr-final-cta { --nr-line: #e5ecd8; }
-.nr-marketing .nr-update-section.nr-update-section { --nr-line: rgba(127, 224, 181, 0.035); }
 
 .nr-marketing::before, .nr-marketing::after {
   content: ''; position: fixed; inset: -12%; z-index: -1; pointer-events: none; will-change: transform;
@@ -268,3 +267,29 @@
 @keyframes nr-mist-b { from { transform: translate3d(3%, -2%, 0) scale(1.08); } to { transform: translate3d(-4%, 3%, 0) scale(1); } }
 @media (max-width: 760px) { .nr-marketing.nr-marketing { --nr-grid-size: 40px; } }
 @media (prefers-reduced-motion: reduce) { .nr-marketing::before, .nr-marketing::after { animation: none; } }
+
+/* ---------- Novidades: sem o cartão verde, direto sobre a página ---------- */
+.nr-marketing .nr-update-section.nr-update-section { background: transparent; color: var(--site-text, #1c392e); border-radius: 0; }
+.nr-marketing .nr-update-section .nr-kicker { color: #5f8f6f; }
+.nr-marketing .nr-update-section p:not(.nr-kicker) { color: var(--site-muted, #7c8a76); }
+.nr-marketing .nr-update-section .nr-btn { background: var(--site-primary, #147d63); color: #fff; }
+.nr-marketing .nrv-feed-card { background: #fff; border: 1px solid #e1e9d8; box-shadow: 0 8px 24px -16px rgba(28, 57, 46, 0.25); }
+.nr-marketing .nrv-feed-card b { color: var(--site-text, #1c392e); }
+.nr-marketing .nrv-feed-card small { color: #7c8a76; }
+.nr-marketing .nrv-feed-tag { background: #e5f3ea; color: #147d63; }
+@media (max-width: 760px) { .nrv-sec-band { padding: 44px 22px; } }
+
+/* ---------- Passos: faixa de ponta a ponta, no tom da faixa dos benefícios ---------- */
+.nr-marketing .nr-how.nr-how-band {
+  margin-block: 20px; padding: 80px max(40px, calc((100vw / var(--z, 1) - 1190px) / 2));
+  background-color: #f3f6ed; border-block: 1px solid #e4eadc;
+}
+.nr-how-inner { max-width: 1190px; margin: 0 auto; display: grid; gap: 52px; }
+@media (max-width: 1100px) { .nr-marketing .nr-how.nr-how-band { padding: 60px 35px; } }
+@media (max-width: 760px) { .nr-marketing .nr-how.nr-how-band { padding: 46px 22px; } .nr-how-inner { gap: 34px; } }
+.nr-marketing .nr-how-band h2 { font-size: 34px; font-weight: 600; letter-spacing: -1.5px; line-height: 1.2; margin: 14px 0 0; }
+.nr-marketing .nr-how-band p { color: #7c8a76; font-size: 15px; line-height: 1.9; }
+.nr-marketing .nr-how-band .nrv-steps p { font-size: 14.5px; line-height: 1.7; }
+.nr-marketing .nr-how-band .nr-section-center { margin-bottom: 0; }
+.nr-how-inner { gap: 44px; }
+@media (max-width: 760px) { .nr-marketing .nr-how-band h2 { font-size: 28px; } }

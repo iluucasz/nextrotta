@@ -991,12 +991,13 @@ export function BuiltinHomeSection({
       );
     case 'steps':
       return (
-        <section className="nr-public-section nr-how">
-          <div className="nr-section-center">
-            <p className="nr-kicker">DA ESCOLHA À PRIMEIRA ROTA</p>
-            <h2>Começar pode ser simples.</h2>
-          </div>
-          <div className="nrv-steps">
+        <section className="nr-how nr-how-band">
+          <div className="nr-how-inner">
+            <div className="nr-section-center">
+              <p className="nr-kicker">DA ESCOLHA À PRIMEIRA ROTA</p>
+              <h2>Começar pode ser simples.</h2>
+            </div>
+            <div className="nrv-steps">
             {content.steps
               .filter((item) => item.visible !== false)
               .map((step, i) => (
@@ -1009,6 +1010,7 @@ export function BuiltinHomeSection({
                   <p>{step.text}</p>
                 </article>
               ))}
+            </div>
           </div>
         </section>
       );
@@ -1029,7 +1031,7 @@ export function BuiltinHomeSection({
       );
     case 'security':
       return (
-        <section className="nr-public-section nr-security">
+        <section className="nr-security">
           <div className="nrv-sec-band">
             <div>
               <h2>{content.securityTitle}</h2>
