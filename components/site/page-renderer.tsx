@@ -108,6 +108,7 @@ export function ThemePage({
             key={section.id}
             data-section-id={section.id}
             data-section-type={section.type}
+            data-section-name={section.name}
             className={`nr-theme-section ${editor?.selected === section.id ? 'selected' : ''} ${s.background ? 'has-background' : ''} ${s.color ? 'has-color' : ''} ${s.align ? 'has-alignment' : ''} ${s.padding !== undefined ? 'has-spacing' : ''} ${s.width === 'full' ? 'full-width' : ''}`}
             style={style}
             {...(editor

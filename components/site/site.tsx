@@ -44,6 +44,7 @@ const useSiteContent = () => useContext(SiteContentContext);
 import './marketing.css';
 import { FeatureTour, TOUR_FEATURES } from './tour';
 import { VideoShowcase } from './video';
+import { ScrollGuide } from './scroll-guide';
 import {
   AiDemo,
   BenefitArt,
@@ -275,6 +276,7 @@ function PublicShell({ children }: { children: ReactNode }) {
           </span>
         </div>
       </footer>
+      <ScrollGuide />
     </div>
   );
 }

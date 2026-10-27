@@ -1,0 +1,53 @@
+/* Section guide (right, vertically centred) and back-to-top button (bottom right). */
+.nr-guide {
+  position: fixed; right: 14px; top: 50%; transform: translateY(-50%); z-index: 40;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 2px;
+  padding: 8px 6px; border-radius: 999px;
+  background: rgba(252, 253, 249, 0.82); border: 1px solid rgba(28, 57, 46, 0.1);
+  box-shadow: 0 8px 24px -12px rgba(28, 57, 46, 0.35);
+  backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+}
+.nr-guide button {
+  position: relative; display: flex; align-items: center; justify-content: flex-end;
+  width: 22px; height: 22px; padding: 0; background: none; border: 0; cursor: pointer;
+}
+.nr-guide button i {
+  display: block; width: 8px; height: 8px; border-radius: 999px; background: #b9c8b8;
+  transition: height 0.25s ease, background 0.2s ease, transform 0.2s ease;
+  margin-inline: auto;
+}
+.nr-guide button:hover i { background: #5f8f6f; transform: scale(1.25); }
+.nr-guide button.active i { height: 18px; background: var(--site-primary, #147d63); transform: none; }
+.nr-guide button:focus-visible { outline: 2px solid var(--site-primary, #147d63); outline-offset: 1px; border-radius: 999px; }
+.nr-guide-label {
+  position: absolute; right: calc(100% + 12px); top: 50%; transform: translate(6px, -50%);
+  white-space: nowrap; padding: 6px 11px; border-radius: 8px; font-size: 13px; font-weight: 550;
+  background: #173d2d; color: #fff; opacity: 0; pointer-events: none;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+.nr-guide button:hover .nr-guide-label,
+.nr-guide button:focus-visible .nr-guide-label { opacity: 1; transform: translate(0, -50%); }
+
+.nr-top {
+  position: fixed; right: 20px; bottom: 20px; z-index: 40;
+  display: grid; place-items: center; width: 46px; height: 46px; border-radius: 50%;
+  background: var(--site-primary, #147d63); color: #fff; border: 0; cursor: pointer;
+  box-shadow: 0 10px 26px -8px rgba(20, 125, 99, 0.6);
+  opacity: 0; transform: translateY(14px); pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease, filter 0.2s ease;
+}
+.nr-top.show { opacity: 1; transform: none; pointer-events: auto; }
+.nr-top:hover { filter: brightness(1.1); }
+.nr-top:focus-visible { outline: 3px solid rgba(20, 125, 99, 0.35); outline-offset: 2px; }
+
+@media (max-width: 760px) {
+  .nr-guide { right: 4px; padding: 6px 3px; }
+  .nr-guide button { width: 16px; height: 18px; }
+  .nr-guide button i { width: 6px; height: 6px; }
+  .nr-guide button.active i { height: 14px; }
+  .nr-guide-label { display: none; }
+  .nr-top { right: 14px; bottom: 14px; width: 42px; height: 42px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nr-guide button i, .nr-guide-label, .nr-top { transition: none; }
+}
