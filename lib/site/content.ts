@@ -129,7 +129,7 @@ export const siteContent: SiteContent = {
     {
       id: 'seg3',
       title: 'Backup todos os dias',
-      text: 'Guardado por 3 meses no Essencial, 6 meses no Pro ou pelo tempo negociado no Sob medida.',
+      text: 'Guardado por 3 meses no Essencial e 6 meses no Pro.',
     },
   ],
   testimonials: [],

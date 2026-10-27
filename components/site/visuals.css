@@ -1,0 +1,270 @@
+/* Ilustrações animadas das seções da home (hero, IA, passos, segurança, novidades, benefícios, fecho).
+   As peças básicas (.nrt-*) vêm de tour.css; aqui ficam só as específicas (.nrv-* e .nrh-*). */
+
+.nrv-stage {
+  position: relative;
+  container-type: inline-size;
+  overflow: hidden;
+  width: 100%;
+  background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* ---------- Hero ---------- */
+.nrh-w {
+  display: inline-block;
+  animation: nrh-word 0.75s cubic-bezier(0.2, 0.8, 0.2, 1) calc(var(--w) * 75ms + 120ms) both;
+}
+@keyframes nrh-word { from { opacity: 0; transform: translateY(0.45em); filter: blur(6px); } }
+.nr-hero-copy > p,
+.nr-hero-actions,
+.nr-hero-trust { animation: nrt-fade 0.9s ease 0.9s both; }
+.nr-hero-visual .nr-orbit.one { animation: nrh-orbit-a 80s linear infinite; }
+.nr-hero-visual .nr-orbit.two { animation: nrh-orbit-b 110s linear infinite; }
+@keyframes nrh-orbit-a { from { transform: rotate(-20deg); } to { transform: rotate(340deg); } }
+@keyframes nrh-orbit-b { from { transform: rotate(0deg); } to { transform: rotate(-360deg); } }
+.nrh .nr-chart-bars span {
+  transform-origin: bottom;
+  animation: nrh-bar 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) calc(0.5s + var(--i) * 0.07s) both,
+    nrh-pulse 7s ease-in-out calc(3.4s + var(--i) * 0.14s) infinite;
+}
+@keyframes nrh-bar { from { transform: scaleY(0); } }
+@keyframes nrh-pulse { 0%, 86%, 100% { filter: none; } 92% { filter: brightness(1.2) saturate(1.25); } }
+.nrh-sun { display: inline-block; animation: nrh-spin 14s linear infinite; }
+@keyframes nrh-spin { to { transform: rotate(360deg); } }
+.nrh-check { position: relative; background: #f6ecd3; color: #9a6b17; animation: nrh-green 0.4s ease 3.8s both; }
+@keyframes nrh-green { to { background: #dfead7; color: #50763c; } }
+.nrh-check svg { position: absolute; }
+.nrh-check .nrh-wait { animation: nrt-out 0.3s ease 3.8s both; }
+.nrh-check .nrh-done { animation: nrt-in 0.3s ease 3.8s both; }
+.nrh-note-1 { animation: nrt-rise 0.7s ease 1.2s both; }
+.nrh-note-2 {
+  position: absolute;
+  right: -28px;
+  top: 74px;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 15px;
+  border-radius: 11px;
+  background: #fff;
+  border: 1px solid #e0e9d9;
+  box-shadow: 0 10px 30px #50653418;
+  font-size: 11px;
+  color: #556c57;
+  transform: rotate(-2deg);
+  animation: nrt-pop 0.5s cubic-bezier(0.3, 1.4, 0.5, 1) 5s both;
+}
+.nrh-note-2 > span { display: grid; place-items: center; padding: 7px; border-radius: 50%; background: #e8f6ee; color: #1f9d74; }
+.nrh-note-2 strong { display: block; font-size: 12px; color: #2f5a44; font-weight: 650; }
+.nrh-note-2 small { font-size: 10px; color: #7a8c80; }
+.nrh .nrt-cursor, .nrh .nrt-ripple { z-index: 8; }
+
+/* ---------- IA ---------- */
+.nrv-ai { display: grid; gap: 14px; min-width: 0; }
+.nrv-badge { margin-left: auto; font-style: normal; font-size: 11px; font-weight: 650; color: var(--mint); background: rgba(127, 224, 181, 0.14); padding: 3px 10px; border-radius: 99px; }
+.nrv-asks { display: grid; gap: 8px; }
+.nrv-asks button {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px; text-align: left;
+  padding: 13px 16px; border-radius: 12px; border: 1px solid #dfe8d6; background: #fff;
+  color: var(--site-text, #1c392e); font: inherit; font-size: 14px; cursor: pointer;
+  transition: border-color 0.2s, background 0.2s, transform 0.2s;
+}
+.nrv-asks button:hover { border-color: var(--site-primary, #147d63); transform: translateX(2px); }
+.nrv-asks button:focus-visible { outline: 2px solid var(--emerald); outline-offset: 2px; }
+.nrv-asks button.on { border-color: var(--site-primary, #147d63); background: #eaf5ee; font-weight: 600; }
+.nrv-stack { display: flex; height: 0.9em; margin: 0.7em 0 0.6em; border-radius: 99px; overflow: hidden; background: rgba(255, 255, 255, 0.08); }
+.nrv-stack s { display: block; height: 100%; }
+.nrv-legend { display: flex; flex-wrap: wrap; gap: 0.4em; }
+.nrv-legend .nrt-pill i { display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; }
+
+/* ---------- Passos ---------- */
+.nrv-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 34px; }
+.nrv-steps article { position: relative; text-align: left; }
+.nrv-steps article:not(:last-child)::after {
+  content: '';
+  position: absolute; z-index: 2; top: 24%; right: -34px; width: 34px;
+  border-top: 2px dashed #b4cdb3;
+}
+.nrv-steps h3 { display: flex; align-items: center; gap: 12px; margin: 22px 0 8px; font-size: 19px; font-weight: 650; letter-spacing: -0.3px; }
+.nrv-steps p { margin: 0; font-size: 14.5px; line-height: 1.7; }
+.nrv-num { display: inline-grid; place-items: center; flex: 0 0 auto; width: 28px; height: 28px; border-radius: 50%; background: #10281f; color: #fff; font-size: 12.5px; font-weight: 700; }
+.nrv-art {
+  border-radius: 22px; overflow: hidden;
+  background: linear-gradient(160deg, #0f2d21, #091a12);
+  border: 1px solid rgba(127, 224, 181, 0.2);
+  box-shadow: 0 34px 60px -30px rgba(10, 31, 22, 0.55);
+}
+.nrv-plan { position: absolute; width: 11.4em; padding: 0.9em 1em; border-radius: 1em; background: var(--surf); border: 1px solid var(--edge); }
+.nrv-plan b { display: block; margin-bottom: 0.6em; font-size: 0.95em; }
+.nrv-plan i { display: block; height: 0.45em; margin: 0.55em 0; border-radius: 99px; background: rgba(255, 255, 255, 0.12); }
+.nrv-plan i:nth-of-type(2) { width: 70%; }
+.nrv-plan i:nth-of-type(3) { width: 50%; }
+.nrv-plan.nrv-dashed { border-style: dashed; }
+.nrv-plan.nrv-pick { animation: nrt-rise 0.55s ease var(--d, 0s) both, nrv-pick 0.5s ease 2.4s forwards; }
+@keyframes nrv-pick { to { border-color: var(--mint); background: rgba(127, 224, 181, 0.14); box-shadow: 0 0 0 0.25em rgba(127, 224, 181, 0.2); } }
+.nrv-check { position: absolute; right: 0.7em; top: 0.7em; display: grid; place-items: center; width: 1.6em; height: 1.6em; border-radius: 50%; background: var(--emerald); color: #fff; }
+.nrv-ring { position: absolute; width: 12em; height: 12em; }
+.nrv-ring-fill { stroke-dasharray: 251; animation: nrv-ring 2.8s ease var(--d, 0s) both; }
+@keyframes nrv-ring { from { stroke-dashoffset: 251; } }
+.nrv-ring-text { fill: #fff; font-size: 19px; font-weight: 700; font-family: inherit; }
+.nrv-duo { position: absolute; display: flex; align-items: center; gap: 0.4em; }
+.nrv-duo i { display: grid; place-items: center; width: 2.2em; height: 2.2em; border-radius: 50%; background: rgba(127, 224, 181, 0.16); color: var(--mint); }
+.nrv-duo s { width: 3em; border-top: 2px dashed rgba(127, 224, 181, 0.5); }
+.nrv-day { position: absolute; left: 2em; right: 2em; top: 4.8em; display: grid; gap: 0.9em; }
+.nrv-day-row { display: grid; grid-template-columns: 4em 1.6em 1fr; align-items: center; gap: 0.7em; padding: 0.7em 0.9em; background: var(--surf); border: 1px solid var(--edge); border-radius: 0.9em; }
+.nrv-day-row b { color: var(--mut); font-weight: 650; font-variant-numeric: tabular-nums; }
+.nrv-day-dot { display: grid; place-items: center; width: 1.5em; height: 1.5em; border-radius: 50%; background: rgba(31, 157, 116, 0.3); color: var(--mint); }
+
+/* ---------- Segurança ---------- */
+.nrv-sec-band {
+  display: grid; grid-template-columns: 330px minmax(0, 1fr); gap: 52px; align-items: center;
+  padding: 54px; border-radius: 26px; color: #fff; overflow: hidden; position: relative;
+  background-color: #0d2a1f;
+  background-image: linear-gradient(rgba(127, 224, 181, 0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(127, 224, 181, 0.035) 1px, transparent 1px), radial-gradient(circle at 12% 20%, rgba(31, 157, 116, 0.35), transparent 55%), linear-gradient(145deg, #0d2a1f, #173d2d);
+  background-size: var(--nr-grid-size, 56px) var(--nr-grid-size, 56px), var(--nr-grid-size, 56px) var(--nr-grid-size, 56px), auto, auto; background-position: center top;
+}
+.nr-marketing .nr-public-section .nrv-sec-band h2 { color: #fff; font-size: 31px; margin: 0; }
+.nr-marketing .nr-public-section .nrv-sec-band p { color: #a9c9b7; font-size: 14px; margin: 4px 0 0; line-height: 1.65; }
+.nrv-sec-band h3 { margin: 0; font-size: 16.5px; font-weight: 650; color: #fff; }
+.nrv-shield { position: relative; display: grid; place-items: center; width: 230px; height: 230px; margin-top: 22px; }
+.nrv-orbit { position: absolute; inset: 0; animation: nrt-spin 18s linear infinite; }
+.nrv-orbit > span {
+  position: absolute; left: 50%; top: 50%; display: grid; place-items: center; width: 38px; height: 38px; margin: -19px;
+  border-radius: 50%; background: rgba(127, 224, 181, 0.16); border: 1px solid rgba(127, 224, 181, 0.35); color: var(--mint, #7fe0b5);
+  transform: rotate(var(--a)) translateY(-100px) rotate(calc(-1 * var(--a)));
+  animation: nrv-counter 18s linear infinite;
+}
+@keyframes nrv-counter { to { transform: rotate(var(--a)) translateY(-100px) rotate(calc(-1 * var(--a) - 360deg)); } }
+.nrv-shield svg { position: relative; z-index: 1; filter: drop-shadow(0 0 26px rgba(31, 157, 116, 0.55)); }
+.nrv-shield-line { stroke-dasharray: 400; animation: nrv-draw 1.6s ease 0.2s both; }
+.nrv-shield-check { stroke-dasharray: 100; animation: nrv-draw 0.8s ease 1.5s both; }
+@keyframes nrv-draw { from { stroke-dashoffset: 400; } }
+.nrv-sec-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+.nrv-sec-list li {
+  display: grid; grid-template-columns: 44px minmax(0, 1fr) 28px; align-items: center; gap: 16px; padding: 18px 20px;
+  border-radius: 16px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1);
+  animation: nrv-scan 9s ease-in-out calc(var(--i) * 3s) infinite;
+}
+@keyframes nrv-scan { 0%, 32%, 100% { background: rgba(255, 255, 255, 0.05); border-color: rgba(255, 255, 255, 0.1); } 6%, 26% { background: rgba(127, 224, 181, 0.13); border-color: rgba(127, 224, 181, 0.5); } }
+.nrv-sec-ico { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 13px; background: rgba(127, 224, 181, 0.15); color: #7fe0b5; }
+.nrv-ok { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; background: rgba(31, 157, 116, 0.35); color: #7fe0b5; }
+
+/* ---------- Novidades ---------- */
+.nr-update-section > div:first-child { flex: 1; }
+.nr-update-section .nr-btn { margin-top: 26px; }
+.nrv-feed {
+  flex: 0 0 380px; max-width: 380px; height: 272px; overflow: hidden;
+  -webkit-mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
+  mask-image: linear-gradient(transparent, #000 15%, #000 85%, transparent);
+}
+.nrv-feed-track { animation: nrv-scroll calc(var(--n) * 4.5s) linear infinite; }
+.nrv-feed:hover .nrv-feed-track { animation-play-state: paused; }
+@keyframes nrv-scroll { to { transform: translateY(-50%); } }
+.nrv-feed-card { display: grid; gap: 7px; margin-bottom: 12px; padding: 16px 18px; border-radius: 14px; background: rgba(255, 255, 255, 0.07); border: 1px solid rgba(255, 255, 255, 0.11); }
+.nrv-feed-card b { font-size: 14.5px; font-weight: 600; color: #fff; line-height: 1.4; }
+.nrv-feed-card small { font-size: 12px; color: #9fc3ad; }
+.nrv-feed-tag { justify-self: start; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; background: rgba(127, 224, 181, 0.17); color: #7fe0b5; }
+.nrv-tag-Melhoria { background: rgba(87, 182, 255, 0.17); color: #8fd0ff; }
+.nrv-tag-Correção { background: rgba(245, 182, 78, 0.18); color: #f5c978; }
+
+/* ---------- Benefícios ---------- */
+.nrv-b { fill: none; stroke: currentColor; }
+.nrv-b-sheets rect { fill: rgba(109, 137, 84, 0.12); }
+.nrv-b-sheets .s1 { animation: nrv-s1 4.5s ease-in-out infinite; }
+.nrv-b-sheets .s3 { animation: nrv-s3 4.5s ease-in-out infinite; }
+@keyframes nrv-s1 { 0%, 100% { transform: translate(0, 0); } 45%, 60% { transform: translate(5px, -2px); } }
+@keyframes nrv-s3 { 0%, 100% { transform: translate(0, 0); } 45%, 60% { transform: translate(-5px, -2px); } }
+.nrv-b-check circle { stroke-dasharray: 76; animation: nrv-ring-b 4s ease-in-out infinite; }
+.nrv-b-check path { stroke-dasharray: 22; animation: nrv-tick 4s ease-in-out infinite; }
+@keyframes nrv-ring-b { 0% { stroke-dashoffset: 76; } 35%, 85% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: -76; } }
+@keyframes nrv-tick { 0%, 30% { stroke-dashoffset: 22; } 50%, 85% { stroke-dashoffset: 0; } 100% { stroke-dashoffset: 22; } }
+.nrv-b-route path { animation: nrv-dash 2.2s linear infinite; }
+.nrv-b-route circle { fill: currentColor; stroke: none; animation: nrv-dot 2.2s ease-in-out infinite; }
+.nrv-b-route circle:nth-of-type(2) { animation-delay: 0.4s; }
+.nrv-b-route circle:nth-of-type(3) { animation-delay: 0.8s; }
+@keyframes nrv-dash { to { stroke-dashoffset: -13; } }
+@keyframes nrv-dot { 50% { opacity: 0.4; } }
+
+/* ---------- Fecho ---------- */
+.nr-final-cta { position: relative; overflow: hidden; }
+.nr-final-cta > *:not(.nrv-route) { position: relative; z-index: 1; }
+.nrv-route { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; }
+.nr-final-cta .nr-btn.primary { animation: nrv-pulse 3.2s ease-in-out infinite; }
+@keyframes nrv-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(31, 157, 116, 0.35); } 50% { box-shadow: 0 0 0 11px rgba(31, 157, 116, 0); } }
+
+/* ---------- Telas menores ---------- */
+@media (max-width: 960px) {
+  .nrv-steps { grid-template-columns: 1fr; gap: 40px; }
+  .nrv-steps article:not(:last-child)::after { display: none; }
+  .nrv-sec-band { grid-template-columns: 1fr; padding: 34px 24px; gap: 30px; }
+  .nrv-shield { margin-inline: auto; }
+  .nr-update-section { flex-direction: column; align-items: stretch; }
+  .nrv-feed { flex: 0 0 auto; max-width: none; width: 100%; height: 240px; }
+  .nrh-note-2 { right: 6px; top: 8px; }
+}
+
+/* ---------- Menos movimento ---------- */
+@media (prefers-reduced-motion: reduce) {
+  .nrh *, .nrv *, .nrv-sec-band *, .nrh-w, .nrv-feed-track, .nrv-b *, .nr-final-cta .nr-btn.primary, .nr-hero-copy > p, .nr-hero-actions, .nr-hero-trust, .nr-hero-visual .nr-orbit { animation: none !important; transition: none !important; }
+  .nrh .nrt-cursor, .nrh .nrt-ripple, .nrv .nrt-cursor, .nrv .nrt-ripple, .nrv .nrt-think, .nrh-check .nrh-wait, .nrv-route circle { display: none; }
+  .nrv-feed-track { transform: none; }
+}
+
+/* O texto das respostas do assistente herda a cor clara da janela (e não o cinza dos parágrafos do site). */
+.nr-marketing .nr-public-section .nrt-bubble-ai p,
+.nr-marketing .nr-public-section .nrv-ai .nrt-bubble p { color: var(--txt, #e9f6ee); font-size: inherit; line-height: 1.45; margin: 0 0 0.4em; }
+.nr-marketing .nr-public-section .nrv-steps article p { color: var(--site-muted, #7c8a76); }
+
+/* ---------- A grade do NextRotta, do começo ao fim da página ----------
+   Linhas sólidas e discretas (a mesma grade do vídeo e do tour), todas pela variável --nr-line, para
+   as verticais e as horizontais terem sempre o mesmo tom. A página inteira e as faixas/cartões com
+   fundo próprio trazem a sua, no mesmo passo. Por cima da grade da página passa uma "fumaça" (duas
+   camadas de névoa na cor do fundo, fixas na tela e à deriva bem devagar): a grade some em alguns
+   pontos e reaparece em outros conforme a página rola, sem trechos secos e trechos fortes demais. */
+.nr-marketing.nr-marketing {
+  --nr-grid-size: 56px; --nr-line: #f2f6ec;
+  isolation: isolate;
+  background-color: var(--site-background, #fcfdf9);
+  background-image: linear-gradient(var(--nr-line) 1px, transparent 1px), linear-gradient(90deg, var(--nr-line) 1px, transparent 1px);
+  background-size: var(--nr-grid-size) var(--nr-grid-size);
+  background-position: center top;
+}
+/* O miolo da página não pinta fundo próprio: a grade da página aparece por ele. */
+.nr-marketing .nr-theme-page { background: transparent; }
+.nr-marketing .nr-benefits-strip.nr-benefits-strip,
+.nr-marketing .nr-final-cta.nr-final-cta,
+.nr-marketing .nr-update-section.nr-update-section {
+  background-image: linear-gradient(var(--nr-line) 1px, transparent 1px), linear-gradient(90deg, var(--nr-line) 1px, transparent 1px);
+  background-size: var(--nr-grid-size) var(--nr-grid-size); background-position: center top;
+}
+.nr-marketing .nr-benefits-strip.nr-benefits-strip { --nr-line: #ecf0e4; }
+.nr-marketing .nr-final-cta.nr-final-cta { --nr-line: #e5ecd8; }
+.nr-marketing .nr-update-section.nr-update-section { --nr-line: rgba(127, 224, 181, 0.035); }
+
+.nr-marketing::before, .nr-marketing::after {
+  content: ''; position: fixed; inset: -12%; z-index: -1; pointer-events: none; will-change: transform;
+}
+.nr-marketing::before {
+  --mist: color-mix(in srgb, var(--site-background, #fcfdf9) 92%, transparent);
+  --mist-soft: color-mix(in srgb, var(--site-background, #fcfdf9) 62%, transparent);
+  background:
+    radial-gradient(ellipse 34% 30% at 22% 28%, var(--mist), transparent 72%),
+    radial-gradient(ellipse 30% 36% at 78% 64%, var(--mist), transparent 72%),
+    radial-gradient(ellipse 22% 20% at 52% 12%, var(--mist-soft), transparent 70%);
+  animation: nr-mist-a 46s ease-in-out infinite alternate;
+}
+.nr-marketing::after {
+  --mist: color-mix(in srgb, var(--site-background, #fcfdf9) 88%, transparent);
+  --mist-soft: color-mix(in srgb, var(--site-background, #fcfdf9) 55%, transparent);
+  background:
+    radial-gradient(ellipse 38% 26% at 66% 24%, var(--mist), transparent 72%),
+    radial-gradient(ellipse 28% 34% at 14% 74%, var(--mist), transparent 72%),
+    radial-gradient(ellipse 26% 22% at 46% 52%, var(--mist-soft), transparent 70%);
+  animation: nr-mist-b 62s ease-in-out infinite alternate;
+}
+@keyframes nr-mist-a { from { transform: translate3d(-3%, 2%, 0) scale(1); } to { transform: translate3d(4%, -3%, 0) scale(1.1); } }
+@keyframes nr-mist-b { from { transform: translate3d(3%, -2%, 0) scale(1.08); } to { transform: translate3d(-4%, 3%, 0) scale(1); } }
+@media (max-width: 760px) { .nr-marketing.nr-marketing { --nr-grid-size: 40px; } }
+@media (prefers-reduced-motion: reduce) { .nr-marketing::before, .nr-marketing::after { animation: none; } }

@@ -42,6 +42,18 @@ import {
 const SiteContentContext = createContext<SiteContent>(siteContent);
 const useSiteContent = () => useContext(SiteContentContext);
 import './marketing.css';
+import { FeatureTour, TOUR_FEATURES } from './tour';
+import { VideoShowcase } from './video';
+import {
+  AiDemo,
+  BenefitArt,
+  HeroPreview,
+  RouteArt,
+  SecIcon,
+  ShieldArt,
+  StepArt,
+  UpdatesFeed,
+} from './visuals';
 import { ThemePage, type CanvasControls } from './page-renderer';
 import {
   themeStyle,
@@ -83,14 +95,28 @@ type PublicPlan = {
 
 type PublicFeature = { key: string; name: string; description: string | null };
 
+/** "Monte o seu": the base plan plus the modules the company can add, each with its own price. */
+type PublicBuilder = Omit<PublicPlan, 'onRequest' | 'featured' | 'ai'> & {
+  modules: Array<{
+    key: string;
+    name: string;
+    description: string | null;
+    monthlyPrice: number;
+    annualPrice: number;
+    setupFee: number;
+  }>;
+};
+
 let cachedPlans: Promise<{
   plans: PublicPlan[];
+  builder: PublicBuilder | null;
   features: PublicFeature[];
 }> | null = null;
 
 /** The plans published on the site, straight from the platform (fetched once per page load). */
 function usePublicPlans() {
   const [plans, setPlans] = useState<PublicPlan[] | null>(null);
+  const [builder, setBuilder] = useState<PublicBuilder | null>(null);
   const [features, setFeatures] = useState<PublicFeature[]>([]);
   const [error, setError] = useState(false);
   useEffect(() => {
@@ -102,7 +128,11 @@ function usePublicPlans() {
             : Promise.reject(new Error(String(response.status))),
         )
         .then(
-          (data: { plans: PublicPlan[]; features: PublicFeature[] }) => data,
+          (data: {
+            plans: PublicPlan[];
+            builder?: PublicBuilder | null;
+            features: PublicFeature[];
+          }) => ({ ...data, builder: data.builder ?? null }),
         )
         .catch((reason) => {
           cachedPlans = null;
@@ -114,6 +144,7 @@ function usePublicPlans() {
       .then((value) => {
         if (active) {
           setPlans(value.plans);
+          setBuilder(value.builder);
           setFeatures(value.features);
         }
       })
@@ -124,7 +155,7 @@ function usePublicPlans() {
   }, []);
   const featureName = (key: string) =>
     features.find((feature) => feature.key === key)?.name ?? key;
-  return { plans, features, featureName, error };
+  return { plans, builder, features, featureName, error };
 }
 
 const whatsappLink = (number: string) => {
@@ -200,7 +231,7 @@ function PublicShell({ children }: { children: ReactNode }) {
         <div>
           <h3>Produto</h3>
           <Link href="/planos">Planos</Link>
-          <Link href="/sob-medida">Sob medida</Link>
+          <Link href="/planos#planos">Monte o seu plano</Link>
           <Link href="/novidades">Novidades</Link>
           <Link href="/login">Entrar no sistema</Link>
         </div>
@@ -308,6 +339,120 @@ const retentionLabel = (days: number | null) =>
       ? `${days / 30} ${days / 30 === 1 ? 'mês' : 'meses'}`
       : `${days} dias`;
 
+/** The third card: the company ticks the modules it wants and the price adds up. */
+function BuilderCard({
+  builder,
+  cycle,
+  orderedFeatures,
+}: {
+  builder: PublicBuilder;
+  cycle: Cycle;
+  orderedFeatures: PublicFeature[];
+}) {
+  const [selected, setSelected] = useState<string[]>([]);
+  const chosen = builder.modules.filter((module) =>
+    selected.includes(module.key),
+  );
+  const price =
+    (cycle === 'annual' ? builder.annualPrice : builder.monthlyPrice) +
+    chosen.reduce(
+      (total, module) =>
+        total + (cycle === 'annual' ? module.annualPrice : module.monthlyPrice),
+      0,
+    );
+  const setupFee =
+    builder.setupFee +
+    chosen.reduce((total, module) => total + module.setupFee, 0);
+  const toggle = (key: string) =>
+    setSelected((current) =>
+      current.includes(key)
+        ? current.filter((item) => item !== key)
+        : [...current, key],
+    );
+  return (
+    <article className="nr-public-plan nr-builder">
+      <h3>{builder.name}</h3>
+      <p>{builder.description}</p>
+      <div className="nr-public-price">
+        {chosen.length ? '' : 'A partir de '}
+        {money(price)}
+        <small>/{cycle === 'annual' ? 'ano' : 'mês'}</small>
+      </div>
+      <small>
+        {chosen.length
+          ? `Base + ${chosen.length} ${chosen.length === 1 ? 'módulo' : 'módulos'}${cycle === 'annual' ? ` · equivale a ${money(price / 12)}/mês` : ''}`
+          : 'Marque abaixo só o que a sua operação precisa'}
+      </small>
+      <Link
+        href={`/contratar?plano=${builder.key}&ciclo=${cycle}${selected.length ? `&modulos=${selected.join(',')}` : ''}`}
+        className="nr-btn"
+      >
+        {chosen.length ? 'Contratar meu plano' : 'Montar meu plano'}
+        <ArrowRight size={15} />
+      </Link>
+      <ul>
+        <li>
+          <Check size={16} />
+          Até {builder.includedTechnicians} técnicos
+        </li>
+        <li>
+          <Check size={16} />
+          {money(builder.extraTechnicianPrice)}/mês por técnico extra
+        </li>
+        <li>
+          <Check size={16} />
+          Implantação única de {money(setupFee)}
+        </li>
+        <li>
+          <Check size={16} />
+          Backup diário: {retentionLabel(builder.backupRetentionDays)}
+        </li>
+        {orderedFeatures.map(({ key, name }) => {
+          const module = builder.modules.find(
+            (candidate) => candidate.key === key,
+          );
+          if (module) {
+            const on = selected.includes(key);
+            return (
+              <li key={key} className="nr-builder-module">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={on}
+                    onChange={() => toggle(key)}
+                  />
+                  <span>{name}</span>
+                  <small>
+                    +
+                    {money(
+                      cycle === 'annual'
+                        ? module.annualPrice
+                        : module.monthlyPrice,
+                    )}
+                    /{cycle === 'annual' ? 'ano' : 'mês'}
+                  </small>
+                </label>
+              </li>
+            );
+          }
+          const included = builder.features.includes(key);
+          return (
+            <li key={key} className={included ? undefined : 'nr-feature-off'}>
+              {included ? (
+                <Check size={16} aria-label="Incluído" />
+              ) : (
+                <X size={16} aria-label="Não incluído" />
+              )}
+              {name}
+            </li>
+          );
+        })}
+      </ul>
+      <div className="nr-plan-note" />
+    </article>
+  );
+}
+
 export function Pricing({
   content,
   full = false,
@@ -315,7 +460,7 @@ export function Pricing({
   content: SiteContent;
   full?: boolean;
 }) {
-  const { plans, features, error } = usePublicPlans();
+  const { plans, builder, features, error } = usePublicPlans();
   const [cycle, setCycle] = useState<Cycle>(content.defaultCycle);
   const header = (
     <div className="nr-section-center">
@@ -461,6 +606,13 @@ export function Pricing({
             </div>
           </article>
         ))}
+        {builder && (
+          <BuilderCard
+            builder={builder}
+            cycle={cycle}
+            orderedFeatures={orderedFeatures}
+          />
+        )}
       </div>
       <p className="nr-price-footnote">{content.pricingFootnote}</p>
       {full ? (
@@ -474,6 +626,7 @@ export function Pricing({
                   {plans.map((p) => (
                     <th key={p.key}>{p.name}</th>
                   ))}
+                  {builder && <th>{builder.name}</th>}
                 </tr>
               </thead>
               <tbody>
@@ -489,6 +642,19 @@ export function Pricing({
                         )}
                       </td>
                     ))}
+                    {builder && (
+                      <td>
+                        {builder.features.includes(f) ? (
+                          <Check aria-label="Incluído" size={17} />
+                        ) : builder.modules.some(
+                            (module) => module.key === f,
+                          ) ? (
+                          'Módulo opcional'
+                        ) : (
+                          <span aria-label="Não incluído">—</span>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
                 <tr>
@@ -498,12 +664,17 @@ export function Pricing({
                       {p.onRequest ? 'Negociado' : p.includedTechnicians}
                     </td>
                   ))}
+                  {builder && <td>{builder.includedTechnicians}</td>}
                 </tr>
                 {(
                   [
                     ['maxUsers', 'Usuários', null],
                     ['storageMb', 'Armazenamento', null],
-                    ['whatsappMessagesMonth', 'Mensagens de WhatsApp por mês', 'whatsapp'],
+                    [
+                      'whatsappMessagesMonth',
+                      'Mensagens de WhatsApp por mês',
+                      'whatsapp',
+                    ],
                     ['portoRunsMonth', 'Execuções do Porto por mês', 'porto'],
                   ] as const
                 ).map(([key, label, feature]) => (
@@ -523,6 +694,23 @@ export function Pricing({
                         )}
                       </td>
                     ))}
+                    {builder && (
+                      <td>
+                        {feature && !builder.features.includes(feature) ? (
+                          <span aria-label="Depende do módulo">
+                            {builder.modules.some(
+                              (module) => module.key === feature,
+                            )
+                              ? 'Com o módulo'
+                              : '—'}
+                          </span>
+                        ) : key === 'storageMb' ? (
+                          storageLabel(builder.limits[key])
+                        ) : (
+                          unlimited(builder.limits[key])
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -634,8 +822,26 @@ function ProductPreview() {
   );
 }
 
-/** Each feature with the first published plan that includes it. */
+/**
+ * The features section: an animated tour of the system (route on the left, abstract moving
+ * screens on the right). Features the tour doesn't show come as a short "E também" line.
+ */
 function FeatureGrid() {
+  const { plans, features } = usePublicPlans();
+  const firstPlan = (feature: string) =>
+    plans?.find((p) => !p.onRequest && p.features.includes(feature))?.name;
+  return (
+    <FeatureTour
+      planOf={firstPlan}
+      others={features
+        .filter((feature) => !TOUR_FEATURES.includes(feature.key))
+        .map((feature) => feature.name)}
+    />
+  );
+}
+
+/** The old card grid (kept for pages that may still want a plain list of features). */
+export function FeatureCards() {
   const { plans, features } = usePublicPlans();
   const firstPlan = (feature: string) =>
     plans?.find((p) => !p.onRequest && p.features.includes(feature))?.name;
@@ -684,12 +890,24 @@ export function BuiltinHomeSection({
               PARA QUEM FAZ ACONTECER, EM CAMPO
             </span>
             <h1>
-              {content.title.split('\n').map((line, i) => (
-                <span key={i} className={i > 0 ? 'green' : ''}>
-                  {line}
-                  <br />
-                </span>
-              ))}
+              {(() => {
+                let word = 0;
+                return content.title.split('\n').map((line, i) => (
+                  <span key={i} className={i > 0 ? 'green' : ''}>
+                    {line.split(' ').map((part, j) => (
+                      <span
+                        key={j}
+                        className="nrh-w"
+                        style={{ '--w': word++ } as CSSProperties}
+                      >
+                        {part}
+                        {'\u00a0'}
+                      </span>
+                    ))}
+                    <br />
+                  </span>
+                ));
+              })()}
             </h1>
             <p>{content.subtitle}</p>
             <div className="nr-hero-actions">
@@ -713,7 +931,7 @@ export function BuiltinHomeSection({
           <div className="nr-hero-visual">
             <div className="nr-orbit one" />
             <div className="nr-orbit two" />
-            <ProductPreview />
+            <HeroPreview />
             <span className="nr-hero-caption">
               DO CAMPO AO ESCRITÓRIO, TUDO CONECTADO.
             </span>
@@ -722,24 +940,26 @@ export function BuiltinHomeSection({
       );
     case 'benefits':
       return (
-        <section className="nr-benefits-strip">
-          {content.benefits
-            .filter((item) => item.visible !== false)
-            .map((b, i) => {
-              const Icon = [Layers3, CheckCircle2, Users][i % 3];
-              return (
-                <div key={b.id}>
-                  <span>
-                    <Icon size={22} />
-                  </span>
-                  <div>
-                    <h3>{b.title}</h3>
-                    <p>{b.text}</p>
+        <>
+          <section className="nr-benefits-strip">
+            {content.benefits
+              .filter((item) => item.visible !== false)
+              .map((b, i) => {
+                return (
+                  <div key={b.id}>
+                    <span>
+                      <BenefitArt index={i} />
+                    </span>
+                    <div>
+                      <h3>{b.title}</h3>
+                      <p>{b.text}</p>
+                    </div>
                   </div>
-                </div>
-              );
-            })}
-        </section>
+                );
+              })}
+          </section>
+          <VideoShowcase />
+        </>
       );
     case 'ai':
       return (
@@ -755,33 +975,7 @@ export function BuiltinHomeSection({
               <ArrowUpRight size={16} />
             </Link>
           </div>
-          <div className="nr-ai-card">
-            <div className="nr-ai-card-title">
-              <span>
-                <Sparkles size={20} />
-              </span>
-              <div>
-                Assistente NextRotta
-                <small>Um novo olhar sobre a sua operação</small>
-              </div>
-              <Badge>Plano Pro</Badge>
-            </div>
-            {[
-              'Quanto gastei com folha este mês?',
-              'Qual técnico mais produziu na Q1?',
-              'Tem algo estranho na folha de setembro?',
-            ].map((question) => (
-              <Link
-                key={question}
-                href="/contratar?plano=pro"
-                className="nr-ai-question"
-              >
-                {question}
-                <ArrowUpRight size={14} />
-              </Link>
-            ))}
-            <p>Você pergunta. Sua operação responde.</p>
-          </div>
+          <AiDemo />
         </section>
       );
     case 'features':
@@ -802,13 +996,16 @@ export function BuiltinHomeSection({
             <p className="nr-kicker">DA ESCOLHA À PRIMEIRA ROTA</p>
             <h2>Começar pode ser simples.</h2>
           </div>
-          <div className="nr-grid-3">
+          <div className="nrv-steps">
             {content.steps
               .filter((item) => item.visible !== false)
               .map((step, i) => (
                 <article key={step.id}>
-                  <span>0{i + 1}</span>
-                  <h3>{step.title}</h3>
+                  <StepArt index={i} />
+                  <h3>
+                    <span className="nrv-num">{i + 1}</span>
+                    {step.title}
+                  </h3>
                   <p>{step.text}</p>
                 </article>
               ))}
@@ -822,32 +1019,40 @@ export function BuiltinHomeSection({
             <p className="nr-kicker">SEMPRE EM MOVIMENTO</p>
             <h2>{content.updatesTitle}</h2>
             <p>{content.updatesText}</p>
+            <Link href="/novidades" className="nr-btn">
+              Veja o que há de novo
+              <ArrowUpRight size={17} />
+            </Link>
           </div>
-          <Link href="/novidades" className="nr-btn">
-            Veja o que há de novo
-            <ArrowUpRight size={17} />
-          </Link>
+          <UpdatesFeed />
         </section>
       );
     case 'security':
       return (
         <section className="nr-public-section nr-security">
-          <div className="nr-section-center">
-            <ShieldCheck size={37} />
-            <h2>{content.securityTitle}</h2>
-          </div>
-          <div className="nr-grid-3">
-            {content.security
-              .filter((item) => item.visible !== false)
-              .map((s) => (
-                <article key={s.id}>
-                  <h3>
-                    <CheckCircle2 size={18} />
-                    {s.title}
-                  </h3>
-                  <p>{s.text}</p>
-                </article>
-              ))}
+          <div className="nrv-sec-band">
+            <div>
+              <h2>{content.securityTitle}</h2>
+              <ShieldArt />
+            </div>
+            <ul className="nrv-sec-list">
+              {content.security
+                .filter((item) => item.visible !== false)
+                .map((s, i) => (
+                  <li key={s.id} style={{ '--i': i } as CSSProperties}>
+                    <span className="nrv-sec-ico">
+                      <SecIcon index={i} />
+                    </span>
+                    <div>
+                      <h3>{s.title}</h3>
+                      <p>{s.text}</p>
+                    </div>
+                    <span className="nrv-ok">
+                      <Check size={14} strokeWidth={3} />
+                    </span>
+                  </li>
+                ))}
+            </ul>
           </div>
         </section>
       );
@@ -881,6 +1086,7 @@ export function BuiltinHomeSection({
     case 'cta':
       return (
         <section className="nr-final-cta">
+          <RouteArt />
           <div>
             <p className="nr-kicker">VAMOS DAR O PRÓXIMO PASSO?</p>
             <h2>
@@ -1037,7 +1243,11 @@ export function MarketingContact({ custom = false }: { custom?: boolean }) {
               implantação. A primeira mensalidade vem no mês seguinte, no dia
               que você escolher.
             </p>
-            <Link className="nr-btn primary" href="/contratar" style={{ marginTop: 16 }}>
+            <Link
+              className="nr-btn primary"
+              href="/contratar"
+              style={{ marginTop: 16 }}
+            >
               Assinar agora
               <ArrowRight size={16} />
             </Link>

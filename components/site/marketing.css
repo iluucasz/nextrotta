@@ -34,3 +34,10 @@
   .nr-pricing-grid .nr-public-plan > .nr-btn { align-self: end; }
   .nr-pricing-grid .nr-plan-note { align-self: start; }
 }
+
+/* "Monte o seu": the module rows have a checkbox and their own price. */
+.nr-public-plan.nr-builder { border-style: dashed; }
+.nr-public-plan li.nr-builder-module { padding: 0; }
+.nr-builder-module label { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 0; cursor: pointer; }
+.nr-builder-module input { width: 17px; height: 17px; accent-color: #327b56; flex-shrink: 0; }
+.nr-builder-module small { margin-left: auto; font-size: 13px; color: #327b56; font-weight: 600; white-space: nowrap; }
