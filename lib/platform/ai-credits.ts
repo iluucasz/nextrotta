@@ -242,7 +242,7 @@ export async function getOrganizationCredits(organizationId: string) {
       LIMIT 200
     `,
     sql`
-      SELECT p.ai_monthly_credits, p.ai_bonus_credits, ('ai' = ANY(p.features)) AS has_ai
+      SELECT p.ai_monthly_credits, p.ai_bonus_credits, ('ai' = ANY(p.features) OR s.modules @> '[{"key": "ai"}]'::jsonb) AS has_ai
       FROM subscriptions s JOIN plans p ON p.id = s.plan_id
       WHERE s.organization_id = ${organizationId} AND s.canceled_at IS NULL
     `,
@@ -359,7 +359,7 @@ export async function grantMonthlyCredits() {
     JOIN plans p ON p.id = s.plan_id
     JOIN organizations o ON o.id = s.organization_id
     WHERE s.canceled_at IS NULL AND o.deleted_at IS NULL AND o.status IN ('active', 'past_due')
-      AND p.ai_monthly_credits > 0 AND 'ai' = ANY(p.features)
+      AND p.ai_monthly_credits > 0 AND ('ai' = ANY(p.features) OR s.modules @> '[{"key": "ai"}]'::jsonb)
     ON CONFLICT (organization_id, period) WHERE kind = 'monthly' DO NOTHING
     RETURNING organization_id
   `;

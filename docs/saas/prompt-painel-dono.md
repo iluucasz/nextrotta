@@ -176,6 +176,14 @@ Edição de plano:
 - Visível no site (sim/não).
 - Ao salvar uma mudança de preço: escolher entre **aplicar só a novas assinaturas** ou **aplicar a todos a partir do próximo ciclo**, mostrando quantas organizações são afetadas.
 
+### 1.6.1 Monte o seu (módulos)
+O plano **Sob medida deixou de existir** (a lista pode mostrá-lo como arquivado). No lugar há a **montagem**: o cliente parte de uma base e soma só os módulos que quer.
+- Bloco **Base da montagem**: preço mensal e anual, técnicos incluídos, técnico extra e implantação da base (é o plano `montagem`, editável como os outros; ligar/desligar a montagem = arquivar/restaurar esse plano). Os recursos da base são só leitura aqui.
+- Tabela **Módulos**: uma linha por recurso geral que não é da base nem do núcleo — nome, descrição, **preço mensal** (vazio = fora de venda), **implantação**, preço anual calculado (mensal × fator da base, hoje ×10) e interruptor "à venda".
+- Linha de resumo: "Todos os módulos juntos: R$ X por mês e R$ Y de implantação" e, para cada pacote (Essencial, Pro), uma **comparação**: "o mesmo conteúdo montado custaria R$ Z contra R$ P do pacote" (considerando os técnicos incluídos), para o dono calibrar os preços.
+- Aviso ao salvar: o novo preço vale só para novas assinaturas; quem já contratou mantém o que escolheu.
+- API: `GET /api/platform/modules`, `PUT /api/platform/modules/:key` (veja `api-plataforma.md`).
+
 Planos iniciais (dados de exemplo):
 
 | | Essencial | Pro | Sob medida |
@@ -315,20 +323,20 @@ Seções, nesta ordem lógica (a disposição visual fica a seu critério):
 
 ### 2.2 Planos
 - Alternância **Mensal / Anual**, mostrando a economia no anual ("2 meses grátis").
-- Três colunas: **Essencial**, **Pro** (destaque) e **Sob medida** (sem preço, botão **Fale conosco**).
+- Duas colunas de pacotes prontos (**Essencial**, **Pro** em destaque) e, abaixo ou ao lado, o bloco **Monte o seu**: lista de módulos com caixa de seleção, preço de cada um e o total somando na hora (mensal ou anual, conforme a alternância), mais a implantação. Os dados vêm de `GET /api/public/plans` (`plans` = pacotes; `builder` = base + `modules`, ou `null` se a montagem estiver desligada — nesse caso o bloco não aparece). Não há mais coluna "Sob medida".
 - Para cada plano: preço, técnicos incluídos, preço do técnico extra, valor da implantação, tempo de guarda do backup diário e lista de recursos.
 - No Pro, destacar a IA: "Créditos de IA inclusos todo mês. Precisa de mais? Compre créditos extras quando quiser."
 - Comparativo completo de recursos entre os planos.
 - Avisos: implantação inclui configuração e treinamento; atualizações sem custo extra; dados nunca apagados por atraso.
 - Perguntas frequentes sobre cobrança.
-- Botões **Contratar** (leva a `/contato` com o plano pré-selecionado).
+- Botões **Contratar** (levam a `/contratar?plano=&ciclo=`; no Monte o seu, `/contratar?plano=montagem&ciclo=&modulos=porto,whatsapp`). No checkout, a cotação de cada combinação vem de `GET /api/public/signup?plan=montagem&cycle=&billingDay=&modules=a,b` e o envio (`POST`) leva `plan: "montagem"` e `modules: ["porto", ...]`.
 
 ### 2.3 Contato / Contratar (`/contato`)
 Formulário: nome, empresa, e-mail, WhatsApp, nº de técnicos, plano de interesse (pré-selecionado quando vier da página de planos), ciclo preferido (mensal/anual) e mensagem.
 Confirmação após envio. Links diretos para WhatsApp e e-mail.
 
 ### 2.4 Sob medida (`/sob-medida`)
-Explica o plano Sob medida: funcionalidades desenvolvidas para a sua operação, isoladas para a sua empresa. Formulário: dados de contato + descrição da necessidade + nº de técnicos.
+Não é mais um plano (a montagem de módulos em `/planos` o substituiu). A página pode virar um redirecionamento para o bloco "Monte o seu" ou ficar como contato para necessidades específicas. O texto antigo era: funcionalidades desenvolvidas para a sua operação, isoladas para a sua empresa. Formulário: dados de contato + descrição da necessidade + nº de técnicos.
 
 ### 2.5 Novidades (`/novidades`)
 Lista das publicações marcadas para o site (seção 1.12), da mais recente para a mais antiga, com categoria e data.

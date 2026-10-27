@@ -82,7 +82,7 @@ export async function getCapacity() {
       SELECT o.id, o.name, o.slug, o.status,
              (SELECT c.id FROM storage_containers c WHERE c.id = o.storage_container_id AND c.archived_at IS NULL) AS storage_container_id,
              s.organization_id IS NOT NULL AS subscribed, s.limit_overrides, s.included_technicians,
-             p.name AS plan_name, p.features AS plan_features, p.max_users, p.storage_mb,
+             p.name AS plan_name, p.features AS plan_features, s.modules AS plan_modules, p.max_users, p.storage_mb,
              p.whatsapp_messages_month, p.porto_runs_month, p.ai_monthly_credits,
              (SELECT COALESCE(array_agg(g.feature_key), '{}') FROM organization_features g
                WHERE g.organization_id = o.id AND g.revoked_at IS NULL) AS granted,
@@ -152,7 +152,10 @@ export async function getCapacity() {
     const id = String(row.id);
     const subscribed = Boolean(row.subscribed);
     const granted = (Array.isArray(row.granted) ? row.granted : []).map(String);
-    const planFeatures = (Array.isArray(row.plan_features) ? row.plan_features : []).map(String);
+    const planFeatures = [
+      ...(Array.isArray(row.plan_features) ? row.plan_features : []).map(String),
+      ...(Array.isArray(row.plan_modules) ? row.plan_modules : []).map((module: { key?: unknown }) => String(module.key)),
+    ];
     const features = new Set(subscribed ? [...planFeatures, ...granted] : [...ALL_FEATURES, ...granted]);
     const planLimits: PlanLimits = {
       maxUsers: row.max_users === null ? null : Number(row.max_users),

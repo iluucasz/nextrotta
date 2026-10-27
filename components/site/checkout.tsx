@@ -22,11 +22,24 @@ type PlanOption = {
   includedTechnicians: number;
 };
 
+/** "Monte o seu": the base plus modules the company ticks; the server prices every combination. */
+type BuilderOption = PlanOption & {
+  modules: Array<{
+    key: string;
+    name: string;
+    description: string | null;
+    monthlyPrice: number;
+    annualPrice: number;
+    setupFee: number;
+  }>;
+};
+
 type Quote = {
   plan: { key: string; name: string };
   cycle: 'monthly' | 'annual';
   billingDay: number;
   billingDays: number[];
+  modules?: Array<{ key: string; name: string; price: number; setupFee: number }>;
   setupFee: number;
   recurring: number;
   firstDueDate: string;
@@ -118,6 +131,8 @@ function SummaryRow({ icon, title, value, detail }: { icon: ReactNode; title: st
 
 export function MarketingCheckout() {
   const [plans, setPlans] = useState<PlanOption[] | null>(null);
+  const [builder, setBuilder] = useState<BuilderOption | null>(null);
+  const [modules, setModules] = useState<string[]>([]);
   const [loadError, setLoadError] = useState('');
   const [step, setStep] = useState(0);
   const [plan, setPlan] = useState('');
@@ -148,19 +163,33 @@ export function MarketingCheckout() {
   const formRef = useRef<HTMLFormElement>(null);
 
   const set = (key: keyof typeof values, value: string) => setValues((current) => ({ ...current, [key]: value }));
-  const selectable = useMemo(() => (plans ?? []).filter((candidate) => !candidate.onRequest), [plans]);
+  const selectable = useMemo(
+    () => [...(plans ?? []).filter((candidate) => !candidate.onRequest), ...(builder ? [{ ...builder, featured: false, onRequest: false }] : [])],
+    [plans, builder],
+  );
   const chosen = selectable.find((candidate) => candidate.key === plan) ?? null;
+  const isBuilder = Boolean(builder && plan === builder.key);
+  const toggleModule = (key: string) =>
+    setModules((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
 
   useEffect(() => {
     setRootDomain(window.location.host);
     fetch('/api/public/plans', { cache: 'no-store' })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error())))
-      .then((data: { plans: PlanOption[] }) => {
+      .then((data: { plans: PlanOption[]; builder?: BuilderOption | null }) => {
         setPlans(data.plans);
+        setBuilder(data.builder ?? null);
         const query = new URLSearchParams(window.location.search);
         const options = data.plans.filter((candidate) => !candidate.onRequest);
-        const fromQuery = options.find((candidate) => candidate.key === query.get('plano'));
-        setPlan((fromQuery ?? options.find((candidate) => candidate.featured) ?? options[0])?.key ?? '');
+        const wanted = query.get('plano');
+        const fromQuery = options.find((candidate) => candidate.key === wanted);
+        if (data.builder && wanted === data.builder.key) {
+          const offered = new Set(data.builder.modules.map((module) => module.key));
+          setModules((query.get('modulos') ?? '').split(',').filter((key) => offered.has(key)));
+          setPlan(data.builder.key);
+        } else {
+          setPlan((fromQuery ?? options.find((candidate) => candidate.featured) ?? options[0])?.key ?? '');
+        }
         const queryCycle = query.get('ciclo');
         if (queryCycle === 'monthly' || queryCycle === 'annual') setCycle(queryCycle);
       })
@@ -171,14 +200,15 @@ export function MarketingCheckout() {
   useEffect(() => {
     if (!plan) return;
     let active = true;
-    fetch(`/api/public/signup?plan=${encodeURIComponent(plan)}&cycle=${cycle}&billingDay=${billingDay}`, { cache: 'no-store' })
+    const moduleQuery = isBuilder && modules.length ? `&modules=${modules.join(',')}` : '';
+    fetch(`/api/public/signup?plan=${encodeURIComponent(plan)}&cycle=${cycle}&billingDay=${billingDay}${moduleQuery}`, { cache: 'no-store' })
       .then((response) => response.json().then((data) => (response.ok ? data : Promise.reject(new Error(data?.error)))))
       .then((data: Quote) => active && setQuote(data))
       .catch(() => active && setQuote(null));
     return () => {
       active = false;
     };
-  }, [plan, cycle, billingDay]);
+  }, [plan, cycle, billingDay, isBuilder, modules]);
 
   // The address follows the company name until the customer edits it.
   useEffect(() => {
@@ -229,7 +259,7 @@ export function MarketingCheckout() {
       const response = await fetch('/api/public/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...values, confirm: undefined, plan, cycle, billingDay, acceptTerms }),
+        body: JSON.stringify({ ...values, confirm: undefined, plan, cycle, billingDay, acceptTerms, ...(isBuilder ? { modules } : {}) }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
@@ -245,6 +275,7 @@ export function MarketingCheckout() {
   }
 
   const price = chosen ? (cycle === 'annual' ? chosen.annualPrice : chosen.monthlyPrice) : 0;
+  const quotedModules = isBuilder ? (quote?.modules ?? []) : [];
   const recurring = quote?.recurring ?? price;
   const setupFee = quote?.setupFee ?? chosen?.setupFee ?? 0;
   const per = cycle === 'annual' ? 'ano' : 'mês';
@@ -266,7 +297,9 @@ export function MarketingCheckout() {
             value={chosen ? `${money(recurring)}/${per}` : '—'}
             detail={
               chosen
-                ? `Até ${chosen.includedTechnicians} técnicos incluídos${chosen.extraTechnicianPrice ? ` · técnico extra ${money(chosen.extraTechnicianPrice)}/mês` : ''}.`
+                ? `Até ${chosen.includedTechnicians} técnicos incluídos${chosen.extraTechnicianPrice ? ` · técnico extra ${money(chosen.extraTechnicianPrice)}/mês` : ''}.${
+                    isBuilder ? ` Módulos: ${quotedModules.length ? quotedModules.map((module) => module.name).join(', ') : 'nenhum além da base'}.` : ''
+                  }`
                 : undefined
             }
           />
@@ -340,16 +373,57 @@ export function MarketingCheckout() {
                           {candidate.featured ? <small style={{ marginLeft: 8, color: GREEN, fontWeight: 600 }}>O mais escolhido</small> : null}
                         </span>
                         <span>
+                          {builder && candidate.key === builder.key ? 'a partir de ' : ''}
                           {money(cycle === 'annual' ? candidate.annualPrice : candidate.monthlyPrice)}/{per}
                         </span>
                       </span>
                       {candidate.description ? <small style={{ display: 'block', marginTop: 4, color: MUTED, fontWeight: 400 }}>{candidate.description}</small> : null}
                     </Choice>
                   ))}
-                  <Link href="/sob-medida" style={{ fontSize: 13, color: GREEN, textDecoration: 'underline' }}>
-                    Precisa de algo sob medida? Fale com a gente.
+                  <Link href="/contato" style={{ fontSize: 13, color: GREEN, textDecoration: 'underline' }}>
+                    Ficou com dúvida sobre qual escolher? Fale com a gente.
                   </Link>
                 </div>
+
+                {isBuilder && builder ? (
+                  <>
+                    <p style={{ margin: '24px 0 10px', fontWeight: 600, fontSize: 15 }}>Módulos do seu plano</p>
+                    <div style={{ display: 'grid', gap: 8 }}>
+                      {builder.modules.map((module) => (
+                        <label
+                          key={module.key}
+                          style={{
+                            display: 'flex',
+                            gap: 12,
+                            alignItems: 'flex-start',
+                            border: `1.5px solid ${modules.includes(module.key) ? GREEN : '#dce5de'}`,
+                            background: modules.includes(module.key) ? '#eef6ef' : '#fcfdf9',
+                            borderRadius: 10,
+                            padding: '10px 14px',
+                            cursor: 'pointer',
+                          }}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={modules.includes(module.key)}
+                            onChange={() => toggleModule(module.key)}
+                            style={{ marginTop: 4, accentColor: GREEN }}
+                          />
+                          <span style={{ flex: 1 }}>
+                            <strong style={{ fontWeight: 600 }}>{module.name}</strong>
+                            {module.description ? <small style={{ display: 'block', color: MUTED }}>{module.description}</small> : null}
+                          </span>
+                          <span style={{ whiteSpace: 'nowrap', color: GREEN, fontWeight: 600 }}>
+                            +{money(cycle === 'annual' ? module.annualPrice : module.monthlyPrice)}/{per}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <small style={{ display: 'block', marginTop: 8, color: MUTED }}>
+                      A base já inclui técnicos, OS, horas, escala e folha. Precisa de outro módulo depois? É só falar com a gente.
+                    </small>
+                  </>
+                ) : null}
 
                 <p style={{ margin: '24px 0 10px', fontWeight: 600, fontSize: 15 }}>Ciclo de cobrança</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>

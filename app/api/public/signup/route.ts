@@ -16,6 +16,7 @@ const failure = (error: unknown, fallback: string) => {
 /**
  * Checkout helpers for the site: `?slug=` checks an address; `?plan=&cycle=&billingDay=` returns
  * what is charged today (setup fee) and the first recurring charge (next month, on the chosen day).
+ * For the builder plan ("montagem") add `&modules=porto,whatsapp`: the answer lists each module's price.
  */
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
@@ -25,12 +26,15 @@ export async function GET(request: NextRequest) {
       const result = await checkSlugAvailability(slug);
       return NextResponse.json({ slug: result.slug, available: result.available, reason: result.reason ?? null });
     }
-    const quote = await quoteSignup(params.get('plan'), params.get('cycle'), params.get('billingDay') ?? BILLING_DAYS[1]);
+    const modules = (params.get('modules') ?? '').split(',').map((key) => key.trim()).filter(Boolean);
+    const quote = await quoteSignup(params.get('plan'), params.get('cycle'), params.get('billingDay') ?? BILLING_DAYS[1], modules);
     return NextResponse.json({
       plan: { key: quote.plan.key, name: quote.plan.name, description: quote.plan.description, includedTechnicians: quote.plan.includedTechnicians },
       cycle: quote.cycle,
       billingDay: quote.billingDay,
       billingDays: BILLING_DAYS,
+      basePrice: quote.basePrice,
+      modules: quote.moduleDetails.map((module) => ({ key: module.key, name: module.name, price: module.price, setupFee: module.setupFee })),
       setupFee: quote.setupFee,
       recurring: quote.recurring,
       firstDueDate: quote.firstDueDate,

@@ -20,7 +20,7 @@ const UNLIMITED: PlanLimits = { maxUsers: null, storageMb: null, whatsappMessage
 export async function getEntitlements(organizationId: string): Promise<Entitlements> {
   const [rows, catalog] = await Promise.all([
     sql`
-      SELECT p.*, s.limit_overrides
+      SELECT p.*, s.limit_overrides, s.modules
       FROM subscriptions s
       JOIN plans p ON p.id = s.plan_id
       WHERE s.organization_id = ${organizationId}
@@ -44,10 +44,12 @@ export async function getEntitlements(organizationId: string): Promise<Entitleme
   if (!rows[0]) return { planKey: null, planName: null, features: null, granted, customOnly, limits: UNLIMITED };
 
   const plan = planFromRow(rows[0]);
+  // A builder subscription adds the modules it chose to the base's features.
+  const modules = (Array.isArray(rows[0].modules) ? rows[0].modules : []).map((module: { key?: unknown }) => String(module.key));
   return {
     planKey: plan.key,
     planName: plan.name,
-    features: plan.features.filter((key) => active.has(key)),
+    features: Array.from(new Set([...plan.features, ...modules])).filter((key) => active.has(key)),
     granted,
     customOnly,
     limits: effectiveLimits(plan.limits, rows[0].limit_overrides as Partial<PlanLimits>),
@@ -122,7 +124,8 @@ export function featureAllowedSql(alias: string, feature: PlanFeature) {
     NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.organization_id = ${alias}.id AND s.canceled_at IS NULL)
     OR EXISTS (
       SELECT 1 FROM subscriptions s JOIN plans p ON p.id = s.plan_id
-      WHERE s.organization_id = ${alias}.id AND s.canceled_at IS NULL AND '${feature}' = ANY(p.features)
+      WHERE s.organization_id = ${alias}.id AND s.canceled_at IS NULL
+        AND ('${feature}' = ANY(p.features) OR s.modules @> '[{"key": "${feature}"}]'::jsonb)
     )
   )`;
 }

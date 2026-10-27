@@ -72,12 +72,15 @@ async function loadUpgradeContext(organizationId: string) {
     sql`SELECT onboarding_status FROM organizations WHERE id = ${organizationId}`,
   ]);
   const plans = planRows.map(planFromRow);
-  const current = plans.find((plan) => plan.id === subscription.plan.id) ?? planFromRow((await sql`SELECT * FROM plans WHERE id = ${subscription.plan.id}`)[0]);
+  const currentPlan = plans.find((plan) => plan.id === subscription.plan.id) ?? planFromRow((await sql`SELECT * FROM plans WHERE id = ${subscription.plan.id}`)[0]);
+  // A builder subscription also has the modules it chose; what it pays already includes them.
+  const current: Plan = { ...currentPlan, features: Array.from(new Set([...currentPlan.features, ...subscription.modules.map((module) => module.key)])) };
   const featureInfo = new Map(catalog.map((row) => [String(row.key), row]));
   const price = (plan: Plan) => (subscription.cycle === 'annual' ? plan.annualPrice : plan.monthlyPrice);
+  const currentPrice = currentPlan.kind === 'builder' ? subscription.basePrice : price(currentPlan);
 
   const options = plans
-    .filter((plan) => plan.visible && !plan.onRequest && plan.id !== current.id && price(plan) > price(current))
+    .filter((plan) => plan.kind === 'package' && plan.visible && !plan.onRequest && plan.id !== current.id && price(plan) > currentPrice)
     .map((plan) => {
       const newFeatures: NewFeature[] = plan.features
         .filter((key) => !current.features.includes(key) && featureInfo.has(key))
@@ -156,7 +159,7 @@ export async function upgradeSubscription(organizationId: string, planKey: unkno
   await sql`
     UPDATE subscriptions
     SET plan_id = ${plan.id}, base_price = ${option.summary.basePrice}, extra_technician_price = ${plan.extraTechnicianPrice},
-        included_technicians = ${plan.includedTechnicians}, updated_at = NOW()
+        included_technicians = ${plan.includedTechnicians}, modules = '[]'::jsonb, updated_at = NOW()
     WHERE organization_id = ${organizationId}
   `;
   if (plan.features.includes('ai')) {

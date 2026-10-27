@@ -7,12 +7,15 @@ import {
   effectiveLimits,
   LIMIT_KEYS,
   planFromRow,
+  quoteBuilder,
   type BillingCycle,
   type Plan,
   type PlanLimits,
+  type SubscriptionModule,
 } from '../plans';
 import { isUuid, PlatformError, type Actor } from './errors';
 import { grantBonusCredits } from './ai-credits';
+import { listModuleOffers } from './modules';
 import { listGeneralFeatureKeys } from './features';
 import { assertStorageFits, autoAssignQuietly, getStorageRoom } from './storage-containers';
 import { getPlatformSettings } from './settings';
@@ -171,7 +174,9 @@ export async function updatePlan(planId: string, input: Record<string, unknown>,
   if (priceChanged && input.applyPriceChange === 'next_cycle') {
     const updated = await sql`
       UPDATE subscriptions s
-      SET base_price = CASE s.cycle WHEN 'annual' THEN p.annual_price ELSE p.monthly_price END,
+      -- A builder subscription keeps the (frozen) price of the modules it chose on top of the base.
+      SET base_price = CASE s.cycle WHEN 'annual' THEN p.annual_price ELSE p.monthly_price END
+                       + COALESCE((SELECT SUM((m ->> 'price')::numeric) FROM jsonb_array_elements(s.modules) m), 0),
           extra_technician_price = p.extra_technician_price,
           included_technicians = p.included_technicians,
           updated_at = NOW()
@@ -211,6 +216,8 @@ export type SubscriptionInput = {
   chargeSetupFee?: boolean;
   graceDays?: number;
   limitOverrides?: Partial<PlanLimits>;
+  /** Builder plan only: the modules to add to the base. Left out, an existing subscription keeps its own. */
+  modules?: string[];
 };
 
 export function parseSubscriptionInput(input: Record<string, unknown>): SubscriptionInput {
@@ -227,6 +234,10 @@ export function parseSubscriptionInput(input: Record<string, unknown>): Subscrip
   if (input.discountAmount !== undefined) result.discountAmount = money(input.discountAmount, 'Desconto');
   if (input.setupFee !== undefined) result.setupFee = money(input.setupFee, 'Implantação');
   if (input.chargeSetupFee !== undefined) result.chargeSetupFee = Boolean(input.chargeSetupFee);
+  if (input.modules !== undefined) {
+    if (!Array.isArray(input.modules) || !input.modules.every((key) => typeof key === 'string')) throw new PlatformError('Módulos: envie a lista de chaves.');
+    result.modules = input.modules as string[];
+  }
   if (input.graceDays !== undefined) result.graceDays = wholeNumber(input.graceDays, 'Carência');
   if (input.limitOverrides !== undefined) {
     const raw = (input.limitOverrides ?? {}) as Record<string, unknown>;
@@ -262,6 +273,7 @@ export async function getSubscription(organizationId: string) {
 
   return {
     plan: { id: String(row.plan_id), key: String(row.plan_key), name: String(row.plan_name) },
+    modules: (Array.isArray(row.modules) ? row.modules : []) as SubscriptionModule[],
     ...pricing,
     activeTechnicians: Number(row.active_technicians),
     ...calculateSubscriptionValue(pricing, Number(row.active_technicians)),
@@ -296,8 +308,19 @@ export async function setSubscription(organizationId: string, input: Subscriptio
     await assertStorageFits(organizationId, storageAfter);
   }
   const defaultGraceDays = existing ? Number(existing.grace_days) : (await getPlatformSettings()).defaultGraceDays;
-  const basePrice = input.cycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
-  const setupFee = input.setupFee ?? (existing ? Number(existing.setup_fee) : plan.setupFee);
+  // A package costs its own price; the builder costs its base plus the chosen modules, priced now.
+  let basePrice = input.cycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
+  let modules: SubscriptionModule[] = [];
+  let defaultSetupFee = plan.setupFee;
+  if (plan.kind === 'builder') {
+    const keep = ((Array.isArray(existing?.modules) ? existing.modules : []) as SubscriptionModule[]).map((module) => module.key);
+    const quote = quoteBuilder(plan, await listModuleOffers(plan), input.modules ?? keep, input.cycle);
+    if (quote.unknown.length) throw new PlatformError(`Módulo indisponível: ${quote.unknown.join(', ')}.`);
+    basePrice = quote.basePrice;
+    modules = quote.modules;
+    defaultSetupFee = quote.setupFee;
+  }
+  const setupFee = input.setupFee ?? (existing ? Number(existing.setup_fee) : defaultSetupFee);
   const setupFeeStatus = existing
     ? String(existing.setup_fee_status)
     : input.chargeSetupFee === false || setupFee === 0
@@ -309,17 +332,18 @@ export async function setSubscription(organizationId: string, input: Subscriptio
   await sql`
     INSERT INTO subscriptions (
       organization_id, plan_id, cycle, base_price, extra_technician_price, included_technicians,
-      discount_percent, discount_amount, setup_fee, setup_fee_status, grace_days, limit_overrides
+      discount_percent, discount_amount, setup_fee, setup_fee_status, grace_days, limit_overrides, modules
     )
     VALUES (
       ${organizationId}, ${plan.id}, ${input.cycle}, ${basePrice}, ${plan.extraTechnicianPrice}, ${plan.includedTechnicians},
       ${input.discountPercent ?? 0}, ${input.discountAmount ?? 0}, ${setupFee}, ${setupFeeStatus},
-      ${input.graceDays ?? defaultGraceDays}, ${JSON.stringify(input.limitOverrides ?? {})}::jsonb
+      ${input.graceDays ?? defaultGraceDays}, ${JSON.stringify(input.limitOverrides ?? {})}::jsonb, ${JSON.stringify(modules)}::jsonb
     )
     ON CONFLICT (organization_id) DO UPDATE
     SET plan_id = EXCLUDED.plan_id,
         cycle = EXCLUDED.cycle,
         base_price = EXCLUDED.base_price,
+        modules = EXCLUDED.modules,
         extra_technician_price = EXCLUDED.extra_technician_price,
         included_technicians = EXCLUDED.included_technicians,
         discount_percent = ${input.discountPercent ?? (existing ? Number(existing.discount_percent) : 0)},
@@ -340,7 +364,7 @@ export async function setSubscription(organizationId: string, input: Subscriptio
     targetId: organizationId,
     details: {
       before: existing ? { planId: existing.plan_id, cycle: existing.cycle, basePrice: Number(existing.base_price) } : null,
-      after: { planId: plan.id, cycle: input.cycle, basePrice, setupFee, setupFeeStatus },
+      after: { planId: plan.id, cycle: input.cycle, basePrice, setupFee, setupFeeStatus, modules: modules.map((module) => module.key) },
     },
   });
   // With a plan it has a storage limit: place it in a container (no-op when it already has one).

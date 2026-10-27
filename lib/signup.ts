@@ -7,9 +7,10 @@ import { createSetupCharge, nextMonthDueDate, startSubscriptionAfterSetup, upser
 import { sql } from './db';
 import { grantBonusCredits } from './platform/ai-credits';
 import { PlatformError } from './platform/errors';
+import { quoteBuilderSelection } from './platform/modules';
 import { checkSlugAvailability } from './platform/organizations';
 import { getPlatformSettings } from './platform/settings';
-import { calculateSubscriptionValue, planFromRow, type BillingCycle } from './plans';
+import { calculateSubscriptionValue, planFromRow, type BillingCycle, type SubscriptionModule } from './plans';
 import { autoAssignQuietly } from './platform/storage-containers';
 import { validatePhone } from './whatsapp/phone';
 
@@ -56,19 +57,34 @@ export function isValidDocument(raw: unknown) {
   return false;
 }
 
-/** What the checkout shows before confirming: today's charge and the first recurring one. */
-export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: unknown) {
-  const rows = await sql`SELECT * FROM plans WHERE key = ${String(planKey ?? '')} AND archived_at IS NULL AND visible = TRUE`;
+/**
+ * What the checkout shows before confirming: today's charge and the first recurring one. For the
+ * builder plan ("montagem") `modules` lists the chosen modules; the price is the base plus theirs.
+ */
+export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: unknown, moduleKeys: unknown = []) {
+  const rows = await sql`SELECT * FROM plans WHERE key = ${String(planKey ?? '')} AND archived_at IS NULL AND (visible = TRUE OR kind = 'builder')`;
   if (!rows[0]) throw new PlatformError('Plano indisponível.');
   const plan = planFromRow(rows[0]);
   if (plan.onRequest) throw new PlatformError('Este plano é sob consulta. Fale com a gente pelo formulário de contato.');
   const billingCycle: BillingCycle = cycle === 'annual' ? 'annual' : 'monthly';
   const day = Number(billingDay);
   if (!BILLING_DAYS.includes(day)) throw new PlatformError('Escolha o dia do vencimento.');
+
+  let basePrice = billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
+  let setupFee = plan.setupFee;
+  let modules: SubscriptionModule[] = [];
+  let moduleDetails: Array<SubscriptionModule & { name: string; description: string | null }> = [];
+  if (plan.kind === 'builder') {
+    const { quote, details } = await quoteBuilderSelection(moduleKeys, billingCycle);
+    basePrice = quote.basePrice;
+    setupFee = quote.setupFee;
+    modules = quote.modules;
+    moduleDetails = details;
+  }
   const recurring = calculateSubscriptionValue(
     {
       cycle: billingCycle,
-      basePrice: billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice,
+      basePrice,
       extraTechnicianPrice: plan.extraTechnicianPrice,
       includedTechnicians: plan.includedTechnicians,
       discountPercent: 0,
@@ -76,14 +92,14 @@ export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: 
     },
     0,
   ).value;
-  return { plan, cycle: billingCycle, billingDay: day, setupFee: plan.setupFee, recurring, firstDueDate: nextMonthDueDate(day) };
+  return { plan, cycle: billingCycle, billingDay: day, basePrice, setupFee, modules, moduleDetails, recurring, firstDueDate: nextMonthDueDate(day) };
 }
 
 export async function signUp(input: Record<string, unknown>, sourceIp: string | null) {
   // Honeypot: bots fill every field.
   if (clip(input.website, 200)) throw new PlatformError('Não foi possível concluir.', 400);
 
-  const quote = await quoteSignup(input.plan, input.cycle, input.billingDay);
+  const quote = await quoteSignup(input.plan, input.cycle, input.billingDay, input.modules);
 
   const company = clip(input.company, 160);
   const legalName = clip(input.legalName, 200) || company;
@@ -140,7 +156,6 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
   }
 
   const plan = quote.plan;
-  const basePrice = quote.cycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
   const adminId = randomUUID();
   const passwordHash = await hashPassword(password);
   const { defaultGraceDays } = await getPlatformSettings();
@@ -163,17 +178,19 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
       sql`
         INSERT INTO subscriptions (
           organization_id, plan_id, cycle, base_price, extra_technician_price, included_technicians,
-          setup_fee, setup_fee_status, grace_days, billing_day, asaas_customer_id
+          setup_fee, setup_fee_status, grace_days, billing_day, asaas_customer_id, modules
         )
         VALUES (
-          ${organizationId}, ${plan.id}, ${quote.cycle}, ${basePrice}, ${plan.extraTechnicianPrice}, ${plan.includedTechnicians},
-          ${quote.setupFee}, ${needsPayment ? 'pending' : 'none'}, ${defaultGraceDays}, ${quote.billingDay}, ${customerId}
+          ${organizationId}, ${plan.id}, ${quote.cycle}, ${quote.basePrice}, ${plan.extraTechnicianPrice}, ${plan.includedTechnicians},
+          ${quote.setupFee}, ${needsPayment ? 'pending' : 'none'}, ${defaultGraceDays}, ${quote.billingDay}, ${customerId},
+          ${JSON.stringify(quote.modules)}::jsonb
         )
       `,
       sql`
         INSERT INTO leads (name, company, email, phone, plan_key, cycle, message, origin, status, organization_id, source_hash)
         VALUES (${adminName}, ${company}, ${adminEmail}, ${phone.formatted}, ${plan.key}, ${quote.cycle},
-                'Contratou pelo site.', 'contratar', 'won', ${organizationId}, ${sourceHash})
+                ${quote.moduleDetails.length ? `Contratou pelo site. Módulos: ${quote.moduleDetails.map((module) => module.name).join(', ')}.` : 'Contratou pelo site.'},
+                'contratar', 'won', ${organizationId}, ${sourceHash})
       `,
     ]);
   } catch (error) {
@@ -189,7 +206,7 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
     action: 'organization.self_signup',
     targetType: 'organization',
     targetId: organizationId,
-    details: { plan: plan.key, cycle: quote.cycle, billingDay: quote.billingDay, setupFee: quote.setupFee },
+    details: { plan: plan.key, cycle: quote.cycle, billingDay: quote.billingDay, setupFee: quote.setupFee, modules: quote.modules.map((module) => module.key) },
   });
   await autoAssignQuietly(organizationId);
 

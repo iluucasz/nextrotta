@@ -47,9 +47,13 @@ export interface PlanLimits {
  */
 export const LIMIT_KEYS: Array<keyof PlanLimits> = ['maxUsers', 'storageMb', 'portoRunsMonth'];
 
+/** A package is a ready-made plan; the builder is the base to which modules are added one by one. */
+export type PlanKind = 'package' | 'builder';
+
 export interface Plan {
   id: string;
   key: string;
+  kind: PlanKind;
   name: string;
   description: string | null;
   monthlyPrice: number;
@@ -86,6 +90,7 @@ export function planFromRow(row: Record<string, unknown>): Plan {
   return {
     id: String(row.id),
     key: String(row.key),
+    kind: row.kind === 'builder' ? 'builder' : 'package',
     name: String(row.name),
     description: (row.description as string | null) ?? null,
     monthlyPrice: num(row.monthly_price),
@@ -139,6 +144,75 @@ export function calculateSubscriptionValue(pricing: SubscriptionPricing, activeT
     extraTechnicians,
     gross: Math.round(gross * 100) / 100,
     value: Math.max(0, Math.round(discounted * 100) / 100),
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// The builder: a base plus the modules the company chose
+// ---------------------------------------------------------------------------------------------
+
+/** A module on sale: a general feature with its own monthly price and setup fee. */
+export interface ModuleOffer {
+  key: string;
+  name: string;
+  description: string | null;
+  monthlyPrice: number;
+  setupFee: number;
+}
+
+/** A module a subscription chose: the price is for the subscription's cycle and is frozen. */
+export interface SubscriptionModule {
+  key: string;
+  price: number;
+  setupFee: number;
+}
+
+const round2 = (value: number) => Math.round(value * 100) / 100;
+
+/** How many monthly payments the annual price asks for (10 when the annual price is "2 months free"). */
+export function annualFactor(plan: Pick<Plan, 'monthlyPrice' | 'annualPrice'>) {
+  return plan.monthlyPrice > 0 && plan.annualPrice > 0 ? plan.annualPrice / plan.monthlyPrice : 12;
+}
+
+export interface BuilderQuote {
+  /** Base plan price for the cycle, before the modules. */
+  planPrice: number;
+  modules: SubscriptionModule[];
+  /** What goes in the subscription's base_price: the plan price plus the modules, for the cycle. */
+  basePrice: number;
+  /** Plan setup fee plus the modules' ones. */
+  setupFee: number;
+  /** Chosen keys that are neither included in the base nor on sale. */
+  unknown: string[];
+}
+
+/**
+ * Prices a builder subscription. Keys the base already includes are free; keys that aren't on sale are
+ * reported in `unknown` and left out. The annual price of a module is its monthly price times the
+ * same factor the base plan uses.
+ */
+export function quoteBuilder(
+  plan: Pick<Plan, 'monthlyPrice' | 'annualPrice' | 'setupFee' | 'features'>,
+  offers: ModuleOffer[],
+  selected: string[],
+  cycle: BillingCycle,
+): BuilderQuote {
+  const factor = cycle === 'annual' ? annualFactor(plan) : 1;
+  const planPrice = cycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
+  const modules: SubscriptionModule[] = [];
+  const unknown: string[] = [];
+  for (const key of Array.from(new Set(selected))) {
+    if (plan.features.includes(key)) continue;
+    const offer = offers.find((candidate) => candidate.key === key);
+    if (!offer) unknown.push(key);
+    else modules.push({ key, price: round2(offer.monthlyPrice * factor), setupFee: round2(offer.setupFee) });
+  }
+  return {
+    planPrice,
+    modules,
+    basePrice: round2(planPrice + modules.reduce((total, module) => total + module.price, 0)),
+    setupFee: round2(plan.setupFee + modules.reduce((total, module) => total + module.setupFee, 0)),
+    unknown,
   };
 }
 

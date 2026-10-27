@@ -56,6 +56,8 @@ Ações registradas hoje: `organization.created|updated|suspend|reactivate|cance
 | `POST /plans` | `{ key, name, monthlyPrice, annualPrice, features: [...], extraTechnicianPrice?, setupFee?, onRequest?, featured?, visible?, displayOrder?, includedTechnicians?, limits?: { maxUsers, storageMb, whatsappMessagesMonth, portoRunsMonth }, aiMonthlyCredits?, aiBonusCredits?, backupRetentionDays? }` (limites e retenção: `null` = ilimitado) | `201 { plan }` |
 | `PATCH /plans/:planId` | qualquer campo acima, `archived`, e numa mudança de preço `applyPriceChange: "new_only"` (padrão) ou `"next_cycle"` | `{ plan, affectedSubscriptions }` |
 | `GET /features` | — | `{ features: [{ key, name, core }] }` — os recursos `core` fazem parte de todo plano |
+| `GET /modules` | — | "Monte o seu": `{ builder: { id, name, monthlyPrice, annualPrice, annualFactor, setupFee, includedTechnicians, extraTechnicianPrice } | null, modules: [{ key, name, description, core, inBase, sellable, monthlyPrice (null = fora de venda), setupFee }] }` |
+| `PUT /modules/:key` | `{ monthlyPrice: number | null, setupFee? }` — `null` tira o recurso de venda como módulo; vale só para novas assinaturas | a mesma lista de `GET /modules` |
 
 ## Assinatura e cobrança de uma organização
 
