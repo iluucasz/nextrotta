@@ -384,7 +384,7 @@ export function ManagementDashboard({ userName, today }: { userName: string; tod
         <header className="mg-page-heading">
           <div>
             <div className="mg-eyebrow">
-              <span /> VISÃO ESTRATÉGICA <span className="mg-eyebrow-divider">/</span> CENTRAL OPERACIONAL
+              <span /> VISÃO ESTRATÉGICA <span className="mg-eyebrow-divider">/</span> NEXTROTTA
             </div>
             <h1>
               Dashboard Gerencial<span>.</span>
