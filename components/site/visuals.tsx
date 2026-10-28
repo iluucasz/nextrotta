@@ -34,7 +34,7 @@ export function useReplay(threshold = 0.35) {
   return { ref, run: state.visible ? state.run : 0 };
 }
 
-function Stage({ run, aspect = '44 / 28', children }: { run: number; aspect?: string; children: ReactNode }) {
+export function Stage({ run, aspect = '44 / 28', children }: { run: number; aspect?: string; children: ReactNode }) {
   return (
     <div className="nrv-stage" style={{ aspectRatio: aspect }} aria-hidden>
       <div className="nrt-scene" key={run}>

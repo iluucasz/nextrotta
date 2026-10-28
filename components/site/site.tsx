@@ -1,5 +1,7 @@
 'use client';
 import Link from 'next/link';
+import { splitNewsBody, stripSceneMarkers } from '@/lib/news-scenes';
+import { NewsFigure } from './news-scenes';
 import {
   createContext,
   useContext,
@@ -1400,7 +1402,13 @@ export function MarketingNews({ id }: { id?: string }) {
                 alt=""
               />
             )}
-            <RichText text={post.body} />
+            {splitNewsBody(post.body).map((part, index) =>
+              part.type === 'scene' ? (
+                <NewsFigure key={index} name={part.name} />
+              ) : (
+                <RichText key={index} text={part.text} />
+              ),
+            )}
           </article>
         ) : (
           <p className="mt-8">Publicação não encontrada.</p>
@@ -1438,7 +1446,11 @@ export function MarketingNews({ id }: { id?: string }) {
               <h3>
                 <Link href={`/novidades/${post.id}`}>{post.title}</Link>
               </h3>
-              <p>{post.body.replace(/[#*]/g, '').replace(/\s+/g, ' ')}</p>
+              <p>
+                {stripSceneMarkers(post.body)
+                  .replace(/[#*]/g, '')
+                  .replace(/\s+/g, ' ')}
+              </p>
               <Link className="nr-news-more" href={`/novidades/${post.id}`}>
                 Ler mais
                 <ArrowUpRight size={15} />

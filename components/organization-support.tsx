@@ -5,6 +5,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { LifeBuoy, Maximize2, Megaphone, Wrench } from 'lucide-react';
 import { dateTime, NewTicketForm, StatusPill, useTickets } from '@/components/support-center';
 import { formatTicketNumber, REPORT_TYPE_LABELS } from '@/lib/reports';
+import { stripSceneMarkers } from '@/lib/news-scenes';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -99,7 +100,9 @@ const date = (value: string, time = false) =>
 function RichText({ text }: { text: string }) {
   return (
     <div className="space-y-2 text-sm leading-relaxed">
-      {text.split('\n').map((line, index) =>
+      {stripSceneMarkers(text)
+        .split('\n')
+        .map((line, index) =>
         line.startsWith('## ') ? (
           <h4 key={index} className="pt-2 font-semibold">
             {line.slice(3)}
