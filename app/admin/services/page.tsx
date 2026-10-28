@@ -152,6 +152,15 @@ function createImportProgress(stage: ImportStageKey, detail: string) {
   };
 }
 
+/** UTF-8 when the bytes are valid UTF-8 (Google Sheets, "CSV UTF-8"), otherwise Windows-1252 (Excel's plain CSV). */
+function decodeTextFile(buffer: ArrayBuffer) {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder('windows-1252').decode(buffer);
+  }
+}
+
 function normalizeImportHeader(value: string) {
   return normalizeText(value).replace(/[_\s]+/g, ' ');
 }
@@ -243,8 +252,9 @@ function parseImportDateTime(value: unknown) {
   const first = Number(dateMatch[1]);
   const second = Number(dateMatch[2]);
   const year = Number(dateMatch[3].length === 2 ? `20${dateMatch[3]}` : dateMatch[3]);
-  const month = first > 12 ? second : first;
-  const day = first > 12 ? first : second;
+  // Brazilian dates are always day/month/year; formatDateParts rejects an impossible month.
+  const day = first;
+  const month = second;
   const timeMatch = raw.match(/(?:\s|T)(\d{1,2}):(\d{2})/);
 
   return {
@@ -548,7 +558,14 @@ export default function AdminServicesPage() {
 
     try {
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      // A CSV is plain text: without `raw` SheetJS guesses types in the US style ("05/10/2026"
+      // becomes May 10, "500,00" becomes 50000). Kept as text, it is read by parseImportDateTime
+      // (day/month/year) and parseMoney. It is decoded here because SheetJS assumes Windows-1252,
+      // which garbles the accents of a UTF-8 file ("Número" would no longer match its column).
+      const isTextFile = /\.(csv|txt)$/i.test(file.name);
+      const workbook = isTextFile
+        ? XLSX.read(decodeTextFile(buffer), { type: 'string', cellDates: true, raw: true })
+        : XLSX.read(buffer, { type: 'array', cellDates: true });
       let bestSheetName = workbook.SheetNames[0] ?? '';
       let bestRows: Record<string, unknown>[] = [];
 
