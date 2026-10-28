@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
+import { isUuid } from '@/lib/platform/errors';
 import { notifyJustified } from '@/lib/whatsapp/notifications';
 import { applyWorkHourEntries, attendanceHasHours, getActiveTechnicianIds, getIsoWeekNumber, type AttendanceStatus, type WorkHourEntry } from '@/lib/work-hours-service';
 
@@ -15,8 +16,11 @@ function normalizeTime(value: unknown) {
   return `${match[1].padStart(2, '0')}:${match[2]}`;
 }
 
+/** A real calendar day: JavaScript would roll 2026-02-31 over to March 3, the database refuses it. */
 function isValidDateKey(value: unknown) {
-  return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(new Date(`${value}T00:00:00Z`).getTime());
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function parseHours(value: unknown) {
@@ -114,7 +118,7 @@ export async function POST(request: NextRequest) {
           const parsedHoursWorked = hasHours ? parseHours(raw.hours_worked) : 0;
 
           if (
-            !technicianId ||
+            !isUuid(technicianId) ||
             !isValidDateKey(date) ||
             !isValidTime(plannedStartTime) ||
             !isValidTime(plannedEndTime) ||
@@ -170,6 +174,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ workHours, schedules, count, skippedInactive }, { status: 201 });
     }
 
+    // Hours are an admin record: a technician posting their own would feed the hour bank and the
+    // overtime of their payroll. Nothing in the app uses this single-entry form; the admin's
+    // apontamento goes through `entries` above.
+    if (auth.role !== 'admin') {
+      return NextResponse.json({ error: 'Apenas o administrador lança horas.' }, { status: 403 });
+    }
+
     const {
       date,
       start_time,
@@ -180,12 +191,14 @@ export async function POST(request: NextRequest) {
       year,
     } = body;
 
-    const technicianId = auth.role === 'admin' 
-      ? request.headers.get('x-technician-id') 
-      : auth.technicianId || auth.userId;
+    const technicianId = request.headers.get('x-technician-id');
 
-    if (!technicianId || !(await getActiveTechnicianIds(auth.organizationId, [technicianId])).has(technicianId)) {
-      return NextResponse.json({ error: 'Selecione um tecnico ativo para lancar horas.' }, { status: 409 });
+    if (!isValidDateKey(date) || !isValidTime(start_time) || !isValidTime(end_time) || parseHours(hours_worked) === null) {
+      return NextResponse.json({ error: 'Informe data, horários e horas válidos.' }, { status: 400 });
+    }
+
+    if (!isUuid(technicianId) || !(await getActiveTechnicianIds(auth.organizationId, [technicianId])).has(technicianId)) {
+      return NextResponse.json({ error: 'Selecione um técnico ativo para lançar horas.' }, { status: 409 });
     }
 
     const result = await sql`
@@ -194,8 +207,10 @@ export async function POST(request: NextRequest) {
         week_number, month, year
       )
       VALUES (
-        ${auth.organizationId}, ${technicianId}, ${date}, ${start_time}, ${end_time}, ${hours_worked},
-        ${week_number}, ${month}, ${year}
+        ${auth.organizationId}, ${technicianId}, ${date}, ${normalizeTime(start_time)}, ${normalizeTime(end_time)}, ${parseHours(hours_worked)},
+        ${Number.isInteger(Number(week_number)) ? Number(week_number) : getIsoWeekNumber(date)},
+        ${Number.isInteger(Number(month)) ? Number(month) : Number(date.slice(5, 7))},
+        ${Number.isInteger(Number(year)) ? Number(year) : Number(date.slice(0, 4))}
       )
       RETURNING *
     `;

@@ -314,53 +314,57 @@ export async function applyWorkHourEntries(
   const schedules = [];
 
   for (const entry of entriesForActiveTechnicians) {
-    await sql`
-      UPDATE work_hours
-      SET deleted_at = NOW(), deleted_by = ${actorId}, updated_at = NOW()
-      WHERE organization_id = ${organizationId}
-        AND technician_id = ${entry.technician_id}
-        AND date = ${entry.date}
-        AND deleted_at IS NULL
-    `;
-
-    if (attendanceHasHours(entry.attendance_status)) {
-      const inserted = await sql`
-        INSERT INTO work_hours (
-          organization_id, technician_id, date, start_time, end_time, hours_worked,
-          week_number, month, year, source
-        )
-        VALUES (
-          ${organizationId}, ${entry.technician_id}, ${entry.date}, ${entry.start_time}, ${entry.end_time}, ${entry.hours_worked},
-          ${entry.week_number}, ${entry.month}, ${entry.year}, ${source}
-        )
-        RETURNING *
-      `;
-
-      saved.push(inserted[0]);
-    }
-
-    await sql`
-      UPDATE schedule
-      SET deleted_at = NOW(), deleted_by = ${actorId}, updated_at = NOW()
-      WHERE organization_id = ${organizationId}
-        AND technician_id = ${entry.technician_id}
-        AND date = ${entry.date}
-        AND deleted_at IS NULL
-    `;
-
+    const hasHours = attendanceHasHours(entry.attendance_status);
     const scheduleStatus = getScheduleStatusForAttendance(entry.attendance_status);
     const scheduleNote = buildAttendanceNote(entry);
-    const scheduleRow = await sql`
-      INSERT INTO schedule (
-        organization_id, technician_id, date, start_time, end_time, status, notes
-      )
-      VALUES (
-        ${organizationId}, ${entry.technician_id}, ${entry.date}, ${entry.start_time}, ${entry.end_time}, ${scheduleStatus}, ${scheduleNote}
-      )
-      RETURNING *
-    `;
 
-    schedules.push(scheduleRow[0]);
+    // One transaction per day: a failure can't leave the day with its old hours archived and no new
+    // ones (or the new hours without their schedule row).
+    const results = await sql.transaction([
+      sql`
+        UPDATE work_hours
+        SET deleted_at = NOW(), deleted_by = ${actorId}, updated_at = NOW()
+        WHERE organization_id = ${organizationId}
+          AND technician_id = ${entry.technician_id}
+          AND date = ${entry.date}
+          AND deleted_at IS NULL
+      `,
+      ...(hasHours
+        ? [
+            sql`
+              INSERT INTO work_hours (
+                organization_id, technician_id, date, start_time, end_time, hours_worked,
+                week_number, month, year, source
+              )
+              VALUES (
+                ${organizationId}, ${entry.technician_id}, ${entry.date}, ${entry.start_time}, ${entry.end_time}, ${entry.hours_worked},
+                ${entry.week_number}, ${entry.month}, ${entry.year}, ${source}
+              )
+              RETURNING *
+            `,
+          ]
+        : []),
+      sql`
+        UPDATE schedule
+        SET deleted_at = NOW(), deleted_by = ${actorId}, updated_at = NOW()
+        WHERE organization_id = ${organizationId}
+          AND technician_id = ${entry.technician_id}
+          AND date = ${entry.date}
+          AND deleted_at IS NULL
+      `,
+      sql`
+        INSERT INTO schedule (
+          organization_id, technician_id, date, start_time, end_time, status, notes
+        )
+        VALUES (
+          ${organizationId}, ${entry.technician_id}, ${entry.date}, ${entry.start_time}, ${entry.end_time}, ${scheduleStatus}, ${scheduleNote}
+        )
+        RETURNING *
+      `,
+    ]);
+
+    if (hasHours) saved.push(results[1][0]);
+    schedules.push(results[results.length - 1][0]);
   }
 
   return {

@@ -1,6 +1,7 @@
 import { sql } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
+import { isUuid } from '@/lib/platform/errors';
 import { getPortoConfig } from '@/lib/porto-sync-log';
 import { replaceGeneratedScheduleRows } from '@/lib/schedule-write-service';
 import {
@@ -27,16 +28,17 @@ async function isActiveTechnician(organizationId: string, technicianId: string) 
 }
 
 function isValidTime(value: unknown) {
-  return typeof value === 'string' && /^\d{2}:\d{2}$/.test(value);
+  return typeof value === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 }
 
+/** A real calendar day: JavaScript would roll 2026-02-31 over to March 3, the database refuses it. */
 function isValidDateKey(value: unknown) {
   if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
   }
 
   const parsed = new Date(`${value}T00:00:00Z`);
-  return !Number.isNaN(parsed.getTime());
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
 function isEmptyTimeValue(value: unknown) {
@@ -201,7 +203,8 @@ function parseGenerationInput(value: unknown): ScheduleGenerationInput | null {
   const month = raw.month === undefined || raw.month === null || raw.month === '' ? undefined : Number(raw.month);
   const date = typeof raw.date === 'string' ? raw.date : undefined;
   const technicianScope = raw.technician_scope;
-  const technicianIds = Array.isArray(raw.technician_ids) ? raw.technician_ids.filter((item): item is string => typeof item === 'string') : [];
+  // Ids go to a uuid column: anything else would fail the whole request with a 500.
+  const technicianIds = Array.isArray(raw.technician_ids) ? raw.technician_ids.filter((item): item is string => typeof item === 'string' && isUuid(item)) : [];
   const generalDaysOff = Array.isArray(raw.general_days_off) ? raw.general_days_off : [];
   const overrides = Array.isArray(raw.overrides) ? raw.overrides : [];
   const rotationGroups = Array.isArray(raw.rotation_groups) ? raw.rotation_groups : [];
@@ -224,7 +227,8 @@ function parseGenerationInput(value: unknown): ScheduleGenerationInput | null {
   }
 
   const parsedGeneralDaysOff = generalDaysOff
-    .filter((item): item is { date: string; notes?: string } => typeof item === 'object' && item !== null && typeof (item as { date?: unknown }).date === 'string')
+    // A blank or impossible date is left out (an invalid one would fail the whole insert).
+    .filter((item): item is { date: string; notes?: string } => typeof item === 'object' && item !== null && isValidDateKey((item as { date?: unknown }).date))
     .map((item) => ({
       date: String(item.date),
       notes: typeof item.notes === 'string' ? item.notes : '',
@@ -236,7 +240,7 @@ function parseGenerationInput(value: unknown): ScheduleGenerationInput | null {
         typeof item === 'object' &&
         item !== null &&
         typeof (item as { technician_id?: unknown }).technician_id === 'string' &&
-        typeof (item as { date?: unknown }).date === 'string' &&
+        isValidDateKey((item as { date?: unknown }).date) &&
         isValidScheduleStatus((item as { status?: unknown }).status),
     )
     .map((item) => ({
@@ -286,6 +290,10 @@ export async function GET(request: NextRequest) {
     const technicianId = searchParams.get('technicianId');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
+
+    if ((startDate && !isValidDateKey(startDate)) || (endDate && !isValidDateKey(endDate)) || (technicianId && !isUuid(technicianId))) {
+      return NextResponse.json({ error: 'Período ou técnico inválido.' }, { status: 400 });
+    }
 
     let query = `
       SELECT s.id, s.technician_id, s.date, s.start_time, s.end_time, s.status, s.notes, s.created_at,
@@ -354,9 +362,13 @@ export async function POST(request: NextRequest) {
       notes,
     } = await request.json();
 
+    if (typeof technician_id !== 'string' || !isUuid(technician_id) || !isValidDateKey(date) || !isValidScheduleStatus(status) || !isOptionalTimeRange(start_time, end_time)) {
+      return NextResponse.json({ error: 'Informe técnico, data, situação e horários válidos.' }, { status: 400 });
+    }
+
     if (!(await isActiveTechnician(auth.organizationId, technician_id))) {
       return NextResponse.json(
-        { error: 'Selecione um tecnico ativo para lancar escala.' },
+        { error: 'Selecione um técnico ativo para lançar escala.' },
         { status: 409 }
       );
     }
@@ -366,7 +378,7 @@ export async function POST(request: NextRequest) {
         organization_id, technician_id, date, start_time, end_time, status, notes
       )
       VALUES (
-        ${auth.organizationId}, ${technician_id}, ${date}, ${start_time}, ${end_time}, ${status}, ${notes}
+        ${auth.organizationId}, ${technician_id}, ${date}, ${normalizeOptionalTime(start_time) ?? null}, ${normalizeOptionalTime(end_time) ?? null}, ${status}, ${typeof notes === 'string' && notes ? notes : null}
       )
       RETURNING *
     `;

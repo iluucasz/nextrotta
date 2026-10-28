@@ -30,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { brasiliaDateKey, formatCurrency, formatDate, formatTime, normalizeText, parseMoney, resolveCompetenceMonth, yearFromCompetence } from '@/lib/formatters';
 import type { Service, ServiceFortnight, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
+import { isTextSpreadsheet, readSpreadsheet } from '@/lib/spreadsheet-import';
 
 const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
 const serviceFortnightOptions: ServiceFortnight[] = ['Q1', 'Q2'];
@@ -150,15 +151,6 @@ function createImportProgress(stage: ImportStageKey, detail: string) {
     value: importStageProgress[stage],
     detail,
   };
-}
-
-/** UTF-8 when the bytes are valid UTF-8 (Google Sheets, "CSV UTF-8"), otherwise Windows-1252 (Excel's plain CSV). */
-function decodeTextFile(buffer: ArrayBuffer) {
-  try {
-    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
-  } catch {
-    return new TextDecoder('windows-1252').decode(buffer);
-  }
 }
 
 function normalizeImportHeader(value: string) {
@@ -481,7 +473,7 @@ export default function AdminServicesPage() {
     };
   }, [importRows]);
 
-  const importIsTextFile = /\.(csv|txt)$/i.test(importFileName);
+  const importIsTextFile = isTextSpreadsheet(importFileName);
   const validImportRows = useMemo(() => importRows.filter((row) => row.status === 'valid'), [importRows]);
 
   const bulkDeletePreviewServices = useMemo(() => {
@@ -559,14 +551,8 @@ export default function AdminServicesPage() {
 
     try {
       const buffer = await file.arrayBuffer();
-      // A CSV is plain text: without `raw` SheetJS guesses types in the US style ("05/10/2026"
-      // becomes May 10, "500,00" becomes 50000). Kept as text, it is read by parseImportDateTime
-      // (day/month/year) and parseMoney. It is decoded here because SheetJS assumes Windows-1252,
-      // which garbles the accents of a UTF-8 file ("Número" would no longer match its column).
-      const isTextFile = /\.(csv|txt)$/i.test(file.name);
-      const workbook = isTextFile
-        ? XLSX.read(decodeTextFile(buffer), { type: 'string', cellDates: true, raw: true })
-        : XLSX.read(buffer, { type: 'array', cellDates: true });
+      // A CSV is kept as text and decoded as UTF-8 or Windows-1252 (lib/spreadsheet-import.ts).
+      const workbook = readSpreadsheet(buffer, file.name);
       let bestSheetName = workbook.SheetNames[0] ?? '';
       let bestRows: Record<string, unknown>[] = [];
 

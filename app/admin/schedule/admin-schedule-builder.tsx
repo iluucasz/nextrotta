@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { compactName, formatDate, formatHours, formatTime, formatTimeRange, normalizeText } from '@/lib/formatters';
+import { applyBrazilianDateText, readSpreadsheet } from '@/lib/spreadsheet-import';
 import { PortoRunWizard } from './porto-run-wizard';
 import {
   createDateKey,
@@ -974,11 +975,9 @@ function parseImportedDate(value: unknown, monthValue: unknown, yearValue: unkno
       month = parts[1];
       day = parts[0];
     }
-  } else if (parts[0] <= 12 && parts[1] > 12) {
-    month = parts[0];
-    day = parts[1];
   }
 
+  // Without a month column the date is day/month/year; an impossible month is an invalid date.
   const date = buildImportDateKey(year, month, day);
   return date ? { date, month, year } : null;
 }
@@ -2096,7 +2095,9 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
     try {
       const buffer = await file.arrayBuffer();
-      const workbook = XLSX.read(buffer, { type: 'array', cellDates: true });
+      // Dates become dd/mm/aaaa text and a CSV is kept as text (lib/spreadsheet-import.ts): the
+      // reader below takes the first number as the day.
+      const workbook = applyBrazilianDateText(readSpreadsheet(buffer, file.name));
       const parsed = parseAttendanceWorkbook(workbook, file.name);
 
       setAttendanceImportFileName(file.name);
