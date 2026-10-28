@@ -293,3 +293,29 @@
 .nr-marketing .nr-how-band .nr-section-center { margin-bottom: 0; }
 .nr-how-inner { gap: 44px; }
 @media (max-width: 760px) { .nr-marketing .nr-how-band h2 { font-size: 28px; } }
+
+/* ---------- Novidades: lista de cartões ---------- */
+.nr-news.nr-news-list { max-width: 1190px; }
+.nr-news-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 22px; margin-top: 48px; }
+.nr-news .nr-news-card {
+  display: flex; flex-direction: column; gap: 0; padding: 30px 30px 26px; border: 1px solid #e1e9d8; border-radius: 16px;
+  background: #fff; box-shadow: 0 8px 24px -18px rgba(28, 57, 46, 0.3);
+  transition: transform .25s ease, box-shadow .25s ease, border-color .25s ease;
+}
+.nr-news .nr-news-card:hover { transform: translateY(-4px); border-color: #b8d3bd; box-shadow: 0 22px 40px -22px rgba(28, 57, 46, 0.35); }
+.nr-news-meta { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.nr-news .nr-news-meta time { font-size: 12.5px; color: #849676; }
+.nr-news-tag { display: inline-flex; align-items: center; padding: 5px 12px; border-radius: 999px; font-size: 11.5px; font-weight: 600; letter-spacing: .3px; background: #e5f3ea; color: #147d63; }
+.nr-news-tag.is-improvement { background: #e8f0fb; color: #2f6db5; }
+.nr-news-tag.is-fix { background: #fbf0e2; color: #b0701d; }
+.nr-news .nr-news-card h3 { font-size: 22px; font-weight: 600; letter-spacing: -.7px; line-height: 1.28; margin: 22px 0 12px; color: var(--site-text, #1c392e); }
+.nr-news .nr-news-card h3 a { color: inherit; }
+.nr-news .nr-news-card h3 a:hover { color: #147d63; }
+.nr-news .nr-news-card p {
+  font-size: 14.5px; line-height: 1.75; color: #7c8a76; margin: 0;
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.nr-news-more { display: inline-flex; align-items: center; gap: 8px; margin-top: auto; padding-top: 24px; font-size: 14px; font-weight: 550; color: #147d63; }
+.nr-news-more svg { transition: transform .2s ease; }
+.nr-news-card:hover .nr-news-more svg { transform: translate(3px, -3px); }
+@media (max-width: 760px) { .nr-news .nr-news-card { padding: 24px 22px 22px; } .nr-news-grid { margin-top: 34px; } }

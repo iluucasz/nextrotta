@@ -1409,7 +1409,7 @@ export function MarketingNews({ id }: { id?: string }) {
     );
   }
   return (
-    <section className="nr-public-section nr-news">
+    <section className="nr-public-section nr-news nr-news-list">
       <div className="nr-section-center">
         <p className="nr-kicker">O PRÓXIMO PASSO NUNCA PARA</p>
         <h1>Novidades que fazem diferença.</h1>
@@ -1424,18 +1424,22 @@ export function MarketingNews({ id }: { id?: string }) {
       ) : !posts ? (
         <p className="py-12 text-center">Carregando…</p>
       ) : posts.length ? (
-        <div className="nr-grid-3 mt-10">
+        <div className="nr-news-grid">
           {posts.map((post) => (
-            <article key={post.id} className="nr-public-plan">
-              <p className="nr-kicker">
-                {NEWS_CATEGORIES[post.category]} · {newsDate(post.publishedOn)}
-              </p>
-              <h3>{post.title}</h3>
-              <p>
-                {post.body.replace(/[#*]/g, '').slice(0, 160)}
-                {post.body.length > 160 ? '…' : ''}
-              </p>
-              <Link className="nr-text-link" href={`/novidades/${post.id}`}>
+            <article key={post.id} className="nr-news-card">
+              <div className="nr-news-meta">
+                <span className={`nr-news-tag is-${post.category}`}>
+                  {NEWS_CATEGORIES[post.category]}
+                </span>
+                <time dateTime={post.publishedOn}>
+                  {newsDate(post.publishedOn)}
+                </time>
+              </div>
+              <h3>
+                <Link href={`/novidades/${post.id}`}>{post.title}</Link>
+              </h3>
+              <p>{post.body.replace(/[#*]/g, '').replace(/\s+/g, ' ')}</p>
+              <Link className="nr-news-more" href={`/novidades/${post.id}`}>
                 Ler mais
                 <ArrowUpRight size={15} />
               </Link>
