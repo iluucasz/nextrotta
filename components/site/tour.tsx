@@ -2,7 +2,8 @@
 import { useEffect, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 import { Bot, CalendarClock, ChartNoAxesCombined, LayoutDashboard, Package, Sparkles, Users, WalletCards, type LucideIcon } from 'lucide-react';
 import './tour.css';
-import { SceneDashboard, SceneEquipe, SceneHoras, SceneFolha, SceneIA, SceneOperacao, ScenePecas, ScenePorto } from './tour-scenes';
+import { SceneDashboard, SceneEquipe, SceneHoras, SceneFolha, SceneIA, SceneOperacao, ScenePorto } from './tour-scenes';
+import { ScenePecas } from './news-scenes';
 
 /**
  * O "tour" da home: uma rota com as paradas da rotina (à esquerda) e, ao lado, uma janela que mostra o

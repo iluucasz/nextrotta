@@ -60,7 +60,9 @@ function PecasRemessa() {
   );
 }
 
-function PecasVenda() {
+/** `tall`: a mesma cena na janela mais alta do tour da home (44 × 28). */
+export function PecasVenda({ tall = false }: { tall?: boolean }) {
+  const off = tall ? 1.8 : 0;
   const steps: [string, string, number][] = [
     ['Escolhe a peça', 'Bateria 60Ah, direto do estoque dele', 0.8],
     ['Define o preço', 'R$ 480,00, o técnico decide', 2.7],
@@ -70,7 +72,7 @@ function PecasVenda() {
   return (
     <>
       <div className="nrt-title nrt-rise" style={d(0)}>Venda pelo celular<Pill style={d(0.2)}>Pix</Pill></div>
-      <div className="nrt-panel nrt-rise nrn-steps" style={{ ...d(0.3), top: '4.4em', left: '1.2em', width: '25em' }}>
+      <div className="nrt-panel nrt-rise nrn-steps" style={{ ...d(0.3), top: `${4.4 + off}em`, left: '1.2em', width: '25em' }}>
         {steps.map(([title, text, at], i) => (
           <div className="nrn-step" key={title} style={d(at)}>
             <i><b>{i + 1}</b><Check size={13} strokeWidth={3} /></i>
@@ -78,7 +80,7 @@ function PecasVenda() {
           </div>
         ))}
       </div>
-      <div className="nrt-phone nrt-pop nrn-phone" style={d(0.2)}>
+      <div className="nrt-phone nrt-pop nrn-phone" style={{ ...d(0.2), top: `${2.2 + off}em` }}>
         <div className="nrn-ps">
           <div className="nrn-screen" style={{ ...d(0.4), '--dur': '2.3s' } as CSSProperties}>
             <small>Minhas peças</small>
@@ -107,6 +109,8 @@ function PecasVenda() {
     </>
   );
 }
+
+export const ScenePecas = () => <PecasVenda tall />;
 
 function PecasInventario() {
   const rows = [

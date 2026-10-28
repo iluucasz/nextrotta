@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState, type CSSProperties, type ReactNode } from 'react';
-import { Battery, Check, CheckCheck, Clock3, FileUp, Lightbulb, Moon, Send, Sparkles } from 'lucide-react';
+import { Check, CheckCheck, Clock3, FileUp, Moon, Send, Sparkles } from 'lucide-react';
 
 /**
  * Cenas animadas do "tour" da home: o sistema desenhado de forma abstrata, em movimento. Tudo é CSS
@@ -311,33 +311,6 @@ export function SceneIA() {
       </div>
       <div className="nrt-input nrt-rise" style={d(0.1)}><span>Pergunte sobre a operação…</span><i className="nrt-send nrt-btn-press" style={{ '--d': '2.0s' } as CSSProperties}><Send size={13} /></i></div>
       <Click from={[30, 15]} to={[40.9, 24.7]} delay={0.6} />
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------------------------
-// Peças no celular
-// ---------------------------------------------------------------------------------------------
-export function ScenePecas() {
-  return (
-    <>
-      <div className="nrt-title nrt-rise" style={d(0)}>Peças no carro<Pill style={d(0.2)}>consignação</Pill></div>
-      <div className="nrt-panel nrt-rise" style={{ ...d(0.3), top: '4em', left: '1.2em', width: '19em' }}>
-        <div className="nrt-line"><i className="nrt-ico"><Battery size={15} /></i><span>Bateria 60Ah</span><em className="nrt-stock" style={d(4.7)}><s>2</s><u>1</u><b className="nrt-un"> un</b></em></div>
-        <div className="nrt-line"><i className="nrt-ico"><Lightbulb size={15} /></i><span>Lâmpada H7</span><em className="nrt-stock-still">4 un</em></div>
-        <div className="nrt-owe"><small>A pagar no acerto</small><b><Count to={480} delay={4.7} dur={0.8} prefix="R$ " /></b></div>
-      </div>
-      <div className="nrt-phone nrt-pop" style={d(0.2)}>
-        <div className="nrt-phone-screen">
-          <div className="nrt-prod nrt-prod-hit"><Battery size={20} /><b>R$ 480</b></div>
-          <div className="nrt-prod"><Lightbulb size={20} /><b>R$ 65</b></div>
-          <div className="nrt-cart nrt-rise" style={d(2.4)}>Bateria 60Ah · R$ 480,00<span className="nrt-cobrar">Cobrar com Pix</span></div>
-          <div className="nrt-qr nrt-pop" style={d(3.4)}>{Array.from({ length: 49 }, (_, i) => <i key={i} className={(i * 7 + (i % 5)) % 3 === 0 ? 'on' : ''} />)}</div>
-          <div className="nrt-paid nrt-pop" style={d(4.6)}><Check size={22} strokeWidth={3} /> Pago</div>
-        </div>
-      </div>
-      <Click from={[34, 8]} to={[36.2, 9.2]} delay={1.0} />
-      <div className="nrt-toast nrt-rise" style={{ ...d(5.3), left: '1.2em', bottom: '1.2em' }}><Check size={14} strokeWidth={3} /> Pagamento confirmado</div>
     </>
   );
 }
