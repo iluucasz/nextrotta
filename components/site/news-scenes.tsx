@@ -54,7 +54,7 @@ function PecasRemessa() {
         </div>
         <button type="button" className="nrt-btn nrt-btn-press" tabIndex={-1} style={{ position: 'absolute', left: '1em', right: '1em', bottom: '1em', '--d': '4.4s' } as CSSProperties}>Confirmar recebimento</button>
       </div>
-      <Click from={[22, 22]} to={[35.4, 17.6]} delay={3.0} />
+      <Click from={[22, 23]} to={[34.8, 19.0]} delay={3.0} />
       <div className="nrt-toast nrt-rise" style={{ ...d(5.6), left: '1.2em', bottom: '1.2em' }}><FileText size={14} /> Termo de remessa pronto para imprimir</div>
     </>
   );
