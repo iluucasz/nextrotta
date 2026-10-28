@@ -29,17 +29,22 @@ export function isDeepSeekConfigured() {
   return Boolean(process.env.DEEPSEEK_API_KEY);
 }
 
-export async function chat(messages: ChatMessage[], tools: ToolDefinition[]) {
+const MAX_CALL_MS = 90_000;
+const MIN_CALL_MS = 5_000;
+
+/** `timeoutMs` is what the caller has left; one call never waits longer than MAX_CALL_MS. */
+export async function chat(messages: ChatMessage[], tools: ToolDefinition[], timeoutMs = MAX_CALL_MS) {
   const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey) throw new DeepSeekError('Assistente de IA não configurado: falta DEEPSEEK_API_KEY.', 503);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 90_000);
+  const timeout = setTimeout(() => controller.abort(), Math.max(MIN_CALL_MS, Math.min(MAX_CALL_MS, timeoutMs)));
   try {
     const response = await fetch(`${BASE_URL}/chat/completions`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ model: MODEL, messages, tools, temperature: 0.2, max_tokens: 2000 }),
+      // An empty tools list is rejected by OpenAI-compatible APIs: leave the field out.
+      body: JSON.stringify({ model: MODEL, messages, ...(tools.length ? { tools } : {}), temperature: 0.2, max_tokens: 2000 }),
       signal: controller.signal,
       cache: 'no-store',
     });

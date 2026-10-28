@@ -385,6 +385,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
     try {
       await navigator.clipboard.writeText(message.content);
       setCopied(message.id);
+      setTimeout(() => setCopied((current) => (current === message.id ? null : current)), 2000);
     } catch {
       setError(
         'Não foi possível copiar. Selecione o texto da resposta para copiar.',

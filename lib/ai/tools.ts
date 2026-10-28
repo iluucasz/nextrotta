@@ -31,6 +31,12 @@ const technicianFilter = (value: unknown) => (typeof value === 'string' && value
 
 const num = (value: unknown) => (value === null || value === undefined ? null : Math.round(Number(value) * 100) / 100);
 
+/** What was settled on a financial entry: all of it when paid, the partial payments otherwise (same rule as the management dashboard). */
+function paidOf(row: Record<string, unknown>) {
+  const amount = Number(row.amount);
+  return row.status === 'paid' ? amount : Math.min(amount, Math.max(0, Number(row.paid_amount ?? 0)));
+}
+
 /** The driver returns DATE columns as local-midnight Date objects. */
 function dateKey(value: unknown) {
   if (value instanceof Date) {
@@ -59,9 +65,10 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
         getOrganizationSettings(organizationId),
         sql`SELECT status, COUNT(*)::int AS total FROM technicians WHERE organization_id = ${organizationId} AND deleted_at IS NULL GROUP BY status`,
         sql`
-          SELECT competence_month AS competencia, COUNT(*)::int AS os, SUM(value)::float AS valor
-          FROM services WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND competence_month IS NOT NULL
-          GROUP BY competence_month ORDER BY competence_month DESC LIMIT 12
+          SELECT COALESCE(NULLIF(competence_month, ''), TO_CHAR(date_performed, 'YYYY-MM')) AS competencia,
+                 COUNT(*)::int AS os, SUM(value)::float AS valor
+          FROM services WHERE organization_id = ${organizationId} AND deleted_at IS NULL
+          GROUP BY 1 ORDER BY 1 DESC LIMIT 12
         `,
       ]);
       return {
@@ -115,14 +122,16 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
         sql`
           SELECT COALESCE(t.name, 'Sem técnico') AS tecnico, COUNT(*)::int AS os, SUM(s.value)::float AS valor
           FROM services s LEFT JOIN technicians t ON t.id = s.technician_id
-          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL AND s.competence_month = ${competence}
+          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL
+            AND COALESCE(NULLIF(s.competence_month, ''), TO_CHAR(s.date_performed, 'YYYY-MM')) = ${competence}
             AND (${fortnight}::text IS NULL OR s.fortnight_period = ${fortnight})
           GROUP BY t.name ORDER BY valor DESC
         `,
         sql`
           SELECT COALESCE(s.service_type, 'Sem tipo') AS tipo, COUNT(*)::int AS os, SUM(s.value)::float AS valor
           FROM services s
-          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL AND s.competence_month = ${competence}
+          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL
+            AND COALESCE(NULLIF(s.competence_month, ''), TO_CHAR(s.date_performed, 'YYYY-MM')) = ${competence}
             AND (${fortnight}::text IS NULL OR s.fortnight_period = ${fortnight})
           GROUP BY s.service_type ORDER BY valor DESC LIMIT 15
         `,
@@ -151,16 +160,33 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
     run: async (args, { organizationId }) => {
       const competence = month(args.competencia);
       const technician = technicianFilter(args.tecnico);
-      const rows = await sql`
-        SELECT s.date_performed AS data, s.order_code AS os, s.service_type AS tipo, s.value AS valor, s.fortnight_period AS quinzena,
-               t.name AS tecnico
-        FROM services s LEFT JOIN technicians t ON t.id = s.technician_id
-        WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL AND s.competence_month = ${competence}
-          AND (${technician}::text IS NULL OR t.name ILIKE ${technician})
-        ORDER BY s.date_performed, s.order_code
-        LIMIT 150
-      `;
-      return rows.map((row) => ({ ...row, valor: num(row.valor) }));
+      const [rows, total] = await Promise.all([
+        sql`
+          SELECT s.date_performed AS data, s.order_code AS os, s.service_type AS tipo, s.value AS valor, s.fortnight_period AS quinzena,
+                 t.name AS tecnico
+          FROM services s LEFT JOIN technicians t ON t.id = s.technician_id
+          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL
+            AND COALESCE(NULLIF(s.competence_month, ''), TO_CHAR(s.date_performed, 'YYYY-MM')) = ${competence}
+            AND (${technician}::text IS NULL OR t.name ILIKE ${technician})
+          ORDER BY s.date_performed, s.order_code
+          LIMIT 150
+        `,
+        sql`
+          SELECT COUNT(*)::int AS total
+          FROM services s LEFT JOIN technicians t ON t.id = s.technician_id
+          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL
+            AND COALESCE(NULLIF(s.competence_month, ''), TO_CHAR(s.date_performed, 'YYYY-MM')) = ${competence}
+            AND (${technician}::text IS NULL OR t.name ILIKE ${technician})
+        `,
+      ]);
+      const count = Number(total[0].total);
+      return {
+        competencia: competence,
+        total_os: count,
+        exibidas: rows.length,
+        aviso: count > rows.length ? 'Só as primeiras OS foram listadas; para totais use producao_por_tecnico ou filtre por técnico.' : undefined,
+        os: rows.map((row) => ({ ...row, valor: num(row.valor) })),
+      };
     },
   },
   {
@@ -290,17 +316,34 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
       const to = day(args.data_fim, 'data_fim');
       if ((new Date(to).getTime() - new Date(from).getTime()) / 86_400_000 > 62) throw new Error('Período máximo de 62 dias.');
       const technician = technicianFilter(args.tecnico);
-      const rows = await sql`
-        SELECT s.date AS data, s.start_time AS inicio, s.end_time AS fim, s.status::text AS situacao, s.notes AS observacao, t.name AS tecnico
-        FROM schedule s JOIN technicians t ON t.id = s.technician_id
-        WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL AND s.date BETWEEN ${from}::date AND ${to}::date
-          AND (${technician}::text IS NULL OR t.name ILIKE ${technician})
-        ORDER BY s.date, t.name
-        LIMIT 300
-      `;
+      const [rows, counts] = await Promise.all([
+        sql`
+          SELECT s.date AS data, s.start_time AS inicio, s.end_time AS fim, s.status::text AS situacao, s.notes AS observacao, t.name AS tecnico
+          FROM schedule s JOIN technicians t ON t.id = s.technician_id
+          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL AND s.date BETWEEN ${from}::date AND ${to}::date
+            AND (${technician}::text IS NULL OR t.name ILIKE ${technician})
+          ORDER BY s.date, t.name
+          LIMIT 300
+        `,
+        // Totals come from the database, not from the (capped) list above.
+        sql`
+          SELECT s.status::text AS situacao, COUNT(*)::int AS total
+          FROM schedule s JOIN technicians t ON t.id = s.technician_id
+          WHERE s.organization_id = ${organizationId} AND s.deleted_at IS NULL AND s.date BETWEEN ${from}::date AND ${to}::date
+            AND (${technician}::text IS NULL OR t.name ILIKE ${technician})
+          GROUP BY s.status
+        `,
+      ]);
       const totals: Record<string, number> = {};
-      for (const row of rows) totals[row.situacao] = (totals[row.situacao] ?? 0) + 1;
-      return { periodo: { de: from, ate: to }, totais_por_situacao: totals, turnos: rows };
+      for (const row of counts) totals[row.situacao] = Number(row.total);
+      const count = Object.values(totals).reduce((sum, value) => sum + value, 0);
+      return {
+        periodo: { de: from, ate: to },
+        total_turnos: count,
+        totais_por_situacao: totals,
+        aviso: count > rows.length ? `Só os primeiros ${rows.length} turnos foram listados; os totais acima são do período todo. Reduza o período ou filtre por técnico.` : undefined,
+        turnos: rows,
+      };
     },
   },
   {
@@ -345,14 +388,26 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
       for (const row of rows) {
         const bucket = summary[row.type === 'payable' ? 'a_pagar' : 'a_receber'];
         const amount = Number(row.amount);
-        if (row.status === 'paid') bucket.pago += Number(row.paid_amount ?? amount);
-        else bucket.pendente += amount;
+        const paid = paidOf(row);
+        bucket.pago += paid;
+        bucket.pendente += amount - paid;
         bucket.por_categoria[row.category] = num((bucket.por_categoria[row.category] ?? 0) + amount)!;
       }
       const largest = [...rows]
         .sort((a, b) => Number(b.amount) - Number(a.amount))
         .slice(0, 15)
-        .map((row) => ({ tipo: row.type === 'payable' ? 'a pagar' : 'a receber', descricao: row.description, categoria: row.category, valor: num(row.amount), vencimento: row.due_date, situacao: row.status === 'paid' ? 'pago' : 'pendente' }));
+        .map((row) => {
+          const paid = paidOf(row);
+          return {
+            tipo: row.type === 'payable' ? 'a pagar' : 'a receber',
+            descricao: row.description,
+            categoria: row.category,
+            valor: num(row.amount),
+            vencimento: row.due_date,
+            situacao: row.status === 'paid' ? 'pago' : paid > 0 ? 'parcialmente pago' : 'pendente',
+            valor_pago: num(paid),
+          };
+        });
       for (const bucket of Object.values(summary)) {
         bucket.pago = num(bucket.pago)!;
         bucket.pendente = num(bucket.pendente)!;

@@ -13,6 +13,10 @@ const MAX_TOOL_ROUNDS = 6;
 /** Earlier messages of the conversation sent along with a new question. */
 const HISTORY_MESSAGES = 12;
 const MAX_QUESTION_LENGTH = 2000;
+/** After this long the assistant stops looking things up and answers with what it has. */
+const LOOKUP_BUDGET_MS = 75_000;
+/** The route's maxDuration is 120 s: the model calls together must end before it. */
+const DEADLINE_MS = 110_000;
 /** The model ends each answer with this marker and a JSON array of follow-up questions. */
 const FOLLOW_UP_MARKER = '[[SUGESTOES]]';
 
@@ -73,14 +77,19 @@ async function settingsAndBalance(organizationId: string) {
   return { settings, balance: Number(balance[0].balance) };
 }
 
-/** Whether the assistant can be used now, and why not. */
-export async function getAssistantStatus(user: AssistantUser) {
+async function checkAvailability(user: AssistantUser) {
   const [entitlements, { settings, balance }] = await Promise.all([getEntitlements(user.organizationId), settingsAndBalance(user.organizationId)]);
   const creditsPerUse = settings.ai.creditsPerUse;
   let reason: string | null = null;
   if (!hasFeature(entitlements, 'ai')) reason = 'O assistente de IA faz parte do plano Pro. Fale com o suporte para mudar de plano.';
   else if (!isDeepSeekConfigured()) reason = 'O assistente está temporariamente indisponível. Tente mais tarde.';
   else if (!user.impersonating && balance < creditsPerUse) reason = 'Seus créditos de IA acabaram. Compre um pacote em Assinatura ou aguarde a cota do próximo mês.';
+  return { entitlements, reason, balance, creditsPerUse };
+}
+
+/** Whether the assistant can be used now, and why not. */
+export async function getAssistantStatus(user: AssistantUser) {
+  const { reason, balance, creditsPerUse } = await checkAvailability(user);
   return {
     available: reason === null,
     reason,
@@ -149,30 +158,23 @@ export async function ask(user: AssistantUser, input: { conversationId?: unknown
   if (!question) throw new PlatformError('Escreva sua pergunta.');
   if (question.length > MAX_QUESTION_LENGTH) throw new PlatformError(`A pergunta passa de ${MAX_QUESTION_LENGTH} caracteres. Resuma um pouco.`);
 
-  const status = await getAssistantStatus(user);
-  if (!status.available) throw new PlatformError(status.reason!, 403);
+  const { entitlements, reason } = await checkAvailability(user);
+  if (reason) throw new PlatformError(reason, 403);
 
-  const conversation =
-    typeof input.conversationId === 'string' && input.conversationId
-      ? await requireConversation(user, input.conversationId)
-      : (
-          await sql`
-            INSERT INTO ai_conversations (organization_id, user_id, title)
-            VALUES (${user.organizationId}, ${user.userId}, ${question.length > 80 ? `${question.slice(0, 77)}…` : question})
-            RETURNING *
-          `
-        )[0];
-  const conversationId = String(conversation.id);
+  // A new conversation is only created once there is an answer: a failed first question must not
+  // leave an empty conversation in the history.
+  const existing = typeof input.conversationId === 'string' && input.conversationId ? await requireConversation(user, input.conversationId) : null;
 
-  const [organization, history, entitlements] = await Promise.all([
+  const [organization, history] = await Promise.all([
     sql`SELECT name FROM organizations WHERE id = ${user.organizationId}`,
-    sql`
-      SELECT role, content FROM (
-        SELECT role, content, created_at FROM ai_messages WHERE conversation_id = ${conversationId}
-        ORDER BY created_at DESC LIMIT ${HISTORY_MESSAGES}
-      ) recent ORDER BY created_at
-    `,
-    getEntitlements(user.organizationId),
+    existing
+      ? sql`
+          SELECT role, content FROM (
+            SELECT role, content, created_at FROM ai_messages WHERE conversation_id = ${String(existing.id)}
+            ORDER BY created_at DESC LIMIT ${HISTORY_MESSAGES}
+          ) recent ORDER BY created_at
+        `
+      : Promise.resolve([]),
   ]);
 
   const messages: ChatMessage[] = [
@@ -185,10 +187,13 @@ export async function ask(user: AssistantUser, input: { conversationId?: unknown
   const toolsUsed: Array<{ name: string; arguments: string }> = [];
 
   let rawAnswer = '';
+  const startedAt = Date.now();
   try {
     for (let round = 0; round <= MAX_TOOL_ROUNDS; round++) {
-      // Last round: no tools, so the model has to answer with what it has.
-      const response = await chat(messages, round === MAX_TOOL_ROUNDS ? [] : tools);
+      const elapsed = Date.now() - startedAt;
+      // Last round (or out of time): no tools, so the model has to answer with what it has.
+      const answerNow = round === MAX_TOOL_ROUNDS || elapsed > LOOKUP_BUDGET_MS;
+      const response = await chat(messages, answerNow ? [] : tools, DEADLINE_MS - elapsed);
       usage.promptTokens += response.usage.promptTokens;
       usage.completionTokens += response.usage.completionTokens;
 
@@ -218,6 +223,18 @@ export async function ask(user: AssistantUser, input: { conversationId?: unknown
   const { ai } = await getPlatformSettings();
   const cost = (usage.promptTokens * ai.inputCostPerMillion + usage.completionTokens * ai.outputCostPerMillion) / 1_000_000;
   const credits = user.impersonating ? 0 : ai.creditsPerUse;
+
+  const conversationId = existing
+    ? String(existing.id)
+    : String(
+        (
+          await sql`
+            INSERT INTO ai_conversations (organization_id, user_id, title)
+            VALUES (${user.organizationId}, ${user.userId}, ${question.length > 80 ? `${question.slice(0, 77)}…` : question})
+            RETURNING id
+          `
+        )[0].id,
+      );
 
   await sql`
     INSERT INTO ai_messages (conversation_id, organization_id, role, content)

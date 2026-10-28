@@ -92,7 +92,8 @@ export async function getStarterSuggestions(organizationId: string): Promise<str
         : Promise.resolve(null),
       sql`
         SELECT COUNT(*)::int AS total FROM services
-        WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND competence_month = ${current.key}
+        WHERE organization_id = ${organizationId} AND deleted_at IS NULL
+          AND COALESCE(NULLIF(competence_month, ''), TO_CHAR(date_performed, 'YYYY-MM')) = ${current.key}
       `,
     ]);
 
