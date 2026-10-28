@@ -68,10 +68,12 @@ const tooltipStyle = {
 const compactCurrency = (value: number) =>
   value.toLocaleString('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
 
+class SessionExpiredError extends Error {}
+
 async function fetchDashboard(url: string): Promise<ManagementData> {
   const response = await fetch(url, { cache: 'no-store' });
   if (response.redirected || response.status === 401)
-    throw new Error('Sua sessão expirou. Entre novamente para acessar os indicadores.');
+    throw new SessionExpiredError('Sua sessão expirou. Entre novamente para acessar os indicadores.');
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     throw new Error(body?.error || 'Não foi possível carregar os indicadores.');
@@ -322,7 +324,7 @@ export function ManagementDashboard({ userName, today }: { userName: string; tod
           Faturamento: t.revenue,
           'Ticket médio': t.ticket,
           'Repasse em folha': t.transfer,
-          'Custo com benefícios': t.payrollCost,
+          'Custo da folha (com benefícios)': t.payrollCost,
           'Despesas rateadas': t.expenses,
           Resultado: t.net,
           'Margem (%)': t.margin,
@@ -364,7 +366,7 @@ export function ManagementDashboard({ userName, today }: { userName: string; tod
         {
           Critério: 'Operação',
           Valor:
-            'Período e prestadores selecionados. Créditos/débitos comparados à escala apontada, com pausa de 1h. Débito não comprova compensação. Folgas e dias sem apontamento não são faltas.',
+            'Período e prestadores selecionados. Créditos/débitos comparados à escala apontada, com a pausa diária definida em Configurações. Débito não comprova compensação. Folgas e dias sem apontamento não são faltas.',
         },
       ]);
       XLSX.writeFile(
@@ -656,9 +658,11 @@ export function ManagementDashboard({ userName, today }: { userName: string; tod
             <button className="mg-button" onClick={() => mutate()}>
               Tentar novamente
             </button>
-            <Link href="/login" className="mg-text-button">
-              Entrar novamente
-            </Link>
+            {error instanceof SessionExpiredError && (
+              <Link href="/login" className="mg-text-button">
+                Entrar novamente
+              </Link>
+            )}
           </div>
         )}
         {!dashboard && !error && (
@@ -1309,7 +1313,7 @@ export function ManagementDashboard({ userName, today }: { userName: string; tod
                     <ChartEmpty message="Sem horas ou escalas apontadas neste recorte." />
                   )}
                   <p className="mg-card-footnote">
-                    Considera a jornada registrada e a pausa de 1h usada na escala. Débitos indicam horas abaixo do
+                    Considera a jornada registrada e a pausa diária definida em Configurações. Débitos indicam horas abaixo do
                     previsto; o sistema não possui registro separado de compensações utilizadas.
                   </p>
                 </Panel>
