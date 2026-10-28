@@ -508,6 +508,9 @@ export default function TechniciansPage() {
                           }
                           className={inputClassName}
                         />
+                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                          Vazio ou 0 usa o padrão da empresa ({formatPercent(organizationSettings.commissionPercentage)}).
+                        </p>
                       </label>
 
                       <label className="text-sm">
@@ -523,6 +526,9 @@ export default function TechniciansPage() {
                           }
                           className={inputClassName}
                         />
+                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                          Vazio ou 0 usa o padrão da empresa ({formatCurrency(organizationSettings.baseSalary)}).
+                        </p>
                       </label>
 
                       <label className="text-sm">
@@ -538,6 +544,9 @@ export default function TechniciansPage() {
                           }
                           className={inputClassName}
                         />
+                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                          Vazio ou 0 usa o padrão da empresa ({formatCurrency(organizationSettings.vaAllowance)}).
+                        </p>
                       </label>
 
                       <label className="text-sm">
@@ -553,6 +562,9 @@ export default function TechniciansPage() {
                           }
                           className={inputClassName}
                         />
+                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                          Vazio ou 0 usa o padrão da empresa ({formatCurrency(organizationSettings.vrAllowance)}).
+                        </p>
                       </label>
                     </div>
                   </section>
