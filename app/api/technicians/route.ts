@@ -54,9 +54,22 @@ function isDuplicateQraError(error: unknown) {
 
 function technicianConflictResponse() {
   return NextResponse.json(
-    { error: 'Ja existe um tecnico ou usuario com esse email.' },
+    { error: 'Já existe um técnico ou usuário com esse e-mail.' },
     { status: 409 }
   );
+}
+
+const MIN_PASSWORD_LENGTH = 8;
+const MAX_MONEY = 10_000_000;
+
+/** Pay fields are optional (empty = the organization default) but, when given, must be sane numbers. */
+function validateAmounts(fields: Array<[label: string, value: unknown, max: number]>): string | null {
+  for (const [label, value, max] of fields) {
+    if (value === undefined || value === null || value === '') continue;
+    const amount = Number(value);
+    if (!Number.isFinite(amount) || amount < 0 || amount > max) return `${label} inválido.`;
+  }
+  return null;
 }
 
 /** Phone is optional; when given it has to be something WhatsApp can actually reach. */
@@ -170,6 +183,18 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    if (String(password).length < MIN_PASSWORD_LENGTH) {
+      return NextResponse.json({ error: `A senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.` }, { status: 400 });
+    }
+
+    const amountError = validateAmounts([
+      ['Comissão', commission_percentage, 100],
+      ['Salário base', base_salary, MAX_MONEY],
+      ['VA', va_allowance, MAX_MONEY],
+      ['VR', vr_allowance, MAX_MONEY],
+    ]);
+    if (amountError) return NextResponse.json({ error: amountError }, { status: 400 });
 
     const qraHolder = await findActiveTechnicianWithQra(organizationId, qra, null);
     if (qraHolder) return duplicateQraResponse(qraHolder);
@@ -285,8 +310,20 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
+    if (password && String(password).length < MIN_PASSWORD_LENGTH) {
+      return NextResponse.json({ error: `A senha precisa ter pelo menos ${MIN_PASSWORD_LENGTH} caracteres.` }, { status: 400 });
+    }
+
+    const amountError = validateAmounts([
+      ['Comissão', commission_percentage, 100],
+      ['Salário base', base_salary, MAX_MONEY],
+      ['VA', va_allowance, MAX_MONEY],
+      ['VR', vr_allowance, MAX_MONEY],
+    ]);
+    if (amountError) return NextResponse.json({ error: amountError }, { status: 400 });
+
     const existingTechnicians = await sql`
-      SELECT id, user_id
+      SELECT id, user_id, status
       FROM technicians
       WHERE id = ${technicianId}
         AND organization_id = ${organizationId}
@@ -301,7 +338,12 @@ export async function PATCH(request: NextRequest) {
       );
     }
 
-    if (status !== 'inactive') {
+    // A request that doesn't name a status keeps the current one (it must not reactivate by omission).
+    const currentStatus = existingTechnicians[0].status as string;
+    const nextStatus = status === 'inactive' || status === 'active' ? status : currentStatus;
+    const statusChanged = nextStatus !== currentStatus;
+
+    if (nextStatus !== 'inactive') {
       const qraHolder = await findActiveTechnicianWithQra(organizationId, qra, technicianId);
       if (qraHolder) return duplicateQraResponse(qraHolder);
     }
@@ -311,11 +353,21 @@ export async function PATCH(request: NextRequest) {
     let userStatement = null;
 
     if (userId) {
+      // The login follows the technician: an inactive technician no longer holds one of the plan's
+      // user seats (maxUsers counts active logins), and reactivating takes a seat again.
+      if (statusChanged && nextStatus === 'active') {
+        const userLimit = await checkLimit(organizationId, 'maxUsers');
+        if (!userLimit.allowed) {
+          return NextResponse.json({ error: userLimit.message }, { status: 403 });
+        }
+      }
+
       userStatement = sql`
         UPDATE users
         SET email = ${email},
             name = ${name},
             password_hash = COALESCE(${passwordHash}, password_hash),
+            status = CASE WHEN ${statusChanged} THEN ${nextStatus} ELSE status END,
             updated_at = NOW()
         WHERE id = ${userId}
           AND organization_id = ${organizationId}
@@ -363,10 +415,11 @@ export async function PATCH(request: NextRequest) {
         base_salary = ${valueOrDefault(base_salary, defaults.baseSalary)},
         va_allowance = ${valueOrDefault(va_allowance, defaults.vaAllowance)},
         vr_allowance = ${valueOrDefault(vr_allowance, defaults.vrAllowance)},
-        status = ${status === 'inactive' ? 'inactive' : 'active'},
+        status = ${nextStatus},
         updated_at = NOW()
       WHERE id = ${technicianId}
         AND organization_id = ${organizationId}
+        AND deleted_at IS NULL
       RETURNING *
     `;
 

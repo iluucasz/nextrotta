@@ -100,11 +100,15 @@ export default function TechniciansPage() {
   const [deleteError, setDeleteError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     async function loadTechnicians() {
       if (!user) return;
       setTechniciansLoading(true);
+      setLoadError('');
 
       try {
         const response = await fetch('/api/technicians', { cache: 'no-store' });
@@ -112,19 +116,22 @@ export default function TechniciansPage() {
           const data = await response.json();
           setTechnicians(data.technicians ?? []);
         } else {
-          setTechnicians([]);
+          // Not the same as "no technicians": say it failed instead of showing an empty list.
+          setLoadError('Não foi possível carregar os técnicos.');
         }
+      } catch {
+        setLoadError('Não foi possível carregar os técnicos. Verifique a conexão.');
       } finally {
         setTechniciansLoading(false);
       }
     }
 
     loadTechnicians();
-  }, [user]);
+  }, [user, reloadKey]);
 
   const filteredTechnicians = useMemo(() => {
     return technicians.filter((technician) => {
-      const haystack = normalizeText(`${technician.name} ${technician.email} ${technician.qra}`);
+      const haystack = normalizeText(`${technician.name} ${technician.email ?? ''} ${technician.qra ?? ''}`);
       return !query || haystack.includes(normalizeText(query));
     });
   }, [query, technicians]);
@@ -186,49 +193,65 @@ export default function TechniciansPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        setFormError(data?.error || 'Nao foi possivel salvar o tecnico.');
+        setFormError(data?.error || 'Não foi possível salvar o técnico.');
         return;
       }
 
       const savedTechnician = await response.json();
       upsertTechnician(savedTechnician);
       handleFormDialogChange(false);
+    } catch {
+      setFormError('Não foi possível salvar o técnico. Verifique a conexão e tente de novo.');
     } finally {
       setIsSubmitting(false);
     }
   }
 
   async function handleToggleStatus(technician: Technician) {
+    if (togglingId) return;
     const nextStatus = technician.status === 'active' ? 'inactive' : 'active';
-    const response = await fetch(`/api/technicians?id=${technician.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...createFormDataFromTechnician(technician),
-        status: nextStatus,
-      }),
-    });
+    // The phone is left out on purpose: the API keeps the stored one when it isn't sent, so a number
+    // saved in an older format can't block changing the status.
+    const { phone: _phone, ...fields } = createFormDataFromTechnician(technician);
+    setTogglingId(technician.id);
 
-    if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      window.alert(data?.error || 'Nao foi possivel atualizar o status do tecnico.');
-      return;
+    try {
+      const response = await fetch(`/api/technicians?id=${technician.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...fields, status: nextStatus }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        window.alert(data?.error || 'Não foi possível atualizar o status do técnico.');
+        return;
+      }
+
+      const updatedTechnician = await response.json();
+      upsertTechnician(updatedTechnician);
+    } catch {
+      window.alert('Não foi possível atualizar o status do técnico. Verifique a conexão e tente de novo.');
+    } finally {
+      setTogglingId(null);
     }
-
-    const updatedTechnician = await response.json();
-    upsertTechnician(updatedTechnician);
   }
 
   async function handleStartPreview(technician: Technician) {
-    const response = await fetch('/api/auth/preview', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ technicianId: technician.id }),
-    });
+    try {
+      const response = await fetch('/api/auth/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ technicianId: technician.id }),
+      });
 
-    if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      window.alert(data?.error || 'Nao foi possivel abrir o modo preview.');
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        window.alert(data?.error || 'Não foi possível abrir o modo preview.');
+        return;
+      }
+    } catch {
+      window.alert('Não foi possível abrir o modo preview. Verifique a conexão e tente de novo.');
       return;
     }
 
@@ -252,12 +275,14 @@ export default function TechniciansPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        setDeleteError(data?.error || 'Nao foi possivel excluir o tecnico.');
+        setDeleteError(data?.error || 'Não foi possível excluir o técnico.');
         return;
       }
 
       setTechnicians((current) => current.filter((technician) => technician.id !== deletingTechnician.id));
       setDeletingTechnician(null);
+    } catch {
+      setDeleteError('Não foi possível excluir o técnico. Verifique a conexão e tente de novo.');
     } finally {
       setIsDeleting(false);
     }
@@ -285,13 +310,22 @@ export default function TechniciansPage() {
       <PageHeader
         eyebrow="Equipe"
         title="Técnicos"
-        description="Cadastro de colaboradores, QRA, comissao, beneficios e status operacional."
+        description="Cadastro de colaboradores, QRA, comissão, benefícios e status operacional."
       >
         <Button type="button" onClick={openCreateDialog}>
           <UserPlus className="h-4 w-4" />
           Novo técnico
         </Button>
       </PageHeader>
+
+      {loadError ? (
+        <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
+          <span>{loadError}</span>
+          <Button type="button" variant="outline" size="sm" onClick={() => setReloadKey((key) => key + 1)}>
+            Tentar novamente
+          </Button>
+        </div>
+      ) : null}
 
       <div className="grid gap-3 md:grid-cols-3">
         <MetricCard title="Ativos" value={`${activeCount}/${technicians.length}`} hint="Técnicos em operação" icon={Users} />
@@ -630,7 +664,7 @@ export default function TechniciansPage() {
                               <Pencil className="h-4 w-4" />
                               Editar
                             </DropdownMenuItem>
-                            <DropdownMenuItem onSelect={() => void handleToggleStatus(technician)}>
+                            <DropdownMenuItem disabled={togglingId !== null} onSelect={() => void handleToggleStatus(technician)}>
                               <Power className="h-4 w-4" />
                               {technician.status === 'active' ? 'Inativar' : 'Ativar'}
                             </DropdownMenuItem>
