@@ -163,7 +163,7 @@
   95% { opacity: 1; }
   100% { opacity: 0; transform: translate(var(--tx), var(--ty)); }
 }
-.nrt-ripple { position: absolute; z-index: 5; width: 2.4em; height: 2.4em; margin: -0.5em 0 0 -0.5em; border-radius: 50%; border: 2px solid var(--mint); opacity: 0; pointer-events: none; animation: nrt-ripple 0.7s ease-out var(--d, 0s) both; }
+.nrt-ripple { position: absolute; z-index: 5; width: 2.4em; height: 2.4em; margin: -0.5em 0 0 -0.5em; border-radius: 50%; border: 2px solid var(--mint); opacity: 0; pointer-events: none; animation: nrt-ripple 0.7s ease-out var(--d, 0s) forwards; }
 @keyframes nrt-ripple { from { opacity: 0.95; transform: scale(0.3); } to { opacity: 0; transform: scale(1.7); } }
 
 .nrt-meter { flex: 1; height: 0.5em; border-radius: 99px; background: rgba(255, 255, 255, 0.08); overflow: hidden; }
@@ -233,9 +233,12 @@
 .nrt-bubble-me { align-self: flex-end; background: var(--emerald); color: #fff; border-radius: 1em 1em 0.2em 1em; }
 .nrt-bubble-ai { align-self: flex-start; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--edge); border-radius: 1em 1em 1em 0.2em; width: 26em; }
 .nrt-bubble-ai p { margin: 0 0 0.4em; }
-.nrt-type { display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; width: calc(var(--n) * 1ch); border-right: 2px solid rgba(255, 255, 255, 0.85); animation: nrt-type 1.8s steps(var(--n)) var(--d, 0s) both, nrt-caret 0.1s linear calc(var(--d, 0s) + 1.8s) both; }
-@keyframes nrt-type { from { width: 0; } }
-@keyframes nrt-caret { to { border-right-color: transparent; } }
+/* Digitação: o texto é revelado por recorte (a bolha tem a largura exata do texto) e o cursor anda junto. */
+.nrt-type { position: relative; display: inline-block; white-space: nowrap; vertical-align: bottom; animation: nrt-type var(--t, 1.8s) steps(var(--n)) var(--d, 0s) both; }
+.nrt-type::after { content: ''; position: absolute; top: 0.1em; bottom: 0.1em; left: 0; width: 2px; margin-left: -2px; background: rgba(255, 255, 255, 0.85); animation: nrt-caret-run var(--t, 1.8s) steps(var(--n)) var(--d, 0s) both, nrt-caret 0.1s linear calc(var(--d, 0s) + var(--t, 1.8s)) both; }
+@keyframes nrt-type { from { clip-path: inset(-0.3em 100% -0.3em 0); } to { clip-path: inset(-0.3em 0 -0.3em 0); } }
+@keyframes nrt-caret-run { to { left: 100%; } }
+@keyframes nrt-caret { to { opacity: 0; } }
 .nrt-think { align-self: flex-start; display: flex; gap: 0.3em; padding: 0.7em 0.9em; border-radius: 1em; background: rgba(255, 255, 255, 0.06); opacity: 0; margin-bottom: -2.2em; animation: nrt-thinking 0.9s ease var(--d, 0s) both; }
 .nrt-think i { width: 0.45em; height: 0.45em; border-radius: 50%; background: var(--mint); animation: nrt-bounce 0.7s ease-in-out infinite; }
 .nrt-think i:nth-child(2) { animation-delay: 0.12s; }

@@ -290,27 +290,27 @@ export function SceneIA() {
       <div className="nrt-title nrt-rise" style={d(0)}><Sparkles size={15} /> Assistente de IA</div>
       <div className="nrt-chat">
         <div className="nrt-bubble nrt-bubble-me nrt-rise" style={d(0.2)}>
-          <span className="nrt-type" style={{ ...d(0.7), '--n': 30 } as CSSProperties}>Quem produziu mais este mês?</span>
+          <span className="nrt-type" style={{ ...d(0.7), '--n': 30, '--t': '1.2s' } as CSSProperties}>Quem produziu mais este mês?</span>
         </div>
-        <div className="nrt-think nrt-think-show" style={d(3.0)}><i /><i /><i /></div>
-        <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={d(3.9)}>
+        <div className="nrt-think nrt-think-show" style={d(2.0)}><i /><i /><i /></div>
+        <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={d(2.9)}>
           <p><b>Rafael</b> lidera o mês: R$ 22,8 mil em 100 atendimentos.</p>
           {[['Rafael', 100, '22,8'], ['Thiago', 97, '22,2'], ['Carlos', 90, '20,4']].map(([name, w, v], i) => (
             <div className="nrt-rank nrt-rank-ai" key={String(name)}>
               <small>{name}</small>
-              <div className="nrt-meter"><s className="nrt-grow" style={{ ...d(4.3 + i * 0.25), width: `${w}%` }} /></div>
+              <div className="nrt-meter"><s className="nrt-grow" style={{ ...d(3.3 + i * 0.25), width: `${w}%` }} /></div>
               <em>{v}</em>
             </div>
           ))}
         </div>
         <div className="nrt-sugg">
           {['Compare com setembro', 'E a comissão de cada um?'].map((q, i) => (
-            <Pill key={q} tone="plain" style={d(5.4 + i * 0.2)}>{q}</Pill>
+            <Pill key={q} tone="plain" style={d(4.4 + i * 0.2)}>{q}</Pill>
           ))}
         </div>
       </div>
-      <div className="nrt-input nrt-rise" style={d(0.1)}><span>Pergunte sobre a operação…</span><i className="nrt-send nrt-btn-press" style={{ '--d': '2.7s' } as CSSProperties}><Send size={13} /></i></div>
-      <Click from={[30, 15]} to={[40.9, 24.7]} delay={1.3} />
+      <div className="nrt-input nrt-rise" style={d(0.1)}><span>Pergunte sobre a operação…</span><i className="nrt-send nrt-btn-press" style={{ '--d': '2.0s' } as CSSProperties}><Send size={13} /></i></div>
+      <Click from={[30, 15]} to={[40.9, 24.7]} delay={0.6} />
     </>
   );
 }

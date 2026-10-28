@@ -123,7 +123,7 @@ export function HeroPreview() {
 // ---------------------------------------------------------------------------------------------
 const Typed = ({ text, delay, className = '' }: { text: string; delay: number; className?: string }) => (
   <div className={`nrt-bubble nrt-bubble-me nrt-rise ${className}`} style={d(delay - 0.5)}>
-    <span className="nrt-type" style={{ ...d(delay), '--n': text.length } as CSSProperties}>{text}</span>
+    <span className="nrt-type" style={{ ...d(delay), '--n': text.length, '--t': '1.2s' } as CSSProperties}>{text}</span>
   </div>
 );
 const Thinking = ({ delay }: { delay: number }) => <div className="nrt-think" style={d(delay)}><i /><i /><i /></div>;
@@ -133,18 +133,18 @@ function AskFolha() {
   return (
     <div className="nrt-chat" style={{ top: '1.6em', bottom: '1.4em' }}>
       <Typed text={q} delay={0.7} />
-      <Thinking delay={2.9} />
-      <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={{ ...d(3.8), width: '33em' }}>
+      <Thinking delay={1.9} />
+      <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={{ ...d(2.8), width: '33em' }}>
         <p>A folha de outubro soma <b>R$ 51,3 mil</b> em 10 técnicos.</p>
         <div className="nrv-stack">
-          <s className="nrt-grow" style={{ ...d(4.2), width: '47%', background: 'var(--emerald)' }} />
-          <s className="nrt-grow" style={{ ...d(4.5), width: '38%', background: 'var(--mint)' }} />
-          <s className="nrt-grow" style={{ ...d(4.8), width: '15%', background: 'var(--amber)' }} />
+          <s className="nrt-grow" style={{ ...d(3.2), width: '47%', background: 'var(--emerald)' }} />
+          <s className="nrt-grow" style={{ ...d(3.5), width: '38%', background: 'var(--mint)' }} />
+          <s className="nrt-grow" style={{ ...d(3.8), width: '15%', background: 'var(--amber)' }} />
         </div>
         <div className="nrv-legend">
-          <Pill style={d(5.1)}><i style={{ background: 'var(--emerald)' }} />Salário base · R$ 24,1 mil</Pill>
-          <Pill style={d(5.3)}><i style={{ background: 'var(--mint)' }} />Comissão · R$ 19,5 mil</Pill>
-          <Pill style={d(5.5)}><i style={{ background: 'var(--amber)' }} />VA e VR · R$ 7,7 mil</Pill>
+          <Pill style={d(4.1)}><i style={{ background: 'var(--emerald)' }} />Salário base · R$ 24,1 mil</Pill>
+          <Pill style={d(4.3)}><i style={{ background: 'var(--mint)' }} />Comissão · R$ 19,5 mil</Pill>
+          <Pill style={d(4.5)}><i style={{ background: 'var(--amber)' }} />VA e VR · R$ 7,7 mil</Pill>
         </div>
       </div>
     </div>
@@ -156,13 +156,13 @@ function AskProducao() {
   return (
     <div className="nrt-chat" style={{ top: '1.6em', bottom: '1.4em' }}>
       <Typed text="Qual técnico mais produziu na Q1?" delay={0.7} />
-      <Thinking delay={2.9} />
-      <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={{ ...d(3.8), width: '33em' }}>
+      <Thinking delay={1.9} />
+      <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={{ ...d(2.8), width: '33em' }}>
         <p><b>Rafael</b> lidera a primeira quinzena: R$ 11,6 mil em 52 OS.</p>
         {rows.map(([name, w, v], i) => (
           <div className="nrt-rank nrt-rank-ai" key={name}>
             <small>{name}</small>
-            <div className="nrt-meter"><s className="nrt-grow" style={{ ...d(4.2 + i * 0.25), width: `${w}%` }} /></div>
+            <div className="nrt-meter"><s className="nrt-grow" style={{ ...d(3.2 + i * 0.25), width: `${w}%` }} /></div>
             <em>{v}</em>
           </div>
         ))}
@@ -176,13 +176,13 @@ function AskEstranho() {
   return (
     <div className="nrt-chat" style={{ top: '1.6em', bottom: '1.4em' }}>
       <Typed text="Tem algo estranho na folha de setembro?" delay={0.7} />
-      <Thinking delay={3.2} />
-      <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={{ ...d(4.1), width: '33em' }}>
+      <Thinking delay={2.2} />
+      <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={{ ...d(3.1), width: '33em' }}>
         <p>Encontrei <b>2 pontos</b> para revisar:</p>
         {flags.map((flag, i) => (
-          <div className="nrt-line nrt-fade" key={flag} style={d(4.5 + i * 0.5)}><i className="nrt-dot-amber" /><span>{flag}</span></div>
+          <div className="nrt-line nrt-fade" key={flag} style={d(3.5 + i * 0.5)}><i className="nrt-dot-amber" /><span>{flag}</span></div>
         ))}
-        <Pill tone="amber" style={{ ...d(5.8), marginTop: '0.4em' }}>Revisar folha</Pill>
+        <Pill tone="amber" style={{ ...d(4.8), marginTop: '0.4em' }}>Revisar folha</Pill>
       </div>
     </div>
   );

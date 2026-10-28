@@ -180,7 +180,7 @@ function IaConversa() {
       <div className="nrt-title nrt-rise" style={d(0)}><Sparkles size={15} /> Assistente de IA</div>
       <div className="nrt-chat">
         <div className="nrt-bubble nrt-bubble-me nrt-rise" style={d(0.2)}>
-          <span className="nrn-type" style={{ ...d(0.5), '--n': 28, '--t': '1s' } as CSSProperties}>Quem produziu mais este mês?</span>
+          <span className="nrt-type" style={{ ...d(0.5), '--n': 28, '--t': '1s' } as CSSProperties}>Quem produziu mais este mês?</span>
         </div>
         <div className="nrt-think nrt-think-show" style={d(1.8)}><i /><i /><i /></div>
         <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={d(2.4)}>
