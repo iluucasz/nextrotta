@@ -61,3 +61,7 @@ Resultado acima de 24 mil caracteres é cortado e o modelo é orientado a filtra
   `--remote-debugging-port=9223`). Cobre as sugestões iniciais (6 na tela, 4 no chat flutuante), o
   envio ao clicar, as sugestões só embaixo da última resposta, o saldo, os erros, o histórico, o
   consumo, as preferências e o celular.
+
+## Uma pergunta por vez
+
+Cada empresa responde uma pergunta por vez (`ai_request_locks`, migração `0028`): o saldo é conferido antes da resposta e debitado depois, e sem o bloqueio duas perguntas simultâneas passariam com crédito para uma só. Quem chega durante uma resposta recebe 409; um bloqueio esquecido por falha expira em 130 s. Teste: `node scripts/test-ai-request-lock.mjs`.

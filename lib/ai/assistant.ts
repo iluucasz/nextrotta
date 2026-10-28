@@ -17,6 +17,8 @@ const MAX_QUESTION_LENGTH = 2000;
 const LOOKUP_BUDGET_MS = 75_000;
 /** The route's maxDuration is 120 s: the model calls together must end before it. */
 const DEADLINE_MS = 110_000;
+/** Longer than the route's maxDuration, so a live request never loses its lock. */
+const ASK_LOCK_SECONDS = 130;
 /** The model ends each answer with this marker and a JSON array of follow-up questions. */
 const FOLLOW_UP_MARKER = '[[SUGESTOES]]';
 
@@ -150,6 +152,31 @@ export async function archiveConversation(user: AssistantUser, conversationId: s
 }
 
 /**
+ * Takes the organization's "one question at a time" lock (ai_request_locks). The balance is checked
+ * before the answer and debited after it: without the lock two questions in flight could both pass
+ * the check with credit for only one. A lock left by a crashed request expires by itself.
+ */
+async function acquireAskLock(organizationId: string) {
+  const rows = await sql`
+    INSERT INTO ai_request_locks (organization_id, locked_until)
+    VALUES (${organizationId}, NOW() + ${ASK_LOCK_SECONDS}::int * INTERVAL '1 second')
+    ON CONFLICT (organization_id) DO UPDATE SET locked_until = EXCLUDED.locked_until
+    WHERE ai_request_locks.locked_until <= NOW()
+    RETURNING organization_id
+  `;
+  if (!rows.length) throw new PlatformError('Já há uma pergunta sendo respondida para a sua empresa. Aguarde a resposta e tente de novo.', 409);
+}
+
+async function releaseAskLock(organizationId: string) {
+  try {
+    await sql`UPDATE ai_request_locks SET locked_until = NOW() WHERE organization_id = ${organizationId}`;
+  } catch (error) {
+    // The lock expires on its own; a failed release must not hide the answer.
+    console.error('[assistant] could not release the question lock:', error);
+  }
+}
+
+/**
  * Answers a question: looks up the organization's data through the tools as needed, stores both
  * messages and debits the credits (only when an answer was produced).
  */
@@ -158,12 +185,22 @@ export async function ask(user: AssistantUser, input: { conversationId?: unknown
   if (!question) throw new PlatformError('Escreva sua pergunta.');
   if (question.length > MAX_QUESTION_LENGTH) throw new PlatformError(`A pergunta passa de ${MAX_QUESTION_LENGTH} caracteres. Resuma um pouco.`);
 
+  await acquireAskLock(user.organizationId);
+  try {
+    return await answerQuestion(user, input.conversationId, question);
+  } finally {
+    await releaseAskLock(user.organizationId);
+  }
+}
+
+async function answerQuestion(user: AssistantUser, requestedConversationId: unknown, question: string) {
   const { entitlements, reason } = await checkAvailability(user);
   if (reason) throw new PlatformError(reason, 403);
 
   // A new conversation is only created once there is an answer: a failed first question must not
   // leave an empty conversation in the history.
-  const existing = typeof input.conversationId === 'string' && input.conversationId ? await requireConversation(user, input.conversationId) : null;
+  const existing =
+    typeof requestedConversationId === 'string' && requestedConversationId ? await requireConversation(user, requestedConversationId) : null;
 
   const [organization, history] = await Promise.all([
     sql`SELECT name FROM organizations WHERE id = ${user.organizationId}`,
