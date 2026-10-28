@@ -5,8 +5,8 @@
 
 ## 1. O resumo
 
-- **Hoje você gasta cerca de R$ 410 por mês.** O sistema em si (VPS, Vercel, domínio e banco) custa cerca de R$ 180. O resto, cerca de R$ 230, são suas assinaturas pessoais (ChatGPT, Claude e ElevenLabs), que não crescem com clientes.
-- **Hoje entra R$ 331 por mês** (um cliente Pro anual). Faltam cerca de R$ 80 por mês para empatar.
+- **Hoje você gasta cerca de R$ 460 por mês.** O sistema em si (VPS, Vercel, domínio, banco e DeepSeek) custa cerca de R$ 230. O resto, cerca de R$ 230, são suas assinaturas pessoais (ChatGPT, Claude e ElevenLabs), que não crescem com clientes.
+- **Hoje entra R$ 331 por mês** (um cliente Pro anual). Faltam cerca de R$ 130 por mês para empatar.
 - **Mais 1 cliente já empata.** Cada cliente novo custa só R$ 5 a R$ 30 por mês e traz R$ 181 a R$ 364 (plano anual, com os preços novos de 26/10).
 - **A partir daí, quase tudo vira sobra:** com 10 clientes, sobram cerca de R$ 1.760 por mês, e com 50, cerca de R$ 10.120, antes de impostos e pessoas.
 
@@ -20,18 +20,20 @@
 | VPS LocaCloud | 50,00 | Worker, Porto e WhatsApp | Confirmado por você |
 | ElevenLabs Starter (US$ 6) | 30,23 | Ferramenta sua | Plano "mais básico" informado; se for o Free, tire R$ 30,23 |
 | Neon Launch | 25 a 96 | Banco de dados | Estimado: mínimo de US$ 5 mais uso (veja abaixo) |
+| DeepSeek (US$ 10) | 50,38 | IA do assistente (recargas avulsas) | Informado por você: cerca de US$ 10 por mês |
 | Domínio .com.br | 3,33 | Endereço | R$ 40 por ano; confirmar a renovação |
-| **Total** | **≈ 410** | | Mínimo R$ 411, até R$ 482 se o Neon subir |
+| **Total** | **≈ 460** | | Mínimo R$ 461, até R$ 532 se o Neon subir |
 
 **Neon:** o Launch cobra por uso (US$ 0,106 por hora de computação). Com o worker antigo, o banco ficava ligado o mês todo, o que daria cerca de US$ 19 (R$ 96). Com a correção de hoje, o banco dorme, e a conta deve ficar perto do mínimo. A fatura mostra o valor certo.
 
 **Ficam de fora porque são variáveis ou ainda não existem:**
-- **DeepSeek (IA):** você faz recargas avulsas. O saldo medido é US$ 2,31 e o consumo até agora é menor que R$ 0,05.
 - **Asaas:** R$ 0 até hoje (está em sandbox). Não há mensalidade, só taxa por cobrança paga.
 - **Backup externo:** R$ 0, porque ainda não foi feito.
 - **Vercel Blob:** dentro da franquia grátis.
 
-**Suas assinaturas pessoais (R$ 232) não crescem com clientes.** O sistema (cerca de R$ 180) é o que cresce, em degraus.
+**DeepSeek:** os US$ 10 por mês são o gasto de hoje, com um só cliente, então boa parte é uso seu (testes e desenvolvimento). Nas projeções abaixo, o DeepSeek por cliente continua sendo a estimativa por uso dos clientes Pro.
+
+**Suas assinaturas pessoais (R$ 232) não crescem com clientes.** O sistema (cerca de R$ 230) é o que cresce, em degraus.
 
 ## 3. Como o custo cresce com clientes
 
