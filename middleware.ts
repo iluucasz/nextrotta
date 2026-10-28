@@ -135,8 +135,9 @@ function rejectSession(request: NextRequest, { clearCookie }: { clearCookie: boo
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname;
 
-  // Allow static files
-  if (path.startsWith('/_next') || path.startsWith('/favicon') || path.includes('.')) {
+  // Allow static files. API paths never qualify: a dynamic segment such as /api/documents/a.pdf
+  // would otherwise skip the session, organization and read-only checks below.
+  if (path.startsWith('/_next') || path.startsWith('/favicon') || (!path.startsWith('/api/') && path.includes('.'))) {
     return NextResponse.next();
   }
 

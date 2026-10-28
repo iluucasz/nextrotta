@@ -20,7 +20,6 @@ import {
   compactName,
   formatCurrency,
   formatNumber,
-  normalizeText,
   resolveCompetenceMonth,
   brasiliaDateKey,
 } from '@/lib/formatters';
@@ -28,7 +27,6 @@ import type { Payroll, Service, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import './overview.css';
 
-const defaultCompetenceMonth = brasiliaDateKey().slice(0, 7);
 const monthNames = [
   'Janeiro',
   'Fevereiro',
@@ -49,6 +47,8 @@ type TechnicianSummary = {
   serviceCount: number;
   grossValue: number;
   payrollItem?: Payroll;
+  /** The payroll exists and was explicitly closed; a draft still counts as pending. */
+  payrollClosed: boolean;
   payrollCost: number;
   result: number | null;
   hasActivity: boolean;
@@ -81,14 +81,23 @@ function getServiceCompetence(service: Service) {
   );
 }
 
-function serviceBelongsToTechnician(service: Service, technician: Technician) {
-  if (service.technician_id === technician.id) return true;
+function isPayrollClosed(payrollItem: Payroll | undefined) {
+  return payrollItem?.status === 'closed';
+}
 
-  const serviceTechnicianName = normalizeText(service.technician_name);
-  return Boolean(
-    serviceTechnicianName &&
-    serviceTechnicianName === normalizeText(technician.name),
-  );
+/** Reads `{ [key]: [...] }` from an API response; null when it failed or isn't JSON. */
+async function readList<T>(
+  result: PromiseSettledResult<Response>,
+  key: string,
+): Promise<T[] | null> {
+  if (result.status !== 'fulfilled' || !result.value.ok) return null;
+
+  try {
+    const data = await result.value.json();
+    return Array.isArray(data?.[key]) ? data[key] : [];
+  } catch {
+    return null;
+  }
 }
 
 function getPayrollCost(payrollItem: Payroll) {
@@ -149,8 +158,8 @@ export default function AdminDashboard() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [payroll, setPayroll] = useState<Payroll[]>([]);
-  const [competenceMonth, setCompetenceMonth] = useState(
-    defaultCompetenceMonth,
+  const [competenceMonth, setCompetenceMonth] = useState(() =>
+    brasiliaDateKey().slice(0, 7),
   );
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
@@ -170,48 +179,29 @@ export default function AdminDashboard() {
           fetch('/api/services'),
           fetch('/api/payroll'),
         ]);
+      const [loadedTechnicians, loadedServices, loadedPayroll] =
+        await Promise.all([
+          readList<Technician>(techniciansResult, 'technicians'),
+          readList<Service>(servicesResult, 'services'),
+          readList<Payroll>(payrollResult, 'payrolls'),
+        ]);
+
+      if (!mounted) return;
+
       const errors: string[] = [];
+      if (!loadedTechnicians) errors.push('técnicos');
+      if (!loadedServices) errors.push('OS');
+      if (!loadedPayroll) errors.push('folha');
 
-      if (
-        techniciansResult.status === 'fulfilled' &&
-        techniciansResult.value.ok
-      ) {
-        const data = await techniciansResult.value.json();
-        if (mounted)
-          setTechnicians(
-            Array.isArray(data.technicians) ? data.technicians : [],
-          );
-      } else {
-        errors.push('técnicos');
-        if (mounted) setTechnicians([]);
-      }
-
-      if (servicesResult.status === 'fulfilled' && servicesResult.value.ok) {
-        const data = await servicesResult.value.json();
-        if (mounted)
-          setServices(Array.isArray(data.services) ? data.services : []);
-      } else {
-        errors.push('OS');
-        if (mounted) setServices([]);
-      }
-
-      if (payrollResult.status === 'fulfilled' && payrollResult.value.ok) {
-        const data = await payrollResult.value.json();
-        if (mounted)
-          setPayroll(Array.isArray(data.payrolls) ? data.payrolls : []);
-      } else {
-        errors.push('folha');
-        if (mounted) setPayroll([]);
-      }
-
-      if (mounted) {
-        setDataError(
-          errors.length
-            ? `Não foi possível carregar dados de ${errors.join(', ')}.`
-            : '',
-        );
-        setIsDataLoading(false);
-      }
+      setTechnicians(loadedTechnicians ?? []);
+      setServices(loadedServices ?? []);
+      setPayroll(loadedPayroll ?? []);
+      setDataError(
+        errors.length
+          ? `Não foi possível carregar dados de ${errors.join(', ')}.`
+          : '',
+      );
+      setIsDataLoading(false);
     }
 
     loadData();
@@ -288,11 +278,16 @@ export default function AdminDashboard() {
     [activeTechnicianIds, competenceMonth, payroll],
   );
 
+  const closedPayrollInCompetence = useMemo(
+    () => payrollInCompetence.filter((item) => isPayrollClosed(item)),
+    [payrollInCompetence],
+  );
+
   const summaries = useMemo<TechnicianSummary[]>(() => {
     return activeTechnicians
       .map((technician) => {
-        const technicianServices = servicesInCompetence.filter((service) =>
-          serviceBelongsToTechnician(service, technician),
+        const technicianServices = servicesInCompetence.filter(
+          (service) => service.technician_id === technician.id,
         );
         const payrollItem = payrollInCompetence.find(
           (item) => item.technician_id === technician.id,
@@ -311,6 +306,7 @@ export default function AdminDashboard() {
           serviceCount: technicianServices.length,
           grossValue,
           payrollItem,
+          payrollClosed: isPayrollClosed(payrollItem),
           payrollCost,
           result: payrollItem
             ? roundCurrency(
@@ -344,10 +340,8 @@ export default function AdminDashboard() {
   }
 
   const rowsWithServices = summaries.filter((row) => row.serviceCount > 0);
-  const rowsWithPayrollObligation = summaries;
-  const pendingPayrollRows = rowsWithPayrollObligation.filter(
-    (row) => !row.payrollItem,
-  );
+  // Every active technician owes a payroll each month (base salary), with or without OS.
+  const pendingPayrollRows = summaries.filter((row) => !row.payrollClosed);
   const negativeResultRows = summaries.filter(
     (row) => typeof row.result === 'number' && row.result < 0,
   );
@@ -361,23 +355,24 @@ export default function AdminDashboard() {
     ),
   );
   const payrollCostTotal = roundCurrency(
-    payrollInCompetence.reduce(
+    closedPayrollInCompetence.reduce(
       (total, item) => total + getPayrollCost(item),
       0,
     ),
   );
   const closedResultTotal = roundCurrency(
-    payrollInCompetence.reduce(
+    closedPayrollInCompetence.reduce(
       (total, item) =>
         total + (moneyValue(item.total_services_value) - getPayrollCost(item)),
       0,
     ),
   );
-  const hasPayrollWorkInCompetence = rowsWithPayrollObligation.length > 0;
-  const isPayrollAwaitingClosure =
-    hasPayrollWorkInCompetence && pendingPayrollRows.length > 0;
-  const payrollProgress = rowsWithServices.length
-    ? Math.round((payrollInCompetence.length / rowsWithServices.length) * 100)
+  const isPayrollAwaitingClosure = pendingPayrollRows.length > 0;
+  const payrollProgress = summaries.length
+    ? Math.round(
+        ((summaries.length - pendingPayrollRows.length) / summaries.length) *
+          100,
+      )
     : 0;
   const shortcutCards = [
     {
@@ -502,7 +497,7 @@ export default function AdminDashboard() {
             hint={
               isPayrollAwaitingClosure
                 ? `Feche a folha de ${pendingPayrollRows.length} técnico(s) para liberar o total.`
-                : `${payrollInCompetence.length} cálculo(s) salvo(s)`
+                : `${closedPayrollInCompetence.length} folha(s) fechada(s)`
             }
             icon={WalletCards}
             tone={isPayrollAwaitingClosure ? 'warning' : 'default'}
@@ -517,7 +512,7 @@ export default function AdminDashboard() {
             hint={
               isPayrollAwaitingClosure
                 ? 'O resultado final aparece após o fechamento completo da folha.'
-                : 'Bruto salvo - folha salva'
+                : 'Bruto salvo - folha fechada'
             }
             icon={WalletCards}
             tone={
@@ -561,7 +556,7 @@ export default function AdminDashboard() {
               description={
                 pendingPayrollRows.length
                   ? `Falta finalizar: ${summarizeNames(pendingPayrollRows)}.`
-                  : 'Todos os técnicos com OS já têm cálculo salvo.'
+                  : 'Todos os técnicos ativos já têm a folha fechada.'
               }
               href="/admin/payroll"
               action="Abrir folha"
@@ -597,9 +592,7 @@ export default function AdminDashboard() {
           description={
             isPayrollAwaitingClosure
               ? `Fechamento aguardando a folha de ${pendingPayrollRows.length} técnico(s).`
-              : hasPayrollWorkInCompetence
-                ? `Fechamento da competência: ${payrollProgress}% concluído.`
-                : 'Sem OS com impacto em folha nesta competência.'
+              : `Fechamento da competência: ${payrollProgress}% concluído.`
           }
         >
           {summaries.length ? (
@@ -642,8 +635,10 @@ export default function AdminDashboard() {
                         {row.payrollItem ? formatCurrency(row.result) : '-'}
                       </td>
                       <td className="py-3">
-                        {row.payrollItem ? (
+                        {row.payrollClosed ? (
                           <StatusBadge tone="success">Finalizado</StatusBadge>
+                        ) : row.payrollItem ? (
+                          <StatusBadge tone="warning">Rascunho</StatusBadge>
                         ) : row.serviceCount > 0 ? (
                           <StatusBadge tone="warning">Pendente</StatusBadge>
                         ) : (
