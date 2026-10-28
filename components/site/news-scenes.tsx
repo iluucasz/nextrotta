@@ -1,9 +1,9 @@
 'use client';
 import { type CSSProperties, type ReactNode } from 'react';
-import { Battery, Check, FileText, Lightbulb, Lock, Sparkles } from 'lucide-react';
+import { Battery, Check, FileText, Lightbulb, Lock, Send, Sparkles } from 'lucide-react';
 import './news-art.css';
 import { Stage, useReplay } from './visuals';
-import { Click, Count, Pill, SceneIA, d } from './tour-scenes';
+import { Click, Count, Pill, d } from './tour-scenes';
 
 /**
  * Ilustrações animadas para dentro das novidades: o sistema desenhado de forma abstrata, na mesma
@@ -173,6 +173,41 @@ function PecasPainel() {
 // ---------------------------------------------------------------------------------------------
 // Assistente de IA
 // ---------------------------------------------------------------------------------------------
+function IaConversa() {
+  const asks = ['Compare com setembro', 'E a comissão de cada um?'];
+  return (
+    <>
+      <div className="nrt-title nrt-rise" style={d(0)}><Sparkles size={15} /> Assistente de IA</div>
+      <div className="nrt-chat">
+        <div className="nrt-bubble nrt-bubble-me nrt-rise" style={d(0.2)}>
+          <span className="nrn-type" style={{ ...d(0.5), '--n': 28, '--t': '1s' } as CSSProperties}>Quem produziu mais este mês?</span>
+        </div>
+        <div className="nrt-think nrt-think-show" style={d(1.8)}><i /><i /><i /></div>
+        <div className="nrt-bubble nrt-bubble-ai nrt-rise" style={d(2.4)}>
+          <p><b>Rafael</b> lidera o mês: R$ 22,8 mil em 100 atendimentos.</p>
+          {[['Rafael', 100, '22,8'], ['Thiago', 97, '22,2'], ['Carlos', 90, '20,4']].map(([name, w, v], i) => (
+            <div className="nrt-rank nrt-rank-ai" key={String(name)}>
+              <small>{name}</small>
+              <div className="nrt-meter"><s className="nrt-grow" style={{ ...d(2.8 + i * 0.2), width: `${w}%` }} /></div>
+              <em>{v}</em>
+            </div>
+          ))}
+        </div>
+        <div className="nrt-sugg">
+          {asks.map((q, i) => (
+            <Pill key={q} tone="plain" style={d(3.6 + i * 0.2)}>{q}</Pill>
+          ))}
+        </div>
+      </div>
+      <div className="nrt-input nrt-rise" style={d(0.1)}>
+        <span className="nrt-swap nrn-input-swap" style={d(5.4)}><s>Pergunte sobre a operação…</s><u>E a comissão de cada um?</u></span>
+        <i className="nrt-send nrt-btn-press" style={{ '--d': '1.6s' } as CSSProperties}><Send size={13} /></i>
+      </div>
+      <Click from={[36, 12]} to={[16.5, 17.2]} delay={4.0} />
+    </>
+  );
+}
+
 function IaFontes() {
   const sources = ['Técnicos', 'Produção', 'Ordens de serviço', 'Folha', 'Horas e escala'];
   const rows = sources.map((_, i) => 5.6 + i * 3.8);
@@ -258,7 +293,7 @@ export const NEWS_SCENES: Record<string, SceneDef> = {
   'pecas-venda': { title: 'Venda pelo celular', caption: 'No celular, o técnico escolhe a peça, cobra com Pix e o estoque baixa sozinho.', aspect: '44 / 24', Scene: PecasVenda },
   'pecas-inventario': { title: 'Inventário e acerto', caption: 'Inventário por código de barras: a falta vira débito parcelado no acerto do mês.', aspect: '44 / 24', Scene: PecasInventario },
   'pecas-painel': { title: 'Painel do administrador', caption: 'Nove abas para acompanhar vendas, estoque, movimentações e o financeiro.', aspect: '44 / 24', Scene: PecasPainel },
-  'ia-conversa': { title: 'Assistente NextRotta', caption: 'Pergunte como falaria com uma pessoa: a resposta vem com números e sugestões de próximas perguntas.', aspect: '44 / 28', Scene: SceneIA },
+  'ia-conversa': { title: 'Assistente NextRotta', caption: 'Pergunte como falaria com uma pessoa: a resposta vem com números e sugestões de próximas perguntas.', aspect: '44 / 24', Scene: IaConversa },
   'ia-fontes': { title: 'Assistente NextRotta', caption: 'Ele consulta os dados da sua empresa, só para leitura, e nunca altera nada.', aspect: '44 / 24', Scene: IaFontes },
   'ia-creditos': { title: 'Créditos de IA', caption: 'Cota mensal do plano, bônus de entrada e créditos extras, com extrato de cada resposta.', aspect: '44 / 24', Scene: IaCreditos },
 };

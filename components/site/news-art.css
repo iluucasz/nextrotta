@@ -63,6 +63,15 @@
 .nrn-qr i.on { background: #0c1f17; }
 .nrn-ok { display: grid; place-items: center; width: 3.6em; height: 3.6em; border-radius: 50%; background: var(--emerald); color: #fff; box-shadow: 0 0 0 0.6em rgba(31, 157, 116, 0.2); }
 
+/* Conversa: digitação mais rápida que a do tour e a troca do texto do campo */
+.nrn-type {
+  display: inline-block; overflow: hidden; white-space: nowrap; vertical-align: bottom; width: calc(var(--n) * 1ch);
+  border-right: 2px solid rgba(255, 255, 255, 0.85);
+  animation: nrt-type var(--t, 1s) steps(var(--n)) var(--d, 0s) both, nrt-caret 0.1s linear calc(var(--d, 0s) + var(--t, 1s)) both;
+}
+.nrn-fig .nrn-input-swap s { color: var(--mut); }
+.nrn-fig .nrn-input-swap u { color: #fff; }
+
 /* Painel */
 .nrn-tabs { position: absolute; left: 1.2em; right: 1.2em; top: 3.9em; display: flex; gap: 0.5em; }
 .nrn-tab {
