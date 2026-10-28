@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 
     if (!incomingRows.length) {
       return NextResponse.json(
-        { error: 'Nenhuma OS valida para importar.' },
+        { error: 'Nenhuma OS válida para importar.' },
         { status: 400 }
       );
     }
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
 
     if (incomingRows.length > 1000) {
       return NextResponse.json(
-        { error: 'Importe no maximo 1000 OS por lote.' },
+        { error: 'Importe no máximo 1000 OS por lote.' },
         { status: 413 }
       );
     }
@@ -90,8 +90,29 @@ export async function POST(request: NextRequest) {
         )
       : [];
     const technicianNameById = new Map(technicianRows.map((row) => [String(row.id), String(row.name)]));
-    const imported: Record<string, unknown>[] = [];
     const rejected: Array<{ order_code: string; errors: string[] }> = [];
+
+    // Importing the same file twice would double the revenue: a row identical to an OS already on
+    // file (same code, technician, day and value), or repeated inside the batch, is rejected.
+    const rowKey = (code: string, technicianId: string, date: string, value: number) => `${code}|${technicianId}|${date}|${value.toFixed(2)}`;
+    const codes = Array.from(new Set(incomingRows.map((row) => getText(row.order_code)).filter(Boolean)));
+    const existingRows = codes.length
+      ? await sql.query(
+          `SELECT order_code, technician_id::text AS technician_id, date_performed::text AS date_performed, value::float AS value
+           FROM services WHERE organization_id = $1 AND deleted_at IS NULL AND order_code = ANY($2)`,
+          [auth.organizationId, codes],
+        )
+      : [];
+    const seen = new Set(existingRows.map((row) => rowKey(String(row.order_code), String(row.technician_id), String(row.date_performed), Number(row.value))));
+    const accepted: Array<{
+      orderCode: string;
+      technicianId: string;
+      serviceType: string;
+      value: number;
+      datePerformed: string;
+      timePerformed: string;
+      description: string;
+    }> = [];
 
     for (const row of incomingRows) {
       const orderCode = getText(row.order_code);
@@ -103,37 +124,60 @@ export async function POST(request: NextRequest) {
       const description = getText(row.description);
       const errors: string[] = [];
 
-      if (!orderCode) errors.push('Codigo da OS ausente');
-      if (!technicianId || !technicianNameById.has(technicianId)) errors.push('Tecnico nao localizado ou inativo');
+      if (!orderCode) errors.push('Código da OS ausente');
+      if (!technicianId || !technicianNameById.has(technicianId)) errors.push('Técnico não localizado ou inativo');
       if (!serviceType) errors.push('Especialidade ausente');
-      if (!Number.isFinite(value) || value <= 0) errors.push('Valor invalido');
-      if (!isDateKey(datePerformed)) errors.push('Data de atendimento invalida');
-      if (!isTimeKey(timePerformed)) errors.push('Hora de atendimento invalida');
-      if (!isMonthKey(competenceMonth)) errors.push('Competencia invalida');
+      if (!Number.isFinite(value) || value <= 0 || value > 99_999_999) errors.push('Valor inválido');
+      if (!isDateKey(datePerformed)) errors.push('Data de atendimento inválida');
+      if (!isTimeKey(timePerformed)) errors.push('Hora de atendimento inválida');
+      if (!isMonthKey(competenceMonth)) errors.push('Competência inválida');
+
+      if (!errors.length) {
+        const key = rowKey(orderCode, technicianId, datePerformed, value);
+        if (seen.has(key)) errors.push('OS já cadastrada (mesmo código, técnico, data e valor) ou repetida no arquivo');
+        else seen.add(key);
+      }
 
       if (errors.length) {
         rejected.push({ order_code: orderCode, errors });
         continue;
       }
 
-      const result = await sql`
-        INSERT INTO services (
-          organization_id, order_code, technician_id, service_type, value,
-          date_performed, time_performed, competence_month, fortnight_period, description
-        )
-        VALUES (
-          ${auth.organizationId}, ${orderCode}, ${technicianId}, ${serviceType}, ${value},
-          ${datePerformed}, ${timePerformed}, ${competenceMonth}, ${fortnightPeriod}, ${description || null}
-        )
-        RETURNING id, order_code, technician_id, service_type, value,
-                  date_performed, time_performed, competence_month, fortnight_period, description, created_at
-      `;
-
-      imported.push({
-        ...result[0],
-        technician_name: technicianNameById.get(technicianId) || getText(row.technician_name),
-      });
+      accepted.push({ orderCode, technicianId, serviceType, value, datePerformed, timePerformed, description });
     }
+
+    // One statement for the whole batch: it is all saved or nothing is, so a failure halfway can't
+    // leave a partial import that a retry would then duplicate.
+    const inserted = accepted.length
+      ? await sql.query(
+          `INSERT INTO services (
+             organization_id, order_code, technician_id, service_type, value,
+             date_performed, time_performed, competence_month, fortnight_period, description
+           )
+           SELECT $1::uuid, r.order_code, r.technician_id, r.service_type, r.value,
+                  r.date_performed, r.time_performed, $9::text, $10::text, r.description
+           FROM unnest($2::text[], $3::uuid[], $4::text[], $5::numeric[], $6::date[], $7::time[], $8::text[])
+             AS r(order_code, technician_id, service_type, value, date_performed, time_performed, description)
+           RETURNING id, order_code, technician_id, service_type, value,
+                     date_performed, time_performed, competence_month, fortnight_period, description, created_at`,
+          [
+            auth.organizationId,
+            accepted.map((row) => row.orderCode),
+            accepted.map((row) => row.technicianId),
+            accepted.map((row) => row.serviceType),
+            accepted.map((row) => row.value),
+            accepted.map((row) => row.datePerformed),
+            accepted.map((row) => row.timePerformed),
+            accepted.map((row) => row.description || null),
+            competenceMonth,
+            fortnightPeriod,
+          ],
+        )
+      : [];
+    const imported = inserted.map((row) => ({
+      ...row,
+      technician_name: technicianNameById.get(String(row.technician_id)) ?? '',
+    }));
 
     return NextResponse.json({
       services: imported,

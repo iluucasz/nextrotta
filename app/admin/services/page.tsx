@@ -34,7 +34,8 @@ import { useAppSession } from '@/hooks/use-app-session';
 const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
 const serviceFortnightOptions: ServiceFortnight[] = ['Q1', 'Q2'];
 const importStageOrder = ['prepare', 'upload', 'process', 'finalize'] as const;
-const defaultCompetenceMonth = brasiliaDateKey().slice(0, 7);
+/** Read when used, not at module load: the page can stay open across a month change. */
+const currentCompetenceMonth = () => brasiliaDateKey().slice(0, 7);
 
 type ImportStageKey = (typeof importStageOrder)[number];
 type BulkDeletePeriod = 'monthly' | ServiceFortnight;
@@ -92,23 +93,21 @@ interface ParsedServiceImportRow {
   };
 }
 
-const initialFormData = {
-  order_code: '',
-  technician_id: '',
-  service_type: '',
-  value: 0,
-  date_performed: brasiliaDateKey(),
-  time_performed: new Date().toTimeString().slice(0, 5),
-  competence_month: defaultCompetenceMonth,
-  fortnight_period: '' as '' | ServiceFortnight,
-  description: '',
-};
-
-type ServiceFormData = typeof initialFormData;
-
-function createInitialFormData(): ServiceFormData {
-  return { ...initialFormData };
+function createInitialFormData() {
+  return {
+    order_code: '',
+    technician_id: '',
+    service_type: '',
+    value: 0,
+    date_performed: brasiliaDateKey(),
+    time_performed: new Date().toTimeString().slice(0, 5),
+    competence_month: currentCompetenceMonth(),
+    fortnight_period: '' as '' | ServiceFortnight,
+    description: '',
+  };
 }
+
+type ServiceFormData = ReturnType<typeof createInitialFormData>;
 
 function getServiceCompetenceMonth(service: Pick<Service, 'competence_month' | 'date_performed'>) {
   return resolveCompetenceMonth(service.competence_month, service.date_performed) || yearFromCompetence(service.date_performed);
@@ -173,6 +172,18 @@ function pickImportValue(row: Record<string, unknown>, key: keyof typeof service
     const value = headerMap.get(normalizeImportHeader(alias));
     if (value !== undefined && value !== null && String(value).trim() !== '') {
       return value;
+    }
+  }
+
+  // The model's own headers carry a note after the name ("Data de atendimento (data e hora)"):
+  // a multi-word alias also matches a header that starts with it.
+  for (const alias of serviceImportAliases[key]) {
+    const normalizedAlias = normalizeImportHeader(alias);
+    if (!normalizedAlias.includes(' ')) continue;
+    for (const [header, value] of headerMap) {
+      if (header.startsWith(`${normalizedAlias} `) && value !== undefined && value !== null && String(value).trim() !== '') {
+        return value;
+      }
     }
   }
 
@@ -265,12 +276,12 @@ function parseServiceImportRows(rows: Record<string, unknown>[], technicians: Te
       (technicianName ? techniciansByName.get(normalizeText(technicianName)) : undefined);
     const errors: string[] = [];
 
-    if (!orderCode) errors.push('Codigo da OS ausente');
+    if (!orderCode) errors.push('Código da OS ausente');
     if (!serviceType) errors.push('Especialidade ausente');
-    if (!value || value <= 0) errors.push('Valor invalido');
-    if (!datePerformed) errors.push('Data de atendimento invalida');
-    if (!timePerformed) errors.push('Hora de atendimento invalida');
-    if (!technician) errors.push(qra ? `QRA ${qra} nao cadastrado` : 'Tecnico nao localizado');
+    if (!value || value <= 0) errors.push('Valor inválido');
+    if (!datePerformed) errors.push('Data de atendimento inválida');
+    if (!timePerformed) errors.push('Hora de atendimento inválida');
+    if (!technician) errors.push(qra ? `QRA ${qra} não cadastrado` : 'Técnico não localizado');
 
     return {
       rowNumber: index + 2,
@@ -301,7 +312,7 @@ export default function AdminServicesPage() {
   const [query, setQuery] = useState('');
   const [technicianFilter, setTechnicianFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
-  const [competenceFilter, setCompetenceFilter] = useState(defaultCompetenceMonth);
+  const [competenceFilter, setCompetenceFilter] = useState(currentCompetenceMonth);
   const [fortnightFilter, setFortnightFilter] = useState<'all' | ServiceFortnight>('all');
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
   const [formData, setFormData] = useState<ServiceFormData>(createInitialFormData);
@@ -310,7 +321,7 @@ export default function AdminServicesPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [deletingServiceId, setDeletingServiceId] = useState<string | null>(null);
   const [isBulkDeleteDialogOpen, setIsBulkDeleteDialogOpen] = useState(false);
-  const [bulkDeleteCompetenceMonth, setBulkDeleteCompetenceMonth] = useState(defaultCompetenceMonth);
+  const [bulkDeleteCompetenceMonth, setBulkDeleteCompetenceMonth] = useState(currentCompetenceMonth);
   const [bulkDeletePeriod, setBulkDeletePeriod] = useState<BulkDeletePeriod>('monthly');
   const [bulkDeleteConfirmation, setBulkDeleteConfirmation] = useState('');
   const [bulkDeleteError, setBulkDeleteError] = useState('');
@@ -346,7 +357,7 @@ export default function AdminServicesPage() {
             setServices(Array.isArray(data.services) ? data.services : []);
           }
         } else {
-          errors.push('ordens de servico');
+          errors.push('ordens de serviço');
           if (mounted) {
             setServices([]);
           }
@@ -365,13 +376,13 @@ export default function AdminServicesPage() {
         }
 
         if (mounted) {
-          setDataError(errors.length ? `Nao foi possivel carregar dados reais de ${errors.join(' e ')}.` : '');
+          setDataError(errors.length ? `Não foi possível carregar os dados de ${errors.join(' e ')}.` : '');
           setIsDataLoading(false);
         }
       } catch (error) {
         console.error('[admin/services] load data error:', error);
         if (mounted) {
-          setDataError('Nao foi possivel carregar os dados reais.');
+          setDataError('Não foi possível carregar os dados.');
           setTechnicians([]);
           setServices([]);
           setIsDataLoading(false);
@@ -428,7 +439,7 @@ export default function AdminServicesPage() {
   }, [servicesWithDetails]);
 
   const availableCompetences = useMemo(() => {
-    return Array.from(new Set([defaultCompetenceMonth, ...servicesWithDetails.map((service) => getServiceCompetenceMonth(service))])).sort((left, right) =>
+    return Array.from(new Set([currentCompetenceMonth(), ...servicesWithDetails.map((service) => getServiceCompetenceMonth(service))])).sort((left, right) =>
       right.localeCompare(left, 'pt-BR'),
     );
   }, [servicesWithDetails]);
@@ -554,7 +565,7 @@ export default function AdminServicesPage() {
       if (!bestRows.length) {
         setImportRows([]);
         setImportSheetName(bestSheetName);
-        setImportError('A planilha nao possui linhas para importar.');
+        setImportError('A planilha não possui linhas para importar.');
         return;
       }
 
@@ -564,7 +575,7 @@ export default function AdminServicesPage() {
       console.error('[admin/services] import read error:', error);
       setImportRows([]);
       setImportSheetName('');
-      setImportError('Nao foi possivel ler a planilha. Use XLSX, XLS ou CSV no modelo de OS.');
+      setImportError('Não foi possível ler a planilha. Use XLSX, XLS ou CSV no modelo de OS.');
     } finally {
       event.target.value = '';
     }
@@ -601,13 +612,18 @@ export default function AdminServicesPage() {
       const data = await response.json().catch(() => null);
 
       if (!response.ok) {
-        setImportError(data?.error || 'Nao foi possivel importar as OS.');
+        setImportError(data?.error || 'Não foi possível importar as OS.');
         setIsImporting(false);
         return;
       }
 
       const createdServices = Array.isArray(data?.services) ? (data.services as Service[]) : [];
-      const rejectedCodes = new Set((Array.isArray(data?.rejected) ? data.rejected : []).map((item: { order_code?: string }) => item.order_code));
+      const rejectedByCode = new Map<string, string[]>(
+        (Array.isArray(data?.rejected) ? data.rejected : []).map((item: { order_code?: string; errors?: string[] }) => [
+          String(item.order_code ?? ''),
+          Array.isArray(item.errors) && item.errors.length ? item.errors : ['Linha rejeitada pela API'],
+        ]),
+      );
       const createdCodes = new Set(createdServices.map((service) => service.order_code));
 
       setImportProgress(createImportProgress('finalize', 'Atualizando a lista e concluindo o lote importado.'));
@@ -619,8 +635,8 @@ export default function AdminServicesPage() {
             return { ...row, status: 'imported', errors: ['OS importada nesta carga'] };
           }
 
-          if (rejectedCodes.has(row.values.order_code)) {
-            return { ...row, status: 'invalid', errors: ['Linha rejeitada pela API'] };
+          if (rejectedByCode.has(row.values.order_code)) {
+            return { ...row, status: 'invalid', errors: rejectedByCode.get(row.values.order_code)! };
           }
 
           return row;
@@ -631,7 +647,7 @@ export default function AdminServicesPage() {
       );
     } catch (error) {
       console.error('[admin/services] import submit error:', error);
-      setImportError('Nao foi possivel importar as OS.');
+      setImportError('Não foi possível importar as OS.');
     } finally {
       setIsImporting(false);
       setImportProgress(null);
@@ -646,35 +662,40 @@ export default function AdminServicesPage() {
     const currentEditingServiceId = editingServiceId;
     const method = currentEditingServiceId ? 'PUT' : 'POST';
 
-    const response = await fetch('/api/services', {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(currentEditingServiceId ? { id: currentEditingServiceId, ...formData } : formData),
-    });
+    try {
+      const response = await fetch('/api/services', {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(currentEditingServiceId ? { id: currentEditingServiceId, ...formData } : formData),
+      });
 
-    if (!response.ok) {
-      const data = await response.json().catch(() => null);
-      setFormError(data?.error || 'Nao foi possivel salvar a OS.');
-      setIsSubmitting(false);
-      return;
-    }
-
-    const saved = (await response.json()) as Service;
-    const selectedTechnician = sortedTechnicians.find((technician) => technician.id === formData.technician_id);
-    const hydratedService = {
-      ...saved,
-      technician_name: saved.technician_name || selectedTechnician?.name || formData.technician_id,
-    };
-
-    setServices((current) => {
-      if (currentEditingServiceId) {
-        return current.map((service) => (service.id === currentEditingServiceId ? hydratedService : service));
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        setFormError(data?.error || 'Não foi possível salvar a OS.');
+        return;
       }
 
-      return [hydratedService, ...current];
-    });
-    handleFormDialogChange(false);
-    setIsSubmitting(false);
+      const saved = (await response.json()) as Service;
+      const selectedTechnician = sortedTechnicians.find((technician) => technician.id === formData.technician_id);
+      const hydratedService = {
+        ...saved,
+        technician_name: saved.technician_name || selectedTechnician?.name || formData.technician_id,
+      };
+
+      setServices((current) => {
+        if (currentEditingServiceId) {
+          return current.map((service) => (service.id === currentEditingServiceId ? hydratedService : service));
+        }
+
+        return [hydratedService, ...current];
+      });
+      handleFormDialogChange(false);
+    } catch (error) {
+      console.error('[admin/services] save service error:', error);
+      setFormError('Não foi possível salvar a OS. Verifique a conexão e tente de novo.');
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   function openCreateDialog() {
@@ -714,7 +735,7 @@ export default function AdminServicesPage() {
 
       if (!response.ok) {
         const data = await response.json().catch(() => null);
-        setDataError(data?.error || 'Nao foi possivel excluir a OS.');
+        setDataError(data?.error || 'Não foi possível excluir a OS.');
         return;
       }
 
@@ -725,7 +746,7 @@ export default function AdminServicesPage() {
       }
     } catch (error) {
       console.error('[admin/services] delete service error:', error);
-      setDataError('Nao foi possivel excluir a OS.');
+      setDataError('Não foi possível excluir a OS.');
     } finally {
       setDeletingServiceId(null);
     }
@@ -1507,7 +1528,7 @@ export default function AdminServicesPage() {
                 setQuery('');
                 setTechnicianFilter('all');
                 setTypeFilter('all');
-                setCompetenceFilter(defaultCompetenceMonth);
+                setCompetenceFilter(currentCompetenceMonth());
                 setFortnightFilter('all');
               }}
             >

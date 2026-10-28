@@ -30,6 +30,21 @@ function isFortnightPeriod(value: string) {
   return value === 'Q1' || value === 'Q2';
 }
 
+/** Required fields and formats of a manually entered OS; a message for the first problem, or null. */
+function validateServiceInput(input: Record<string, unknown>): string | null {
+  const text = (value: unknown) => String(value ?? '').trim();
+  if (!text(input.order_code)) return 'Informe o código da OS.';
+  if (!text(input.technician_id)) return 'Selecione o técnico.';
+  if (!text(input.service_type)) return 'Informe a especialidade.';
+  const value = Number(input.value);
+  if (input.value === '' || input.value === null || !Number.isFinite(value) || value < 0 || value > 99_999_999) return 'Informe um valor válido.';
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text(input.date_performed))) return 'Informe uma data de atendimento válida.';
+  if (text(input.time_performed) && !/^\d{2}:\d{2}(?::\d{2})?$/.test(text(input.time_performed))) return 'Informe uma hora de atendimento válida.';
+  if (text(input.competence_month) && !isMonthKey(text(input.competence_month))) return 'Informe uma competência válida (AAAA-MM).';
+  if (text(input.fortnight_period) && !isFortnightPeriod(text(input.fortnight_period))) return 'A quinzena deve ser Q1 ou Q2.';
+  return null;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const auth = await verifyOrganizationAuth(request);
@@ -113,6 +128,9 @@ export async function POST(request: NextRequest) {
       description,
     } = await request.json();
 
+    const invalid = validateServiceInput({ order_code, technician_id, service_type, value, date_performed, time_performed, competence_month, fortnight_period });
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+
     if (!(await isActiveTechnician(auth.organizationId, technician_id))) {
       return inactiveTechnicianResponse();
     }
@@ -124,7 +142,7 @@ export async function POST(request: NextRequest) {
       )
       VALUES (
         ${auth.organizationId}, ${order_code}, ${technician_id}, ${service_type}, ${value},
-        ${date_performed}, ${time_performed || null}, ${competence_month || String(date_performed ?? '').slice(0, 7)}, ${fortnight_period || null}, ${description}
+        ${date_performed}, ${time_performed || null}, ${competence_month || String(date_performed ?? '').slice(0, 7)}, ${fortnight_period || null}, ${description || null}
       )
       RETURNING *
     `;
@@ -169,6 +187,9 @@ export async function PUT(request: NextRequest) {
       );
     }
 
+    const invalid = validateServiceInput({ order_code, technician_id, service_type, value, date_performed, time_performed, competence_month, fortnight_period });
+    if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+
     const currentService = await sql`
       SELECT technician_id
       FROM services
@@ -203,6 +224,7 @@ export async function PUT(request: NextRequest) {
           updated_at = NOW()
       WHERE id = ${id}
         AND organization_id = ${auth.organizationId}
+        AND deleted_at IS NULL
       RETURNING *
     `;
 
@@ -239,26 +261,27 @@ export async function DELETE(request: NextRequest) {
 
       if (confirmation !== 'DELETAR OS') {
         return NextResponse.json(
-          { error: 'Confirme a delecao digitando DELETAR OS.' },
+          { error: 'Confirme a exclusão digitando DELETAR OS.' },
           { status: 400 }
         );
       }
 
       if (!isMonthKey(competenceMonth)) {
         return NextResponse.json(
-          { error: 'Selecione uma competencia valida para deletar as OS.' },
+          { error: 'Selecione uma competência válida para excluir as OS.' },
           { status: 400 }
         );
       }
 
       if (!isMonthly && !isFortnightPeriod(normalizedPeriod)) {
         return NextResponse.json(
-          { error: 'Selecione Mensal, Q1 ou Q2 para deletar as OS.' },
+          { error: 'Selecione Mensal, Q1 ou Q2 para excluir as OS.' },
           { status: 400 }
         );
       }
 
-      // Archived, not removed: the rows stay restorable from the trash.
+      // Archived, not removed: the rows stay restorable from the trash. Only the OS the list shows
+      // (technicians still active) are touched, so the count the admin confirmed is what goes.
       const params = isMonthly
         ? [auth.organizationId, auth.userId, competenceMonth]
         : [auth.organizationId, auth.userId, competenceMonth, normalizedPeriod];
@@ -270,6 +293,9 @@ export async function DELETE(request: NextRequest) {
           WHERE organization_id = $1
             AND deleted_at IS NULL
             AND COALESCE(NULLIF(competence_month, ''), TO_CHAR(date_performed::date, 'YYYY-MM')) = $3
+            AND technician_id IN (
+              SELECT id FROM technicians WHERE organization_id = $1 AND status = 'active' AND deleted_at IS NULL
+            )
           ${periodCondition}
           RETURNING id
         `,
