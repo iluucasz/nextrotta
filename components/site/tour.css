@@ -249,7 +249,7 @@
 /* Peças */
 .nrt-ico { display: grid; place-items: center; width: 2em; height: 2em; border-radius: 0.6em; background: rgba(127, 224, 181, 0.14); color: var(--mint); }
 .nrt-un { font-weight: 400; color: var(--mut); }
-.nrt-stock .nrt-un { grid-area: 1 / 2; }
+.nrt-stock .nrt-un { grid-area: 1 / 2; margin-left: 0.25em; }
 .nrt-line em { white-space: nowrap; }
 .nrt-stock-still { font-style: normal; color: var(--mut); font-size: 0.9em; }
 .nrt-owe { margin-top: 0.7em; padding-top: 0.8em; border-top: 1px solid rgba(255, 255, 255, 0.06); }

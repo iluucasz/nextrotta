@@ -1,9 +1,9 @@
 'use client';
 import { type CSSProperties, type ReactNode } from 'react';
-import { Check, FileText, Lock, Sparkles } from 'lucide-react';
+import { Battery, Check, FileText, Lightbulb, Lock, Sparkles } from 'lucide-react';
 import './news-art.css';
 import { Stage, useReplay } from './visuals';
-import { Click, Count, Pill, SceneIA, ScenePecas, d } from './tour-scenes';
+import { Click, Count, Pill, SceneIA, d } from './tour-scenes';
 
 /**
  * Ilustrações animadas para dentro das novidades: o sistema desenhado de forma abstrata, na mesma
@@ -56,6 +56,54 @@ function PecasRemessa() {
       </div>
       <Click from={[22, 22]} to={[35.4, 17.6]} delay={3.0} />
       <div className="nrt-toast nrt-rise" style={{ ...d(5.6), left: '1.2em', bottom: '1.2em' }}><FileText size={14} /> Termo de remessa pronto para imprimir</div>
+    </>
+  );
+}
+
+function PecasVenda() {
+  const steps: [string, string, number][] = [
+    ['Escolhe a peça', 'Bateria 60Ah, direto do estoque dele', 0.8],
+    ['Define o preço', 'R$ 480,00, o técnico decide', 2.7],
+    ['Cobra com Pix', 'QR Code na tela do celular', 4.3],
+    ['Recebe e baixa o estoque', 'Recibo enviado no WhatsApp', 5.9],
+  ];
+  return (
+    <>
+      <div className="nrt-title nrt-rise" style={d(0)}>Venda pelo celular<Pill style={d(0.2)}>Pix</Pill></div>
+      <div className="nrt-panel nrt-rise nrn-steps" style={{ ...d(0.3), top: '4.4em', left: '1.2em', width: '25em' }}>
+        {steps.map(([title, text, at], i) => (
+          <div className="nrn-step" key={title} style={d(at)}>
+            <i><b>{i + 1}</b><Check size={13} strokeWidth={3} /></i>
+            <div><strong>{title}</strong><small>{text}</small></div>
+          </div>
+        ))}
+      </div>
+      <div className="nrt-phone nrt-pop nrn-phone" style={d(0.2)}>
+        <div className="nrn-ps">
+          <div className="nrn-screen" style={{ ...d(0.4), '--dur': '2.3s' } as CSSProperties}>
+            <small>Minhas peças</small>
+            <div className="nrn-tiles">
+              <div className="nrn-tile nrn-tile-hit" style={d(1.2)}><Battery size={20} /><b>Bateria</b><em>2 un</em></div>
+              <div className="nrn-tile"><Lightbulb size={20} /><b>Lâmpada</b><em>4 un</em></div>
+            </div>
+          </div>
+          <div className="nrn-screen" style={{ ...d(2.7), '--dur': '1.6s' } as CSSProperties}>
+            <small>Bateria 60Ah</small>
+            <div className="nrn-price"><Count to={480} delay={2.9} dur={0.8} prefix="R$ " />,00</div>
+            <span className="nrn-cta">Cobrar com Pix</span>
+          </div>
+          <div className="nrn-screen" style={{ ...d(4.3), '--dur': '1.6s' } as CSSProperties}>
+            <div className="nrn-qr">{Array.from({ length: 49 }, (_, i) => <i key={i} className={(i * 7 + (i % 5)) % 3 === 0 ? 'on' : ''} />)}</div>
+            <small>Aguardando o pagamento…</small>
+          </div>
+          <div className="nrn-screen nrn-screen-keep" style={d(5.9)}>
+            <span className="nrn-ok"><Check size={26} strokeWidth={3} /></span>
+            <strong>Pago</strong>
+            <small>Recibo enviado no WhatsApp</small>
+          </div>
+        </div>
+      </div>
+      <div className="nrt-toast nrt-rise" style={{ ...d(6.6), left: '1.2em', bottom: '1.2em' }}><Check size={14} strokeWidth={3} /> Estoque da Bateria: 2 → 1 un</div>
     </>
   );
 }
@@ -207,7 +255,7 @@ type SceneDef = { title: string; caption: string; aspect: string; Scene: () => R
 
 export const NEWS_SCENES: Record<string, SceneDef> = {
   'pecas-remessa': { title: 'Remessa de peças', caption: 'Da central ao carro: o técnico confirma o recebimento e o termo sai pronto para imprimir.', aspect: '44 / 24', Scene: PecasRemessa },
-  'pecas-venda': { title: 'Venda pelo celular', caption: 'No celular, o técnico escolhe a peça, cobra com Pix e o estoque baixa sozinho.', aspect: '44 / 28', Scene: ScenePecas },
+  'pecas-venda': { title: 'Venda pelo celular', caption: 'No celular, o técnico escolhe a peça, cobra com Pix e o estoque baixa sozinho.', aspect: '44 / 24', Scene: PecasVenda },
   'pecas-inventario': { title: 'Inventário e acerto', caption: 'Inventário por código de barras: a falta vira débito parcelado no acerto do mês.', aspect: '44 / 24', Scene: PecasInventario },
   'pecas-painel': { title: 'Painel do administrador', caption: 'Nove abas para acompanhar vendas, estoque, movimentações e o financeiro.', aspect: '44 / 24', Scene: PecasPainel },
   'ia-conversa': { title: 'Assistente NextRotta', caption: 'Pergunte como falaria com uma pessoa: a resposta vem com números e sugestões de próximas perguntas.', aspect: '44 / 28', Scene: SceneIA },
