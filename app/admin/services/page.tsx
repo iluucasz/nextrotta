@@ -481,6 +481,7 @@ export default function AdminServicesPage() {
     };
   }, [importRows]);
 
+  const importIsTextFile = /\.(csv|txt)$/i.test(importFileName);
   const validImportRows = useMemo(() => importRows.filter((row) => row.status === 'valid'), [importRows]);
 
   const bulkDeletePreviewServices = useMemo(() => {
@@ -660,7 +661,9 @@ export default function AdminServicesPage() {
         }),
       );
       setImportResult(
-        `Importadas ${createdServices.length} OS. ${Array.isArray(data?.rejected) ? data.rejected.length : 0} rejeitadas.`,
+        `Importadas ${createdServices.length} OS. ${Array.isArray(data?.rejected) ? data.rejected.length : 0} rejeitadas.${
+          importIsTextFile ? ' Arquivo CSV: confira na lista se as datas e os valores ficaram corretos.' : ''
+        }`,
       );
     } catch (error) {
       console.error('[admin/services] import submit error:', error);
@@ -1143,6 +1146,13 @@ export default function AdminServicesPage() {
               {importError ? <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{importError}</div> : null}
               {importResult ? (
                 <div className="mb-5 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">{importResult}</div>
+              ) : null}
+              {importIsTextFile ? (
+                <div role="note" className="mb-5 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <strong>Arquivo CSV:</strong> as datas são lidas como dia/mês/ano (05/10/2026 é 5 de outubro) e os valores no formato
+                  brasileiro (1.234,56 é mil duzentos e trinta e quatro reais e cinquenta e seis centavos). Confira datas e valores na
+                  prévia antes de importar. A planilha do Excel (.xlsx) é a opção mais segura.
+                </div>
               ) : null}
 
               <div className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
