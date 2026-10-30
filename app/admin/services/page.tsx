@@ -727,7 +727,7 @@ export default function AdminServicesPage() {
   }
 
   async function handleDeleteService(service: Service) {
-    if (typeof window !== 'undefined' && !window.confirm(`Excluir a OS ${service.order_code}?`)) {
+    if (typeof window !== 'undefined' && !window.confirm(`Excluir a OS ${service.order_code}? Ela sai da lista e dos cálculos; o histórico fica guardado.`)) {
       return;
     }
 
@@ -961,7 +961,7 @@ export default function AdminServicesPage() {
             <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
               <DialogTitle className="text-xl">Deletar OS</DialogTitle>
               <DialogDescription className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                Selecione o ano, o mês e o recorte que será excluído. Essa ação apaga as ordens de serviço definitivamente.
+                Selecione o ano, o mês e o recorte que será removido. As ordens saem da lista e dos cálculos, e o histórico fica guardado: para recuperá-las, fale com o suporte.
               </DialogDescription>
             </DialogHeader>
 
@@ -1220,7 +1220,7 @@ export default function AdminServicesPage() {
                 <section className="rounded-2xl border border-border/70 bg-card/70 p-5 shadow-sm sm:p-6">
                   <div className="mb-5 space-y-1">
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Campos esperados</p>
-                    <h3 className="text-base font-semibold text-foreground">Cabecalhos do arquivo</h3>
+                    <h3 className="text-base font-semibold text-foreground">Cabeçalhos do arquivo</h3>
                   </div>
 
                   <div className="flex flex-wrap gap-2">

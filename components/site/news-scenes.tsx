@@ -290,7 +290,7 @@ function IaCreditos() {
 // ---------------------------------------------------------------------------------------------
 // Registro: nome usado em [[cena:nome]]
 // ---------------------------------------------------------------------------------------------
-type SceneDef = { title: string; caption: string; aspect: string; Scene: () => ReactNode };
+type SceneDef = { title: string; caption: string; aspect: string; Scene: (props: { tall?: boolean }) => ReactNode };
 
 export const NEWS_SCENES: Record<string, SceneDef> = {
   'pecas-remessa': { title: 'Remessa de peças', caption: 'Da central ao carro: o técnico confirma o recebimento e o termo sai pronto para imprimir.', aspect: '44 / 24', Scene: PecasRemessa },

@@ -724,7 +724,7 @@ function buildHourBankExportRows(rows: HourBankDetailRow[]) {
     Horas_previstas: row.planned_hours,
     Horas_realizadas: row.worked_hours,
     Saldo: row.balance,
-    Observacao: row.observation,
+    Observação: row.observation,
   }));
 }
 
@@ -866,12 +866,12 @@ function formatImportValue(value: unknown) {
 }
 
 function getImportErrorSuggestion(errors: string[]) {
-  if (errors.some((error) => error.includes('tecnico nao encontrado'))) {
-    return 'Confira se o nome do Funcionario esta igual ao cadastro de Tecnicos ativos.';
+  if (errors.some((error) => error.includes('técnico não encontrado'))) {
+    return 'Confira se o nome do Funcionário está igual ao cadastro de Técnicos ativos.';
   }
 
   if (errors.some((error) => error.includes('hora'))) {
-    return 'Preencha Hora Inicio e Hora Final no formato HH:mm, por exemplo 08:00 e 17:30.';
+    return 'Preencha Hora Início e Hora Final no formato HH:mm, por exemplo 08:00 e 17:30.';
   }
 
   if (errors.some((error) => error.includes('data'))) {
@@ -879,10 +879,10 @@ function getImportErrorSuggestion(errors: string[]) {
   }
 
   if (errors.some((error) => error.includes('duplicado'))) {
-    return 'Deixe apenas uma linha para o mesmo tecnico na mesma data.';
+    return 'Deixe apenas uma linha para o mesmo técnico na mesma data.';
   }
 
-  return 'Revise os campos obrigatorios da linha antes de importar novamente.';
+  return 'Revise os campos obrigatórios da linha antes de importar novamente.';
 }
 
 function parseImportNumber(value: unknown) {
@@ -1918,7 +1918,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           key: 'workbook-empty',
           row_number: 0,
           sheet_name: '',
-          message: 'A planilha nao possui abas para importar.',
+          message: 'A planilha não possui abas para importar.',
           details: ['Nenhuma aba foi encontrada no arquivo selecionado.'],
           suggestion: 'Baixe o modelo XLSX, preencha a aba Banco de Dados e tente novamente.',
           values: {
@@ -1976,43 +1976,43 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       const hoursWorked = parseImportedHours(hoursValue, startTime, endTime);
 
       if (!parsedDate) {
-        rowErrors.push('data invalida');
+        rowErrors.push('data inválida');
         rowDetails.push(`Data lida: "${errorValues.date || 'vazio'}". Use dd/mm/aaaa.`);
       }
 
       if (!importedName) {
-        rowErrors.push('funcionario vazio');
-        rowDetails.push('Funcionario veio vazio. Preencha com o nome de um tecnico ativo.');
+        rowErrors.push('funcionário vazio');
+        rowDetails.push('Funcionário veio vazio. Preencha com o nome de um técnico ativo.');
       }
 
       if (importedName && !technician) {
-        rowErrors.push(`tecnico nao encontrado: ${importedName}`);
-        rowDetails.push(`Funcionario lido: "${importedName}". O sistema nao encontrou um tecnico ativo com esse nome.`);
+        rowErrors.push(`técnico não encontrado: ${importedName}`);
+        rowDetails.push(`Funcionário lido: "${importedName}". O sistema não encontrou um técnico ativo com esse nome.`);
       }
 
       if (!startTime) {
-        rowErrors.push('hora de inicio invalida');
-        rowDetails.push(`Hora Inicio lida: "${errorValues.start_time || 'vazio'}". Use HH:mm, por exemplo 08:00.`);
+        rowErrors.push('hora de início inválida');
+        rowDetails.push(`Hora Início lida: "${errorValues.start_time || 'vazio'}". Use HH:mm, por exemplo 08:00.`);
       }
 
       if (!endTime) {
-        rowErrors.push('hora final invalida');
+        rowErrors.push('hora final inválida');
         rowDetails.push(`Hora Final lida: "${errorValues.end_time || 'vazio'}". Use HH:mm, por exemplo 17:30.`);
       }
 
       if (hoursWorked === null) {
-        rowErrors.push('horas trabalhadas invalidas');
-        rowDetails.push(`Horas Trabalhadas lida: "${errorValues.hours_worked || 'vazio'}". Use decimal, por exemplo 9,65, ou preencha Entrada e Saida validas.`);
+        rowErrors.push('horas trabalhadas inválidas');
+        rowDetails.push(`Horas Trabalhadas lida: "${errorValues.hours_worked || 'vazio'}". Use decimal, por exemplo 9,65, ou preencha Entrada e Saída válidas.`);
       }
 
       if (parsedDate && parseImportInteger(monthValue) && parseImportInteger(monthValue) !== parsedDate.month) {
-        rowErrors.push('mes da linha nao confere com a data');
-        rowDetails.push(`Mes lido: "${errorValues.month}". Pela Data, o mes esperado e ${parsedDate.month}.`);
+        rowErrors.push('mês da linha não confere com a data');
+        rowDetails.push(`Mês lido: "${errorValues.month}". Pela Data, o mês esperado é ${parsedDate.month}.`);
       }
 
       if (parsedDate && parseImportInteger(yearValue) && parseImportInteger(yearValue) !== parsedDate.year) {
-        rowErrors.push('ano da linha nao confere com a data');
-        rowDetails.push(`Ano lido: "${errorValues.year}". Pela Data, o ano esperado e ${parsedDate.year}.`);
+        rowErrors.push('ano da linha não confere com a data');
+        rowDetails.push(`Ano lido: "${errorValues.year}". Pela Data, o ano esperado é ${parsedDate.year}.`);
       }
 
       if (rowErrors.length || !parsedDate || !technician || hoursWorked === null) {
@@ -2036,7 +2036,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           sheet_name: sheetName,
           message: `apontamento duplicado para ${technician.name} em ${formatDate(parsedDate.date)}`,
           details: [
-            `Funcionario lido: "${importedName}".`,
+            `Funcionário lido: "${importedName}".`,
             `Data lida: "${errorValues.date}".`,
             'Ja existe outra linha valida para o mesmo tecnico e data nesta importacao.',
           ],
@@ -2105,14 +2105,14 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       setAttendanceImportErrors(parsed.errors);
 
       if (!parsed.rows.length) {
-        setAttendanceError(parsed.errors.length ? 'Nenhuma linha valida foi encontrada na planilha.' : 'A planilha nao possui linhas para importar.');
+        setAttendanceError(parsed.errors.length ? 'Nenhuma linha válida foi encontrada na planilha.' : 'A planilha não possui linhas para importar.');
         return;
       }
 
       setAttendanceMessage(`${formatCount(parsed.rows.length, 'apontamento valido', 'apontamentos validos')} carregado(s) da planilha.`);
       setAttendanceLunchPromptCount(parsed.rows.filter(importRowMissingLunchBreak).length);
     } catch (error) {
-      setAttendanceError(error instanceof Error ? error.message : 'Nao foi possivel ler a planilha. Use XLSX, XLS ou CSV.');
+      setAttendanceError(error instanceof Error ? error.message : 'Não foi possível ler a planilha. Use XLSX, XLS ou CSV.');
     } finally {
       setIsAttendanceImportParsing(false);
     }
@@ -2199,7 +2199,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
         const data = await response.json().catch(() => null);
 
         if (!response.ok) {
-          throw new Error(data?.error || 'Nao foi possivel salvar os apontamentos da planilha.');
+          throw new Error(data?.error || 'Não foi possível salvar os apontamentos da planilha.');
         }
 
         const refreshed = await fetchSchedulePageData();
@@ -2215,7 +2215,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
         setAttendanceError('');
         setAttendanceMessage('');
       } catch (error) {
-        setAttendanceError(error instanceof Error ? error.message : 'Nao foi possivel salvar os apontamentos da planilha.');
+        setAttendanceError(error instanceof Error ? error.message : 'Não foi possível salvar os apontamentos da planilha.');
       } finally {
         setIsAttendanceSubmitting(false);
       }
@@ -2793,7 +2793,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       Horas_previstas: row.planned_hours,
       Horas_realizadas: row.worked_hours,
       Saldo: row.balance,
-      Observacao: row.observation,
+      Observação: row.observation,
     }));
   }
 
@@ -2895,7 +2895,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
   function handleDownloadAttendanceImportErrors() {
     if (!attendanceImportErrors.length) {
-      setAttendanceMessage('Nao ha erros de importacao para baixar.');
+      setAttendanceMessage('Não há erros de importação para baixar.');
       return;
     }
 
@@ -2906,7 +2906,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       Detalhes: item.details.join(' | '),
       Sugestao: item.suggestion,
       Data: item.values.date,
-      Funcionario: item.values.employee,
+      Funcionário: item.values.employee,
       Hora_Inicio: item.values.start_time,
       Hora_Final: item.values.end_time,
       Horas_Trabalhadas: item.values.hours_worked,
@@ -2944,7 +2944,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     const printWindow = window.open('', '_blank', 'width=1100,height=900');
 
     if (!printWindow) {
-      setSaveMessage('Nao foi possivel abrir a janela de PDF. Verifique o bloqueador de pop-ups.');
+      setSaveMessage('Não foi possível abrir a janela de PDF. Verifique o bloqueador de pop-ups.');
       return;
     }
 
@@ -2972,7 +2972,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           <td>${escapeHtml(formatHours(row.Horas_previstas))}</td>
           <td>${escapeHtml(formatHours(row.Horas_realizadas))}</td>
         <td>${escapeHtml(formatHours(row.Saldo))}</td>
-        <td>${escapeHtml(row.Observacao)}</td>
+        <td>${escapeHtml(row.Observação)}</td>
       </tr>
     `).join('');
     const html = `
@@ -3004,7 +3004,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             <div class="card"><div class="label">Saldo</div><div class="value">${escapeHtml(formatHours(hourBankTotals.balance))}</div></div>
             <div class="card"><div class="label">Pendencias</div><div class="value">${escapeHtml(hourBankTotals.pending)}</div></div>
           </div>
-          <h2>Banco de horas por tecnico</h2>
+          <h2>Banco de horas por técnico</h2>
           <table>
             <thead><tr><th>Tecnico</th><th>Previsto</th><th>Realizado</th><th>Saldo</th><th>Dias</th><th>Folgas</th><th>Faltas</th><th>Pendentes</th></tr></thead>
             <tbody>${bankRowsHtml || '<tr><td colspan="8">Sem dados no periodo.</td></tr>'}</tbody>
@@ -3603,8 +3603,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       <div className="grid gap-3 md:grid-cols-4">
         <MetricCard title="Trabalham hoje" value={workingToday} hint="Com escala real salva para hoje" icon={CalendarDays} />
         <MetricCard title="Folgas hoje" value={dayOffToday} hint="Cancelamentos reais para hoje" icon={CalendarDays} tone="warning" />
-        <MetricCard title="Linhas salvas" value={visibleSchedule.length} hint="Registros reais no banco" icon={Clock3} tone="success" />
-        <MetricCard title="Técnicos cobertos" value={coveredTechnicians} hint="Com algum período persistido" icon={Users} />
+        <MetricCard title="Linhas salvas" value={visibleSchedule.length} hint="Linhas da escala gravadas" icon={Clock3} tone="success" />
+        <MetricCard title="Técnicos cobertos" value={coveredTechnicians} hint="Com escala gravada em algum período" icon={Users} />
       </div>
 
       <div className="mt-5">
@@ -4588,7 +4588,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
               <DialogTitle className="text-xl">Apontar horas</DialogTitle>
               <DialogDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                Lance um dia especifico, feche o mes inteiro ou importe os apontamentos por planilha.
+                Lance um dia específico, feche o mês inteiro ou importe os apontamentos por planilha.
               </DialogDescription>
             </DialogHeader>
 
@@ -4619,7 +4619,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                         Baixar modelo XLSX
                       </Button>
                       <p className="mt-2 text-xs text-muted-foreground">
-                        {attendanceImportFileName || 'Use a aba Banco de Dados com Data, Funcionario, Hora Inicio, Hora Final e Horas Trabalhadas.'}
+                        {attendanceImportFileName || 'Use a aba Banco de Dados com Data, Funcionário, Hora Início, Hora Final e Horas Trabalhadas.'}
                       </p>
                     </div>
                   ) : (
@@ -4665,9 +4665,9 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                       </>
                     ) : (
                       <>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(attendanceImportRows.length, 'linha valida', 'linhas validas')}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(attendanceImportTechnicianCount, 'tecnico', 'tecnicos')}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Periodo: {attendanceImportPeriodLabel}</span>
+                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(attendanceImportRows.length, 'linha válida', 'linhas válidas')}</span>
+                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(attendanceImportTechnicianCount, 'técnico', 'técnicos')}</span>
+                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Período: {attendanceImportPeriodLabel}</span>
                         <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Horas: {formatHours(attendanceImportWorkedTotal)}</span>
                         <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Erros: {attendanceImportErrors.length}</span>
                       </>
@@ -4687,7 +4687,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                       <th className="px-3 py-3">Previsto</th>
                       <th className="px-3 py-3">Entrada</th>
                       <th className="px-3 py-3">Saída</th>
-                      <th className="px-3 py-3">Observacao</th>
+                      <th className="px-3 py-3">Observação</th>
                       <th className="px-3 py-3">Saldo</th>
                     </tr>
                   </thead>
@@ -4784,7 +4784,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                         <th className="px-3 py-3">Previsto</th>
                         <th className="px-3 py-3">Entrada</th>
                         <th className="px-3 py-3">Saída</th>
-                        <th className="px-3 py-3">Observacao</th>
+                        <th className="px-3 py-3">Observação</th>
                         <th className="px-3 py-3">Saldo</th>
                       </tr>
                     </thead>
@@ -5247,7 +5247,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       <div className="mt-5">
         <DataPanel
           title="Visão geral da escala"
-          description="Matriz real dos próximos 7 dias. Se um dia aparecer como sem escala, ele realmente não foi persistido para aquele técnico."
+          description="Os próximos 7 dias, técnico por técnico. Se um dia aparecer como “Sem escala”, é porque ele ainda não foi gravado para aquele técnico."
           action={
             <Button type="button" variant="outline" onClick={() => setIsCalendarDialogOpen(true)}>
               <CalendarDays className="h-4 w-4" />
@@ -5295,7 +5295,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                               ) : (
                                 <>
                                   <StatusBadge tone="neutral">Sem escala</StatusBadge>
-                                  <p className="mt-2 font-medium text-muted-foreground">Não persistido</p>
+                                  <p className="mt-2 font-medium text-muted-foreground">Não gravado</p>
                                 </>
                               )}
                             </div>
@@ -5316,7 +5316,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       <div className="mt-5">
         <DataPanel
           title="Registros da escala"
-          description={`${formatCount(filteredSchedule.length, 'registro real na tabela schedule', 'registros reais na tabela schedule')}.`}
+          description={`${formatCount(filteredSchedule.length, 'registro da escala gravado', 'registros da escala gravados')}.`}
           action={
             <div className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-background px-3">
               <Search className="h-4 w-4 text-muted-foreground" />
@@ -5352,7 +5352,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               </table>
             </div>
           ) : (
-            <EmptyState icon={CalendarDays} title="Sem escala persistida" description="Ainda não há uma grade salva para exibir. Monte a escala para um mês ou ano e os registros vão aparecer aqui." />
+            <EmptyState icon={CalendarDays} title="Sem escala gravada" description="Ainda não há uma grade salva para exibir. Monte a escala para um mês ou ano e os registros vão aparecer aqui." />
           )}
         </DataPanel>
       </div>
