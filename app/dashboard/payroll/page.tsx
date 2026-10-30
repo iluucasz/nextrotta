@@ -92,7 +92,7 @@ export default function TechnicianPayrollPage() {
           errors.push('banco de horas');
         }
 
-        setDataError(errors.length ? `Não foi possível carregar dados reais de ${errors.join(' e ')}.` : '');
+        setDataError(errors.length ? `Não foi possível carregar os dados de ${errors.join(' e ')}.` : '');
       } catch {
         setPayroll([]);
         setServices([]);

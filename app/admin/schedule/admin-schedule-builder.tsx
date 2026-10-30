@@ -1144,7 +1144,7 @@ async function fetchSchedulePageData(): Promise<SchedulePageData> {
     schedule,
     technicians,
     workHours,
-    error: errors.length ? `Não foi possível carregar dados reais de ${errors.join(', ')}.` : '',
+    error: errors.length ? `Não foi possível carregar os dados de ${errors.join(', ')}.` : '',
   };
 }
 
@@ -5117,7 +5117,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
               <DialogTitle className="text-xl">Calendário da escala</DialogTitle>
               <DialogDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                Visualize por dia quem realmente está escalado no banco.
+                Veja, dia a dia, quem está escalado.
               </DialogDescription>
             </DialogHeader>
 

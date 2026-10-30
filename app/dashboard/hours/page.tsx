@@ -106,7 +106,7 @@ export default function TechnicianHoursPage() {
       }
 
       if (mounted) {
-        setDataError(errors.length ? `Não foi possível carregar dados reais de ${errors.join(', ')}.` : '');
+        setDataError(errors.length ? `Não foi possível carregar os dados de ${errors.join(', ')}.` : '');
         setIsDataLoading(false);
       }
     }

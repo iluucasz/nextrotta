@@ -183,7 +183,7 @@ export default function TechnicianDashboard() {
       }
 
       if (mounted) {
-        setDataError(errors.length ? `Não foi possível carregar dados reais de ${errors.join(', ')}.` : '');
+        setDataError(errors.length ? `Não foi possível carregar os dados de ${errors.join(', ')}.` : '');
         setIsDataLoading(false);
       }
     }
@@ -308,7 +308,7 @@ export default function TechnicianDashboard() {
       <PageHeader
         eyebrow="Dashboard individual"
         title={technicianName}
-        description="Produção, pagamento, banco de horas e próxima escala com dados reais."
+        description="Produção, pagamento, banco de horas e próxima escala."
       >
         <StatusBadge tone={payrollClosed ? 'success' : 'warning'}>{payrollClosed ? 'Folha fechada' : 'Folha aguardando'}</StatusBadge>
       </PageHeader>

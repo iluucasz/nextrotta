@@ -112,7 +112,7 @@ export default function TechnicianLibraryPage() {
       } catch {
         if (mounted) {
           setDocuments([]);
-          setDataError('Não foi possível carregar a biblioteca real do banco de dados.');
+          setDataError('Não foi possível carregar a biblioteca.');
         }
       } finally {
         if (mounted) {

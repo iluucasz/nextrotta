@@ -274,7 +274,7 @@ export function TechnicianScheduleViewPage() {
       } catch {
         if (mounted) {
           setSchedule([]);
-          setDataError('Nao foi possivel carregar dados reais de escala.');
+          setDataError('Não foi possível carregar a sua escala.');
         }
       } finally {
         if (mounted) {
@@ -361,26 +361,26 @@ export function TechnicianScheduleViewPage() {
   const calendarTitle = `Calendario ${periodLabels[calendarPeriodMode]}`;
   const calendarDescription =
     calendarPeriodMode === 'week'
-      ? 'Escala persistida da semana.'
-      : 'Escala persistida do mes.';
+      ? 'Escala da semana.'
+      : 'Escala do mês.';
   const listDescription =
     listPeriodMode === 'week'
-      ? 'Lista da semana usando apenas os registros gravados no banco.'
-      : 'Lista do mes usando apenas os registros gravados no banco.';
+      ? 'Lista da semana com a sua escala gravada.'
+      : 'Lista do mês com a sua escala gravada.';
 
   return (
     <AppShell role="technician" userName={user.name || user.email}>
-      <PageHeader eyebrow="Agenda" title="Minha escala" description="Visualize apenas a escala real persistida para voce, sem projeção padrao no front." />
+      <PageHeader eyebrow="Agenda" title="Minha escala" description="Veja os dias e os horários em que você está escalado." />
 
       {dataError ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{dataError}</div> : null}
 
       <div className="grid gap-3 md:grid-cols-3">
-        <MetricCard title="Proximas escalas" value={scheduled} hint="Registros reais no proximo ciclo" icon={CalendarDays} />
+        <MetricCard title="Próximas escalas" value={scheduled} hint="Turnos no próximo ciclo" icon={CalendarDays} />
         <MetricCard title="Folgas" value={dayOff} hint="Cancelamentos reais no proximo ciclo" icon={CalendarDays} tone="warning" />
         <MetricCard
           title="Proximo horario"
           value={nextSchedule?.entry?.start_time ? formatTime(nextSchedule.entry.start_time) : 'Sem escala'}
-          hint={nextSchedule?.entry ? formatDate(nextSchedule.date) : 'Nenhum turno persistido'}
+          hint={nextSchedule?.entry ? formatDate(nextSchedule.date) : 'Nenhum turno gravado'}
           icon={Clock3}
         />
       </div>
@@ -444,13 +444,13 @@ export function TechnicianScheduleViewPage() {
                               ? item.entry.status === 'cancelled'
                                 ? item.entry.notes || 'Folga planejada'
                                 : formatTimeRange(item.entry.start_time, item.entry.end_time)
-                              : 'Sem registro persistido'}
+                              : 'Sem escala gravada'}
                           </p>
 
                           <p className="mt-2 text-xs text-muted-foreground">
                             {item.entry?.status === 'cancelled'
                               ? 'Dia sem expediente.'
-                              : item.entry?.notes || (item.entry ? 'Turno persistido no banco.' : 'Nenhuma escala gravada para esta data.')}
+                              : item.entry?.notes || (item.entry ? 'Turno gravado.' : 'Nenhuma escala gravada para esta data.')}
                           </p>
                         </div>
                       );
@@ -470,14 +470,14 @@ export function TechnicianScheduleViewPage() {
                       </StatusBadge>
                     </div>
                     <p className="mt-3 text-sm">
-                      {item.entry ? item.entry.status === 'cancelled' ? item.entry.notes || 'Folga planejada' : formatTimeRange(item.entry.start_time, item.entry.end_time) : 'Sem registro persistido para esta data.'}
+                      {item.entry ? item.entry.status === 'cancelled' ? item.entry.notes || 'Folga planejada' : formatTimeRange(item.entry.start_time, item.entry.end_time) : 'Sem escala gravada para esta data.'}
                     </p>
                   </div>
                 ))}
               </div>
             )
           ) : (
-            <EmptyState icon={CalendarDays} title="Sem escala persistida no periodo" description="Nao existem registros gravados no banco para o periodo selecionado." />
+            <EmptyState icon={CalendarDays} title="Sem escala gravada no período" description="Não há escala gravada para o período selecionado." />
           )}
         </DataPanel>
       </div>
@@ -522,14 +522,14 @@ export function TechnicianScheduleViewPage() {
                           {item.entry ? getStatusLabel(item.entry.status) : 'Sem escala'}
                         </StatusBadge>
                       </td>
-                      <td className="py-3 text-muted-foreground">{item.entry?.notes || (item.entry ? '-' : 'Nao persistido')}</td>
+                      <td className="py-3 text-muted-foreground">{item.entry?.notes || (item.entry ? '-' : 'Não gravado')}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           ) : (
-            <EmptyState icon={CalendarDays} title="Sem registros de escala" description="Nao ha escala persistida para o periodo selecionado." />
+            <EmptyState icon={CalendarDays} title="Sem registros de escala" description="Não há escala gravada para o período selecionado." />
           )}
         </DataPanel>
       </div>
