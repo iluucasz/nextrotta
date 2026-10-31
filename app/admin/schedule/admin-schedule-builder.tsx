@@ -5107,7 +5107,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                             }`}
                           >
                             <div className="mb-3 flex items-start justify-between gap-2">
-                              <div>
+                              <div className="min-w-0">
                                 <div className="flex items-center gap-2">
                                   <p className="text-lg font-black text-foreground">{day}</p>
                                   {isToday ? <StatusBadge tone="info">Hoje</StatusBadge> : null}
@@ -5116,14 +5116,9 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                                   {formatCount(scheduledForDay.length, 'escalado', 'escalados')}
                                 </p>
                               </div>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <Button type="button" variant="outline" size="sm" onClick={() => openAttendanceForDate(dateKey)}>
-                                  Ajustar
-                                </Button>
-                                <span className={`rounded-full px-2 py-1 text-[11px] font-black ${isToday ? 'bg-primary text-primary-foreground' : 'bg-emerald-50 text-emerald-700'}`}>
-                                  {scheduledForDay.length}
-                                </span>
-                              </div>
+                              <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => openAttendanceForDate(dateKey)}>
+                                Ajustar
+                              </Button>
                             </div>
 
                             <div className="max-h-52 overflow-y-auto pr-1">
