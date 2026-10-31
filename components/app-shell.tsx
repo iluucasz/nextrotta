@@ -9,6 +9,7 @@ import { resetTechnicianVisibilityCache, useTechnicianVisibility } from '@/hooks
 import { resetOrganizationSettingsCache } from '@/hooks/use-organization-settings';
 import { TechnicianVisibilityDialog } from '@/components/technician-visibility-dialog';
 import { MaintenanceBanner, ModuleStatusBanner, SupportActions } from '@/components/organization-support';
+import { NotificationsBell } from '@/components/notifications-bell';
 import { BrandLogo, BrandMark } from '@/components/brand-logo';
 import {
   DropdownMenu,
@@ -537,6 +538,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
           <ProfileSummary role={role} userName={userName} />
         </div>
         <div className="flex items-center gap-2">
+          {previewMode || role !== 'admin' ? null : <NotificationsBell />}
           {previewMode ? null : <SupportActions compact basePath={role === 'admin' ? '/admin/suporte' : '/dashboard/suporte'} />}
           {/* Hidden during preview: it sits next to the banner's "Sair do modo preview" and reads
               almost the same, but logs the admin out entirely instead of handing their session
@@ -701,6 +703,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
           <div className="flex items-center gap-1.5">
             {previewMode ? null : (
               <>
+                {role === 'admin' ? <NotificationsBell /> : null}
                 <SupportActions quiet basePath={role === 'admin' ? '/admin/suporte' : '/dashboard/suporte'} />
                 <span className="mx-2.5 h-8 w-px bg-border" aria-hidden="true" />
               </>

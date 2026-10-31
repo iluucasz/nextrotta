@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, ArrowUpRight, Blocks, BookOpen, Building2, CircleDollarSign, CreditCard, Gauge, Globe, History, LayoutDashboard, Menu, MessageSquare, Sparkles, TicketPercent, X } from 'lucide-react';
+import { Activity, ArrowUpRight, Bell, Blocks, BookOpen, Building2, CircleDollarSign, CreditCard, Gauge, Globe, History, LayoutDashboard, Menu, MessageSquare, Sparkles, TicketPercent, X } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { NoticeProvider } from './notice';
 import { ScreenState } from './ui';
@@ -20,6 +20,7 @@ export const navigation = [
   { label: 'Reports', path: '/reports', icon: MessageSquare, group: 'RELACIONAMENTO' },
   { label: 'Leads', path: '/leads', icon: Gauge },
   { label: 'Novidades', path: '/novidades', icon: BookOpen },
+  { label: 'Notificações', path: '/notificacoes', icon: Bell },
   { label: 'Conteúdo do site', path: '/site', icon: Globe },
   { label: 'Operação', path: '/operacao', icon: Activity, group: 'PLATAFORMA' },
   { label: 'Auditoria', path: '/auditoria', icon: History },

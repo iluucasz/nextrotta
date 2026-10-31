@@ -2,6 +2,7 @@ import { getEntitlements, hasFeature } from '../billing/entitlements';
 import { after } from 'next/server';
 import { isBalanceConfigured, recordBalance } from './balance';
 import { sql } from '../db';
+import { notifyOrganization } from '../notifications';
 import { isUuid, PlatformError } from '../platform/errors';
 import { getPlatformSettings } from '../platform/settings';
 import { chat, DeepSeekError, isDeepSeekConfigured, type ChatMessage, type ChatUsage } from './deepseek';
@@ -193,6 +194,30 @@ export async function ask(user: AssistantUser, input: { conversationId?: unknown
   }
 }
 
+/** Once a month each: the balance is down to a few more answers, and the balance cannot pay for another one. */
+async function warnLowCredits(organizationId: string, balance: number, creditsPerAnswer: number) {
+  const month = new Date().toISOString().slice(0, 7);
+  if (balance < creditsPerAnswer) {
+    await notifyOrganization(organizationId, {
+      kind: 'credits',
+      severity: 'critical',
+      title: 'Os créditos de IA acabaram',
+      body: 'Compre um pacote em Assinatura ou aguarde a cota do próximo mês para voltar a usar o assistente.',
+      href: '/admin/assinatura',
+      dedupeKey: `credits:empty:${month}`,
+    });
+  } else if (balance <= creditsPerAnswer * 5) {
+    await notifyOrganization(organizationId, {
+      kind: 'credits',
+      severity: 'warning',
+      title: 'Os créditos de IA estão acabando',
+      body: `Restam ${balance} créditos, o suficiente para poucas respostas. Dá para comprar mais em Assinatura.`,
+      href: '/admin/assinatura',
+      dedupeKey: `credits:low:${month}`,
+    });
+  }
+}
+
 async function answerQuestion(user: AssistantUser, requestedConversationId: unknown, question: string) {
   const { entitlements, reason } = await checkAvailability(user);
   if (reason) throw new PlatformError(reason, 403);
@@ -294,6 +319,7 @@ async function answerQuestion(user: AssistantUser, requestedConversationId: unkn
   if (isBalanceConfigured()) after(() => recordBalance());
 
   const balance = await sql`SELECT COALESCE(SUM(quantity), 0)::int AS balance FROM ai_credit_ledger WHERE organization_id = ${user.organizationId}`;
+  if (credits > 0) await warnLowCredits(user.organizationId, Number(balance[0].balance), credits);
   return {
     conversationId,
     message: {

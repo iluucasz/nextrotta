@@ -6,6 +6,7 @@ import { AiCredits } from './credits';
 import { FeatureCatalog } from './features';
 import { Leads } from './leads';
 import { News } from './news';
+import { Notifications } from './notifications';
 import { OperationsScreen } from './operations';
 import { Organizations, OrganizationWizard, OrganizationDetail, Provisioning } from './organizations';
 import { Dashboard, Finance } from './overview';
@@ -29,6 +30,7 @@ export function PlatformRouter({ segments = [] }: { segments?: string[] }) {
     case 'reports': return <Bugs id={id} />;
     case 'leads': return <Leads />;
     case 'novidades': return <News id={id} />;
+    case 'notificacoes': return <Notifications />;
     case 'site': return <SiteEditor preview={id === 'preview'} />;
     case 'operacao': return <OperationsScreen />;
     case 'auditoria': return <AuditScreen />;

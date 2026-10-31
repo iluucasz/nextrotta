@@ -162,6 +162,8 @@ export const AUDIT_LABELS: Record<string, string> = {
 
 export const auditLabel = (action: string) => AUDIT_LABELS[action] ?? action;
 Object.assign(AUDIT_LABELS, {
+  'notification.published': 'Notificação publicada',
+  'notification.archived': 'Notificação retirada',
   'account.password_changed': 'Senha do dono alterada',
   'account.updated': 'Dados do dono alterados',
   'platform_settings.updated': 'Configurações da plataforma alteradas',

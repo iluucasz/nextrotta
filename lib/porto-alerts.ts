@@ -1,4 +1,5 @@
 // Relative imports only: runs in the VPS worker (worker/tsconfig.json).
+import { notifyOrganization } from './notifications';
 import { getOrganizationSettings } from './organization-settings-store';
 import { sendEvolutionText } from './whatsapp/evolution';
 import { connectionFromConfig, getWhatsAppConfig } from './whatsapp/store';
@@ -12,6 +13,16 @@ import { connectionFromConfig, getWhatsAppConfig } from './whatsapp/store';
  * (lib/platform/alerts.ts). Never throws: a failed alert only gets logged.
  */
 export async function sendPortoAlert(organizationId: string, title: string, lines: string[]): Promise<{ sent: boolean; reason?: string }> {
+  // The bell does not depend on the WhatsApp being set up: once a day per problem.
+  await notifyOrganization(organizationId, {
+    kind: 'porto',
+    severity: 'warning',
+    title: `Robô do Porto: ${title}`,
+    body: lines.slice(0, 3).join(' · '),
+    href: '/admin/config-porto',
+    dedupeKey: `porto:${title}:${new Date().toISOString().slice(0, 10)}`,
+  });
+
   try {
     const phone = (await getOrganizationSettings(organizationId)).portoAlertPhone.trim();
     if (!phone) return { sent: false, reason: 'Nenhum WhatsApp de alerta configurado.' };

@@ -1,5 +1,6 @@
 import { recordAudit } from '../audit';
 import { sql } from '../db';
+import { notifyOrganization } from '../notifications';
 import { calculateSubscriptionValue, type BillingCycle } from '../plans';
 import { PlatformError, type Actor } from '../platform/errors';
 import {
@@ -92,6 +93,43 @@ function creditPackageId(payment: AsaasPayment) {
   return id && /^[0-9a-f-]{36}$/i.test(id) ? id : null;
 }
 
+const brl = (value: number | string) => Number(value).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/** Tells the company what happened to a charge (once per charge and event: the webhook may repeat itself). */
+async function notifyCharge(organizationId: string, payment: AsaasPayment, kind: string) {
+  const value = brl(payment.value);
+  const due = formatDate(String(payment.dueDate).slice(0, 10));
+
+  if (PAID_STATUSES.includes(payment.status)) {
+    await notifyOrganization(organizationId, {
+      kind: 'billing',
+      severity: 'success',
+      title: kind === 'credits' ? 'Créditos de IA adicionados' : `Pagamento confirmado: ${value}`,
+      body: kind === 'credits' ? 'A compra foi confirmada e o saldo já está disponível.' : 'Obrigado! O recibo fica em Assinatura.',
+      href: '/admin/assinatura',
+      dedupeKey: `billing:paid:${payment.id}`,
+    });
+  } else if (payment.status === 'OVERDUE') {
+    await notifyOrganization(organizationId, {
+      kind: 'billing',
+      severity: 'critical',
+      title: `Cobrança vencida: ${value}`,
+      body: `Venceu em ${due}. Regularize em Assinatura para evitar a pausa do acesso.`,
+      href: '/admin/assinatura',
+      dedupeKey: `billing:overdue:${payment.id}`,
+    });
+  } else if (payment.status === 'PENDING' && kind !== 'credits') {
+    await notifyOrganization(organizationId, {
+      kind: 'billing',
+      severity: 'info',
+      title: `Nova cobrança: ${value}`,
+      body: `Vence em ${due}. O link de pagamento está em Assinatura.`,
+      href: '/admin/assinatura',
+      dedupeKey: `billing:charge:${payment.id}`,
+    });
+  }
+}
+
 export async function upsertCharge(organizationId: string, payment: AsaasPayment) {
   const paidAt = payment.confirmedDate || payment.paymentDate || payment.clientPaymentDate || null;
   const kind = chargeKind(payment);
@@ -135,6 +173,8 @@ export async function upsertCharge(organizationId: string, payment: AsaasPayment
     // Self-service signup: the setup fee paid starts the subscription (first charge next month).
     await startSubscriptionAfterSetup(organizationId);
   }
+
+  await notifyCharge(organizationId, payment, kind);
 }
 
 export async function listCharges(organizationId: string) {
@@ -447,6 +487,14 @@ export async function evaluateBillingStatus(organizationId: string) {
       WHERE id = ${organizationId}
     `;
     await recordAudit({ organizationId, actorId: null, actorRole: 'system', action: 'organization.past_due' });
+    await notifyOrganization(organizationId, {
+      kind: 'billing',
+      severity: 'critical',
+      title: 'Pagamento em atraso',
+      body: 'Regularize em Assinatura. Se não for resolvido, o acesso fica somente leitura (nada é apagado).',
+      href: '/admin/assinatura',
+      dedupeKey: `billing:past_due:${oldest}`,
+    });
     return;
   }
 
@@ -459,6 +507,14 @@ export async function evaluateBillingStatus(organizationId: string) {
       WHERE id = ${organizationId}
     `;
     await recordAudit({ organizationId, actorId: null, actorRole: 'system', action: 'organization.billing_regularized' });
+    await notifyOrganization(organizationId, {
+      kind: 'billing',
+      severity: 'success',
+      title: 'Assinatura em dia',
+      body: 'O pagamento foi confirmado e o acesso está normal.',
+      href: '/admin/assinatura',
+      dedupeKey: `billing:regularized:${brasiliaToday()}`,
+    });
   }
 }
 
@@ -493,6 +549,14 @@ export async function runBillingMaintenance() {
       actorRole: 'system',
       action: 'organization.suspended_for_nonpayment',
       details: { oldestOverdue: oldest },
+    });
+    await notifyOrganization(String(row.id), {
+      kind: 'billing',
+      severity: 'critical',
+      title: 'Acesso pausado por falta de pagamento',
+      body: 'O sistema ficou somente leitura e nada foi apagado. Regularize em Assinatura para voltar ao normal.',
+      href: '/admin/assinatura',
+      dedupeKey: `billing:suspended:${oldest}`,
     });
   }
 

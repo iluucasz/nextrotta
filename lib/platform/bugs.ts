@@ -1,7 +1,8 @@
 import { recordAudit } from '../audit';
 import { sql } from '../db';
+import { notifyOrganization } from '../notifications';
 import { isUuid, PlatformError, type Actor } from './errors';
-import { REPORT_TYPES, SUPPORT_CATEGORIES, type ReportType, type SupportCategory } from '../reports';
+import { formatTicketNumber, REPORT_TYPES, SUPPORT_CATEGORIES, type ReportType, type SupportCategory } from '../reports';
 
 export const BUG_STATUSES = [
   'new',
@@ -196,10 +197,22 @@ export async function addBugMessage(
   if (!text) throw new PlatformError('Escreva a mensagem.');
   const internal = author.fromOwner && Boolean(input.internal);
 
-  await sql`
+  const message = await sql`
     INSERT INTO bug_messages (bug_id, author_id, from_owner, internal, text)
     VALUES (${id}, ${author.userId}, ${author.fromOwner}, ${internal}, ${text})
+    RETURNING id
   `;
+  // The platform answering a ticket is the one thing the company should not have to go and look for.
+  if (author.fromOwner && !internal) {
+    await notifyOrganization(report.organizationId, {
+      kind: 'support',
+      severity: 'info',
+      title: `Resposta no chamado ${formatTicketNumber(report.ticketNumber)}`,
+      body: text.length > 140 ? `${text.slice(0, 137)}...` : text,
+      href: `/admin/suporte/${id}`,
+      dedupeKey: `support:reply:${message[0]?.id ?? id}`,
+    });
+  }
   // The organization writing back on a closed report reopens it.
   if (
     !author.fromOwner &&
