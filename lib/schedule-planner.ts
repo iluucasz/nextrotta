@@ -8,7 +8,12 @@ const currentBrasiliaYear = () => Number(brasiliaNow().dateKey.slice(0, 4));
 export type SchedulePeriodMode = 'day' | 'week' | 'month' | 'year';
 export type ScheduleScopeMode = 'all' | 'selected';
 export type WeekendCoverageMode = 'off' | 'all' | 'rotation' | 'selected';
-export type WeekendRotationCadence = 'weekly' | 'alternating';
+/**
+ * 'alternating' works in the even weeks of the calendar and 'alternating_off' in the odd ones ("semana sim, semana não"
+ * and its opposite). Weeks are counted from a fixed Monday, never from the start of the period being built, so an
+ * escala made month after month keeps alternating where the previous one stopped.
+ */
+export type WeekendRotationCadence = 'weekly' | 'alternating' | 'alternating_off';
 export type ScheduleDayRuleKey = 'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday';
 
 export interface WeekendCoverageRule {
@@ -271,30 +276,48 @@ function createScheduleKey(technicianId: string, dateKey: string) {
   return `${technicianId}::${dateKey}`;
 }
 
-function getWeekendRotationCadence(rule: WeekendCoverageRule): WeekendRotationCadence {
-  return rule.rotation_cadence === 'alternating' ? 'alternating' : 'weekly';
+const SCHEDULE_WEEK_ANCHOR = Date.UTC(2024, 0, 1); // a Monday
+const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+
+/** Whole weeks (Monday to Sunday) between a fixed Monday and the week of the date: the same for every period. */
+export function getScheduleWeekIndex(dateKey: string) {
+  const [year, month, day] = dateKey.slice(0, 10).split('-').map(Number);
+  return Math.floor((Date.UTC(year, month - 1, day) - SCHEDULE_WEEK_ANCHOR) / WEEK_MS);
 }
 
-function isActiveCadenceOccurrence(occurrenceIndex: number, cadence: WeekendRotationCadence) {
-  return cadence !== 'alternating' || occurrenceIndex % 2 === 0;
+function positiveModulo(value: number, divisor: number) {
+  return ((value % divisor) + divisor) % divisor;
+}
+
+function normalizeRotationCadence(value: unknown): WeekendRotationCadence {
+  return value === 'alternating' || value === 'alternating_off' ? value : 'weekly';
+}
+
+function getWeekendRotationCadence(rule: WeekendCoverageRule): WeekendRotationCadence {
+  return normalizeRotationCadence(rule.rotation_cadence);
+}
+
+function isActiveCadenceOccurrence(weekIndex: number, cadence: WeekendRotationCadence) {
+  if (cadence === 'weekly') return true;
+  return positiveModulo(weekIndex, 2) === (cadence === 'alternating' ? 0 : 1);
 }
 
 function getRotationGroupCadence(group: ScheduleRotationGroupInput): WeekendRotationCadence {
-  return group.rotation_cadence === 'alternating' ? 'alternating' : 'weekly';
+  return normalizeRotationCadence(group.rotation_cadence);
 }
 
-function getAssignedRotationTechnician(participants: string[], rotationIndex: number, cadence: WeekendRotationCadence) {
-  const shouldAssignTechnician = cadence === 'weekly' || rotationIndex % 2 === 0;
-  const participantIndex = cadence === 'alternating' ? Math.floor(rotationIndex / 2) : rotationIndex;
+function getAssignedRotationTechnician(participants: string[], weekIndex: number, cadence: WeekendRotationCadence) {
+  if (!isActiveCadenceOccurrence(weekIndex, cadence)) return undefined;
 
-  return shouldAssignTechnician ? participants[participantIndex % participants.length] : undefined;
+  const participantIndex = cadence === 'weekly' ? weekIndex : Math.floor(weekIndex / 2);
+  return participants[positiveModulo(participantIndex, participants.length)];
 }
 
 function normalizeCoverageRule(rule: WeekendCoverageRule | undefined, fallbackRule: WeekendCoverageRule) {
   return {
     mode: rule?.mode ?? fallbackRule.mode,
     technician_ids: normalizeTechnicianIds(rule?.technician_ids ?? fallbackRule.technician_ids),
-    rotation_cadence: rule?.rotation_cadence === 'alternating' ? 'alternating' : getWeekendRotationCadence(fallbackRule),
+    rotation_cadence: rule?.rotation_cadence ? normalizeRotationCadence(rule.rotation_cadence) : getWeekendRotationCadence(fallbackRule),
     start_time: rule?.start_time?.trim() || fallbackRule.start_time?.trim() || undefined,
     end_time: rule?.end_time?.trim() || fallbackRule.end_time?.trim() || undefined,
   } satisfies WeekendCoverageRule;
@@ -361,18 +384,6 @@ function applyRotationGroupDayOverrides(
   return nextRules;
 }
 
-function createRotationState(): Record<DayKind, number> {
-  return {
-    monday: 0,
-    tuesday: 0,
-    wednesday: 0,
-    thursday: 0,
-    friday: 0,
-    saturday: 0,
-    sunday: 0,
-  };
-}
-
 function getWeekendParticipants(rule: WeekendCoverageRule, technicianIds: string[]) {
   const selectedIds = normalizeTechnicianIds(rule.technician_ids);
 
@@ -399,7 +410,7 @@ function getDayAssignments(
   dayKind: DayKind,
   rule: WeekendCoverageRule,
   technicianIds: string[],
-  rotationState: Record<DayKind, number>,
+  weekIndex: number,
 ) : DayAssignmentResult {
   if (rule.mode === 'off') {
     return {
@@ -409,8 +420,7 @@ function getDayAssignments(
   }
 
   const rotationCadence = getWeekendRotationCadence(rule);
-  const rotationIndex = rotationState[dayKind];
-  rotationState[dayKind] += 1;
+  const rotationIndex = weekIndex;
 
   if (!isActiveCadenceOccurrence(rotationIndex, rotationCadence)) {
     return {
@@ -460,14 +470,14 @@ function getRotationGroupNote(dayKind: DayKind, group: ScheduleRotationGroupInpu
     return `Folga de ${dayLabel}${labelSuffix}`;
   }
 
-  if (getRotationGroupCadence(group) === 'alternating') {
+  if (getRotationGroupCadence(group) !== 'weekly') {
     return `${capitalizedDayLabel}${labelSuffix} em revezamento alternado`;
   }
 
   return `${capitalizedDayLabel}${labelSuffix} em revezamento`;
 }
 
-function getRotationGroupAssignments(group: ScheduleRotationGroupInput, eligibleTechnicians: Set<string>, occurrenceIndex: number) {
+function getRotationGroupAssignments(group: ScheduleRotationGroupInput, eligibleTechnicians: Set<string>, weekIndex: number) {
   const eligibleIds = Array.from(eligibleTechnicians);
   const firstTeam = normalizeTechnicianIds(group.technician_ids).filter((technicianId) => eligibleTechnicians.has(technicianId));
   const nextTeam = eligibleIds.filter((technicianId) => !firstTeam.includes(technicianId));
@@ -481,8 +491,8 @@ function getRotationGroupAssignments(group: ScheduleRotationGroupInput, eligible
   }
 
   const cadence = getRotationGroupCadence(group);
-  const cycleIndex = cadence === 'alternating' ? Math.floor(occurrenceIndex / 2) : occurrenceIndex;
-  const useNextTeam = cycleIndex % 2 !== 0;
+  const cycleIndex = cadence === 'weekly' ? weekIndex : Math.floor(weekIndex / 2);
+  const useNextTeam = positiveModulo(cycleIndex, 2) !== 0;
 
   return {
     workingTechnicians: new Set<string>(useNextTeam ? nextTeam : firstTeam),
@@ -497,7 +507,7 @@ function applyRotationGroups(
   eligibleTechnicians: Set<string>,
   workingTechnicians: Set<string>,
   noteOverrides: Map<string, string | null>,
-  rotationState: Map<string, number>,
+  weekIndex: number,
 ) {
   if (!eligibleTechnicians.size) {
     return;
@@ -512,11 +522,7 @@ function applyRotationGroups(
       continue;
     }
 
-    const stateKey = `${dayKind}::${group.label || participants.join('|')}`;
-    const currentIndex = rotationState.get(stateKey) ?? 0;
-    const assignments = getRotationGroupAssignments(group, eligibleTechnicians, currentIndex);
-
-    rotationState.set(stateKey, currentIndex + 1);
+    const assignments = getRotationGroupAssignments(group, eligibleTechnicians, weekIndex);
 
     if (!assignments.hasAlternation) {
       continue;
@@ -537,7 +543,7 @@ function applyRotationGroups(
 function getBaseNote(dayKind: DayKind, weekendRule: WeekendCoverageRule, isWorking: boolean) {
   const dayLabel = DAY_LABELS[dayKind];
   const capitalizedDayLabel = capitalizeLabel(dayLabel);
-  const isAlternating = getWeekendRotationCadence(weekendRule) === 'alternating';
+  const isAlternating = getWeekendRotationCadence(weekendRule) !== 'weekly';
 
   if (!isWorking) {
     return isAlternating && weekendRule.mode !== 'off'
@@ -589,8 +595,6 @@ export function buildPersistedSchedule(input: ScheduleGenerationInput, targetTec
   const { startDate, endDate } = getScheduleRange(input.period_mode, input.year, input.month, input.date);
   const dateKeys = enumerateDateKeys(startDate, endDate);
   const rowMap = new Map<string, ScheduleSeedRow>();
-  const rotationState = createRotationState();
-  const rotationGroupState = new Map<string, number>();
   const rotationGroups = normalizeRotationGroups(input.rotation_groups);
   const dayRules = applyRotationGroupDayOverrides(getDayRules(input), rotationGroups);
   const recurringRules = normalizeRecurringRules(input.recurring_rules);
@@ -598,10 +602,11 @@ export function buildPersistedSchedule(input: ScheduleGenerationInput, targetTec
   for (const dateKey of dateKeys) {
     const dayKind = getDayKind(dateKey);
     const dayRule = dayRules[dayKind];
-    const { workingTechnicians, eligibleTechnicians } = getDayAssignments(dayKind, dayRule, technicianIds, rotationState);
+    const weekIndex = getScheduleWeekIndex(dateKey);
+    const { workingTechnicians, eligibleTechnicians } = getDayAssignments(dayKind, dayRule, technicianIds, weekIndex);
     const noteOverrides = new Map<string, string | null>();
 
-    applyRotationGroups(dayKind, rotationGroups, eligibleTechnicians, workingTechnicians, noteOverrides, rotationGroupState);
+    applyRotationGroups(dayKind, rotationGroups, eligibleTechnicians, workingTechnicians, noteOverrides, weekIndex);
 
     for (const technicianId of technicianIds) {
       const isWorking = workingTechnicians.has(technicianId);

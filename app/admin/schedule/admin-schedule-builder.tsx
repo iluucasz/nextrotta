@@ -33,6 +33,7 @@ import {
   createDateKey,
   enumerateDateKeys,
   getScheduleGenerationPreview,
+  getScheduleWeekIndex,
   getScheduleRange,
   normalizeDateKey,
   normalizeTechnicianIds,
@@ -250,6 +251,8 @@ type SavedScheduleRules = Pick<
   'technician_scope' | 'technician_ids' | 'weekday_start_time' | 'weekday_end_time' | 'weekend_start_time' | 'weekend_end_time' | 'day_rules' | 'rotation_groups' | 'recurring_rules'
 >;
 const LAST_SCHEDULE_RULES_KEY = 'nextrotta-schedule-last-rules';
+/** Start of the note on days imported from Porto (same text the server protects). */
+const PORTO_SCHEDULE_NOTE_PREFIX = 'Importado do Porto:';
 
 interface BuilderActionCardProps {
   eyebrow: string;
@@ -839,12 +842,13 @@ function getRotationTeams(selectedTechnicianIds: string[], availableTechnicianId
 
 function getDayRuleLabel(rule: WeekendCoverageRule) {
   if (rule.mode === 'off') return 'Todos Folgam';
-  if (rule.mode === 'all') return rule.rotation_cadence === 'alternating' ? 'Todos em dias alternados' : 'Todos trabalham';
+  const alternates = rule.rotation_cadence === 'alternating' || rule.rotation_cadence === 'alternating_off';
+  if (rule.mode === 'all') return alternates ? 'Todos em dias alternados' : 'Todos trabalham';
   if (rule.mode === 'rotation') {
-    return rule.rotation_cadence === 'alternating' ? 'Técnico específico alternado' : 'Técnico específico';
+    return alternates ? 'Técnico específico alternado' : 'Técnico específico';
   }
 
-  return rule.rotation_cadence === 'alternating' ? 'Equipe em dias alternados' : 'Equipe selecionada';
+  return alternates ? 'Equipe em dias alternados' : 'Equipe selecionada';
 }
 
 function buildSuccessMessage(summary: {
@@ -1291,6 +1295,7 @@ function DayRuleEditor({ label, dayLabel, rule, fallbackStartTime, fallbackEndTi
             <select value={rule.rotation_cadence ?? 'weekly'} onChange={(event) => onCadenceChange(event.target.value as WeekendRotationCadence)} className={inputClassName}>
               <option value="weekly">Toda semana</option>
               <option value="alternating">Semana sim, semana não</option>
+              <option value="alternating_off">Semana não, semana sim</option>
             </select>
           </label>
         ) : (
@@ -1362,6 +1367,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [builderDialog, setBuilderDialog] = useState<ScheduleBuilderDialog>(null);
   const [activeDayRuleKey, setActiveDayRuleKey] = useState<ScheduleDayRuleKey | null>(null);
   const [selectedPreviewDate, setSelectedPreviewDate] = useState<string | null>(null);
+  // With the Porto automation on, days imported from Porto are kept when a new escala is saved (the server decides).
+  const [portoAutomationEnabled, setPortoAutomationEnabled] = useState(false);
   const [formData, setFormData] = useState<ScheduleBuilderForm>(createInitialBuilderForm);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1541,12 +1548,13 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     schedule.forEach((item) => {
       const dateKey = normalizeDateKey(item.date);
       if (dateKey < startDate || dateKey > endDate || !ids.has(item.technician_id)) return;
-      if (item.status === 'completed' || parseManualAttendanceNote(item.notes).attendance_status) kept += 1;
+      const keptFromPorto = portoAutomationEnabled && Boolean(item.notes?.startsWith(PORTO_SCHEDULE_NOTE_PREFIX));
+      if (item.status === 'completed' || parseManualAttendanceNote(item.notes).attendance_status || keptFromPorto) kept += 1;
       else replaced += 1;
     });
 
     return { kept, replaced };
-  }, [formData.date, formData.month, formData.period_mode, formData.year, schedule, selectedTechnicianIds]);
+  }, [formData.date, formData.month, formData.period_mode, formData.year, portoAutomationEnabled, schedule, selectedTechnicianIds]);
 
   useEffect(() => {
     if (!isFormDialogOpen) return;
@@ -1557,6 +1565,20 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     } catch {
       setLastRules(null);
     }
+
+    let cancelled = false;
+    fetch('/api/porto-config')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (!cancelled) setPortoAutomationEnabled(Boolean(data?.config?.automation_enabled));
+      })
+      .catch(() => {
+        if (!cancelled) setPortoAutomationEnabled(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [isFormDialogOpen]);
 
   function getEffectiveDayRules() {
@@ -1642,7 +1664,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     const availableTechnicianIds = ruleTechnicians.map((technician) => technician.id).filter((technicianId) => selectedTechnicianIds.includes(technicianId));
     const { firstTeam, nextTeam } = getRotationTeams(group.technician_ids, availableTechnicianIds);
     const namesById = new Map(ruleTechnicians.map((technician) => [technician.id, technician.name]));
-    const occurrenceByDay = new Map<ScheduleDayRuleKey, number>();
     const previewDates = enumerateDateKeys(generationPreview.startDate, generationPreview.endDate)
       .filter((dateKey) => group.day_keys.includes(getDayKeyFromDateKey(dateKey)))
       .slice(0, 8);
@@ -1653,10 +1674,10 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
     return previewDates.map((date) => {
       const dayKey = getDayKeyFromDateKey(date);
-      const occurrenceIndex = occurrenceByDay.get(dayKey) ?? 0;
-      occurrenceByDay.set(dayKey, occurrenceIndex + 1);
-
-      const workerIds = occurrenceIndex % 2 === 0 ? firstTeam : nextTeam;
+      // Same count the planner uses: weeks from a fixed Monday, so the teams keep alternating across months.
+      const weekIndex = getScheduleWeekIndex(date);
+      const cycleIndex = group.rotation_cadence && group.rotation_cadence !== 'weekly' ? Math.floor(weekIndex / 2) : weekIndex;
+      const workerIds = ((cycleIndex % 2) + 2) % 2 === 0 ? firstTeam : nextTeam;
       return {
         date,
         dayLabel: getDayLabelFromKey(dayKey),
@@ -2801,6 +2822,16 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       return;
     }
 
+    if (draft.who === 'all' && formData.general_days_off.some((item) => normalizeDateKey(item.date) === draft.date)) {
+      setExceptionError('Este dia já está na lista de folgas de todos.');
+      return;
+    }
+
+    if (draft.who !== 'all' && draft.when === 'day' && formData.overrides.some((item) => item.technician_id === draft.who && normalizeDateKey(item.date) === draft.date)) {
+      setExceptionError('Este técnico já tem uma exceção neste dia. Remova a anterior para trocar.');
+      return;
+    }
+
     const status: Schedule['status'] = draft.what === 'off' ? 'cancelled' : 'scheduled';
     const startTime = draft.what === 'shift' ? draft.start_time : '';
     const endTime = draft.what === 'shift' ? draft.end_time : '';
@@ -2878,11 +2909,11 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       const { firstTeam, nextTeam } = getRotationTeams(group.technician_ids, availableRotationTechnicianIds);
 
       if (!firstTeam.length) {
-        return 'Marque ao menos um técnico para trabalhar na primeira semana da alternância.';
+        return 'Marque ao menos um técnico para formar a primeira equipe da alternância.';
       }
 
       if (!nextTeam.length) {
-        return 'Deixe ao menos um técnico desmarcado para trabalhar na semana seguinte da alternância.';
+        return 'Deixe ao menos um técnico desmarcado para formar a outra equipe da alternância.';
       }
     }
 
@@ -3693,19 +3724,19 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                         </div>
 
                         <div>
-                          <p className="mb-1.5 text-sm font-medium text-foreground">Quem trabalha na primeira semana</p>
-                          <p className="mb-2 text-xs text-muted-foreground">Marque a primeira equipe. Na semana seguinte, trabalha a outra equipe: quem ficou desmarcado.</p>
+                          <p className="mb-1.5 text-sm font-medium text-foreground">Quem forma a primeira equipe</p>
+                          <p className="mb-2 text-xs text-muted-foreground">Marque a primeira equipe. A outra equipe é quem ficou desmarcado. As duas se alternam semana a semana, sem recomeçar a cada mês: as datas abaixo mostram quem trabalha em cada dia.</p>
                           {firstTeamTechnicians.length ? (
                             <div className="mb-3 space-y-2">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs font-medium text-muted-foreground">Primeira semana:</span>
+                                <span className="text-xs font-medium text-muted-foreground">Primeira equipe:</span>
                                 {firstTeamTechnicians.map((technician) => (
                                   <StatusBadge key={technician.id} tone="success">{technician.name}</StatusBadge>
                                 ))}
                               </div>
                               {nextTeamTechnicians.length ? (
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-xs font-medium text-muted-foreground">Semana seguinte:</span>
+                                  <span className="text-xs font-medium text-muted-foreground">Outra equipe:</span>
                                   {nextTeamTechnicians.map((technician) => (
                                     <StatusBadge key={technician.id} tone="neutral">{technician.name}</StatusBadge>
                                   ))}

@@ -62,7 +62,7 @@ function isValidScheduleStatus(value: unknown): value is 'scheduled' | 'complete
 }
 
 function isWeekendRotationCadence(value: unknown) {
-  return value === undefined || value === 'weekly' || value === 'alternating';
+  return value === undefined || value === 'weekly' || value === 'alternating' || value === 'alternating_off';
 }
 
 function isWeekendRule(value: unknown): value is ScheduleGenerationInput['saturday_rule'] {
@@ -97,7 +97,7 @@ function normalizeWeekendRule(value: unknown): ScheduleGenerationInput['saturday
   return {
     mode: rule.mode,
     technician_ids: normalizeTechnicianIds(Array.isArray(rule.technician_ids) ? rule.technician_ids : []),
-    rotation_cadence: rule.rotation_cadence === 'alternating' ? 'alternating' : 'weekly',
+    rotation_cadence: rule.rotation_cadence === 'alternating' || rule.rotation_cadence === 'alternating_off' ? rule.rotation_cadence : 'weekly',
     start_time: normalizeOptionalTime(rule.start_time),
     end_time: normalizeOptionalTime(rule.end_time),
   };
@@ -131,7 +131,7 @@ function normalizeRotationGroup(value: NonNullable<ScheduleGenerationInput['rota
     label: value.label?.trim() || '',
     day_keys: Array.from(new Set(value.day_keys.filter((dayKey) => DAY_RULE_KEYS.includes(dayKey)))) as ScheduleDayRuleKey[],
     technician_ids: normalizeTechnicianIds(value.technician_ids),
-    rotation_cadence: value.rotation_cadence === 'alternating' ? 'alternating' : 'weekly',
+    rotation_cadence: value.rotation_cadence === 'alternating' || value.rotation_cadence === 'alternating_off' ? value.rotation_cadence : 'weekly',
   } satisfies NonNullable<ScheduleGenerationInput['rotation_groups']>[number];
 }
 
