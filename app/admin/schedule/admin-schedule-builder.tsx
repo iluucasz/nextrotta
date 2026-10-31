@@ -1221,29 +1221,30 @@ function BuilderActionCard({ eyebrow, title, value, buttonLabel = 'Editar', onCl
   );
 }
 
-function PreviewDayLists({ day }: { day: { workingNames: string[]; off: string[] } }) {
+/** Vertical lists of who works and who is off on one day; `limit` shortens long lists (the hover balloon). */
+function PreviewDayLists({ day, limit }: { day: { workingNames: string[]; off: string[] }; limit?: number }) {
+  const renderNames = (names: string[]) => {
+    const shown = limit && names.length > limit ? names.slice(0, limit) : names;
+    return (
+      <ul className="mt-0.5 space-y-0.5 text-foreground">
+        {shown.map((name, index) => (
+          <li key={`${name}-${index}`}>{name}</li>
+        ))}
+        {shown.length < names.length ? <li className="text-muted-foreground">e mais {names.length - shown.length}</li> : null}
+      </ul>
+    );
+  };
+
   return (
     <div className="space-y-2">
       <div>
         <p className="font-semibold text-emerald-800">Trabalham ({day.workingNames.length})</p>
-        {day.workingNames.length ? (
-          <ul className="mt-0.5 space-y-0.5 text-foreground">
-            {day.workingNames.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-muted-foreground">Ninguém</p>
-        )}
+        {day.workingNames.length ? renderNames(day.workingNames) : <p className="text-muted-foreground">Ninguém</p>}
       </div>
       {day.off.length ? (
         <div>
           <p className="font-semibold text-amber-700">Folgam ({day.off.length})</p>
-          <ul className="mt-0.5 space-y-0.5 text-foreground">
-            {day.off.map((name) => (
-              <li key={name}>{name}</li>
-            ))}
-          </ul>
+          {renderNames(day.off)}
         </div>
       ) : null}
     </div>
@@ -4967,7 +4968,9 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                         <div key={`blank-${index}`} />
                       ))}
                       {previewDays.map((day, dayIndex) => {
-                        const column = ((new Date(`${previewDays[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 + dayIndex) % 7;
+                        const firstColumn = (new Date(`${previewDays[0].date}T00:00:00Z`).getUTCDay() + 6) % 7;
+                        const column = (firstColumn + dayIndex) % 7;
+                        const opensUp = Math.floor((firstColumn + dayIndex) / 7) >= Math.ceil((firstColumn + previewDays.length) / 7) - 2;
                         const selected = selectedPreviewDate === day.date;
                         return (
                           <div key={day.date} className="group relative">
@@ -4985,9 +4988,9 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                               {day.off.length ? <p className="text-amber-700">{day.off.length} de folga</p> : null}
                             </button>
                             <div
-                              className={`pointer-events-none absolute top-full z-20 mt-1 hidden w-48 rounded-md border border-border bg-popover p-2 text-left text-xs shadow-lg group-hover:block ${column >= 4 ? 'right-0' : 'left-0'}`}
+                              className={`pointer-events-none absolute z-20 hidden w-48 rounded-md border border-border bg-popover p-2 text-left text-xs shadow-lg group-hover:block ${opensUp ? 'bottom-full mb-1' : 'top-full mt-1'} ${column >= 4 ? 'right-0' : 'left-0'}`}
                             >
-                              <PreviewDayLists day={day} />
+                              <PreviewDayLists day={day} limit={6} />
                             </div>
                           </div>
                         );
