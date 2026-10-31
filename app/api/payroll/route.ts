@@ -1,21 +1,9 @@
 import { sql } from '@/lib/db';
 import { after, NextRequest, NextResponse } from 'next/server';
+import { recordAudit } from '@/lib/audit';
 import { verifyOrganizationAuth } from '@/lib/auth';
+import { isCompetenceMonth, parsePayrollValues, PAYROLL_VALUE_FIELDS as payrollNumericFields } from '@/lib/payroll-input';
 import { notifyPayrollClosed } from '@/lib/whatsapp/notifications';
-
-const payrollNumericFields = [
-  'total_services_value',
-  'commission_value',
-  'base_salary',
-  'va_deduction',
-  'vr_deduction',
-  'discounts_total',
-  'advances_total',
-  'extra_hours_value',
-  'extraordinary_award_value',
-  'hour_bank_balance',
-  'net_total',
-] as const;
 
 function roundCurrency(value: number | string | null | undefined) {
   const numericValue = Number(value ?? 0);
@@ -120,45 +108,35 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const {
-      technician_id,
-      competence_month,
-      total_services_value,
-      commission_value,
-      base_salary,
-      va_deduction,
-      vr_deduction,
-      discounts_total,
-      advances_total,
-      extra_hours_value,
-      extraordinary_award_value = 0,
-      hour_bank_balance,
-      net_total,
-      status,
-    } = await request.json();
+    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null;
+    if (!body || typeof body !== 'object') {
+      return NextResponse.json({ error: 'Pedido inválido.' }, { status: 400 });
+    }
 
-    if (!(await isActiveTechnician(auth.organizationId, technician_id))) {
+    const technician_id = typeof body.technician_id === 'string' ? body.technician_id : '';
+    const competence_month = body.competence_month;
+    if (!isCompetenceMonth(competence_month)) {
+      return NextResponse.json({ error: 'Competência inválida. Use o formato AAAA-MM.' }, { status: 400 });
+    }
+
+    const parsed = parsePayrollValues(body);
+    if ('error' in parsed) {
+      return NextResponse.json({ error: parsed.error }, { status: 400 });
+    }
+    const values = parsed.values;
+
+    if (!technician_id || !(await isActiveTechnician(auth.organizationId, technician_id))) {
       return NextResponse.json(
-        { error: 'Selecione um tecnico ativo para fechar folha.' },
+        { error: 'Selecione um técnico ativo para a folha.' },
         { status: 409 }
       );
     }
 
-    const payrollStatus = status === 'closed' ? 'closed' : 'draft';
-
-    const values = {
-      total_services_value: roundCurrency(total_services_value),
-      commission_value: roundCurrency(commission_value),
-      base_salary: roundCurrency(base_salary),
-      va_deduction: roundCurrency(va_deduction),
-      vr_deduction: roundCurrency(vr_deduction),
-      discounts_total: roundCurrency(discounts_total),
-      advances_total: roundCurrency(advances_total),
-      extra_hours_value: roundCurrency(extra_hours_value),
-      extraordinary_award_value: roundCurrency(extraordinary_award_value),
-      hour_bank_balance: roundCurrency(hour_bank_balance),
-      net_total: roundCurrency(net_total),
-    };
+    const payrollStatus = body.status === 'closed' ? 'closed' : 'draft';
+    const reopen = body.reopen === true && payrollStatus === 'draft';
+    // A closed folha is already in the technician's hands: only closing again (to correct it) or an
+    // explicit reopen may touch it. A late draft auto-save must never silently undo the closing.
+    const mayReplaceClosed = payrollStatus === 'closed' || reopen;
 
     const result = await sql`
       INSERT INTO payroll (
@@ -187,8 +165,29 @@ export async function POST(request: NextRequest) {
           deleted_at = NULL,
           deleted_by = NULL,
           updated_at = NOW()
+      WHERE payroll.status <> 'closed' OR payroll.deleted_at IS NOT NULL OR ${mayReplaceClosed}
       RETURNING *
     `;
+
+    if (!result.length) {
+      return NextResponse.json(
+        { error: 'Esta folha já está fechada. Reabra a folha para editar.' },
+        { status: 409 }
+      );
+    }
+
+    if (reopen) {
+      await recordAudit({
+        organizationId: auth.organizationId,
+        actorId: auth.userId,
+        actorRole: auth.impersonationId ? 'platform_owner' : auth.role,
+        impersonationId: auth.impersonationId,
+        action: 'payroll.reopened',
+        targetType: 'payroll',
+        targetId: String(result[0].id),
+        details: { technicianId: technician_id, competenceMonth: competence_month },
+      });
+    }
 
     // After the response, so a slow or offline WhatsApp never holds up closing the payroll. Every
     // save of a closed payroll lands here; the notification's dedupe key keeps it to one message.

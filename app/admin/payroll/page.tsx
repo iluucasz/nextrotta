@@ -1,28 +1,31 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { AlertCircle, Calculator, CheckCircle2, CreditCard, FileText, RefreshCw, Search, WalletCards } from 'lucide-react';
+import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, FileText, LockOpen, RefreshCw, Search } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
+import {
+  MODAL_BODY_CLASS,
+  MODAL_DESCRIPTION_CLASS,
+  MODAL_FOOTER_CLASS,
+  MODAL_HEADER_CLASS,
+  MODAL_TITLE_CLASS,
+  ModalNotice,
+  ModalSection,
+  SummaryBand,
+} from '@/components/modal-kit';
 import { LoadingShell } from '@/components/page-skeleton';
-import { MetricCard } from '@/components/metric-card';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { brasiliaDateKey, formatCurrency, normalizeText, resolveCompetenceMonth } from '@/lib/formatters';
 import type { Discount, Payroll, Service, ServiceFortnight, Technician } from '@/lib/types';
+import { cn } from '@/lib/utils';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
-import { calculateServiceAward, valueOrDefault, type OrganizationSettings } from '@/lib/organization-settings';
+import { calculateServiceAward, valueOrDefault } from '@/lib/organization-settings';
 
 const monthNames = [
   'Janeiro',
@@ -57,31 +60,6 @@ type PayrollDraft = {
 
 type PayrollDraftField = keyof PayrollDraft;
 
-type PayrollRow = {
-  technician: Technician;
-  payrollItem?: Payroll;
-  hasMonthlyActivity: boolean;
-  hasMonthlyObligation: boolean;
-  serviceCount: number;
-  totalServicesValue: number;
-  profitValue: number;
-  serviceFortnightSummary: ServiceFortnightSummary;
-  commissionPercentage: number;
-  calculationBase: number;
-  baseSalary: number;
-  vaAllowance: number;
-  vrAllowance: number;
-  benefitsTotal: number;
-  commission: number;
-  discountsTotal: number;
-  advancesTotal: number;
-  totalDeductions: number;
-  extraHoursValue: number;
-  extraordinaryAward: number;
-  cashNetTotal: number;
-  payrollNetTotal: number;
-};
-
 type ServiceFortnightBucket = {
   count: number;
   totalValue: number;
@@ -93,12 +71,28 @@ type ServiceFortnightSummary = {
   unassigned: ServiceFortnightBucket;
 };
 
-const commissionFormulaFields: PayrollDraftField[] = [
-  'total_services_value',
-  'base_salary',
-  'vr_deduction',
-  'va_deduction',
-];
+type PayrollRow = {
+  technician: Technician;
+  payrollItem?: Payroll;
+  serviceCount: number;
+  totalServicesValue: number;
+  profitValue: number;
+  serviceFortnightSummary: ServiceFortnightSummary;
+  commissionPercentage: number;
+  baseSalary: number;
+  vaAllowance: number;
+  vrAllowance: number;
+  commission: number;
+  discountsTotal: number;
+  advancesTotal: number;
+  extraHoursValue: number;
+  extraordinaryAward: number;
+  hourBankBalance: number;
+  cashNetTotal: number;
+  payrollNetTotal: number;
+};
+
+const commissionFormulaFields: PayrollDraftField[] = ['total_services_value', 'base_salary', 'vr_deduction', 'va_deduction'];
 
 function moneyValue(value: number | string | null | undefined) {
   return Number(value ?? 0);
@@ -120,23 +114,25 @@ function escapeHtml(value: string) {
     .replace(/'/g, '&#39;');
 }
 
-function formatMoneyInputValue(value: number) {
-  return String(roundMoney(value));
+const numberFormat = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+function formatHours(value: number) {
+  return `${numberFormat.format(roundMoney(value))} h`;
 }
 
-function parseMoneyInputValue(value: string, fallbackValue: number) {
-  if (!value.trim()) {
-    return 0;
-  }
+/** What the person types: "1.234,56", "1234,5", "1500" or "1.500" (a dot before exactly three digits is thousands). */
+function parseMoneyText(text: string, fallbackValue: number) {
+  const cleaned = text.trim().replace(/\s/g, '');
+  if (!cleaned) return 0;
 
-  const normalizedValue = value.replace(',', '.');
-  const numericValue = Number(normalizedValue);
+  const normalized = cleaned.includes(',')
+    ? cleaned.replace(/\./g, '').replace(',', '.')
+    : /^-?\d{1,3}(\.\d{3})+$/.test(cleaned)
+      ? cleaned.replace(/\./g, '')
+      : cleaned;
+  const numericValue = Number(normalized);
 
-  if (!Number.isFinite(numericValue)) {
-    return roundMoney(fallbackValue);
-  }
-
-  return roundMoney(numericValue);
+  return Number.isFinite(numericValue) ? roundMoney(numericValue) : roundMoney(fallbackValue);
 }
 
 function formatCompetenceLabel(value: string) {
@@ -147,31 +143,25 @@ function formatCompetenceLabel(value: string) {
     return value || 'Sem competência';
   }
 
-  return `${month.padStart(2, '0')}/${year} - ${monthNames[monthNumber - 1]}`;
+  return `${monthNames[monthNumber - 1]} de ${year}`;
 }
 
 function getServiceCompetence(service: Service) {
   return resolveCompetenceMonth(service.competence_month, service.date_performed);
 }
 
-function createServiceFortnightBucket(): ServiceFortnightBucket {
-  return {
-    count: 0,
-    totalValue: 0,
-  };
-}
-
 function createServiceFortnightSummary(services: Service[]): ServiceFortnightSummary {
   const summary: ServiceFortnightSummary = {
-    Q1: createServiceFortnightBucket(),
-    Q2: createServiceFortnightBucket(),
-    unassigned: createServiceFortnightBucket(),
+    Q1: { count: 0, totalValue: 0 },
+    Q2: { count: 0, totalValue: 0 },
+    unassigned: { count: 0, totalValue: 0 },
   };
 
   services.forEach((service) => {
-    const bucket = service.fortnight_period === 'Q1' || service.fortnight_period === 'Q2'
-      ? summary[service.fortnight_period as ServiceFortnight]
-      : summary.unassigned;
+    const bucket =
+      service.fortnight_period === 'Q1' || service.fortnight_period === 'Q2'
+        ? summary[service.fortnight_period as ServiceFortnight]
+        : summary.unassigned;
 
     bucket.count += 1;
     bucket.totalValue = roundMoney(bucket.totalValue + moneyValue(service.value));
@@ -180,61 +170,35 @@ function createServiceFortnightSummary(services: Service[]): ServiceFortnightSum
   return summary;
 }
 
-function formatServiceFortnightCountSummary(summary: ServiceFortnightSummary) {
-  const parts: string[] = [];
+function formatFortnights(summary: ServiceFortnightSummary, withValues = false) {
+  const entries: Array<[string, ServiceFortnightBucket]> = [
+    ['Q1', summary.Q1],
+    ['Q2', summary.Q2],
+    ['Sem quinzena', summary.unassigned],
+  ];
 
-  if (summary.Q1.count > 0) parts.push(`Q1 ${summary.Q1.count}`);
-  if (summary.Q2.count > 0) parts.push(`Q2 ${summary.Q2.count}`);
-  if (summary.unassigned.count > 0) parts.push(`Sem quinzena ${summary.unassigned.count}`);
-
-  return parts.join(' | ') || 'Sem OS';
+  return entries
+    .filter(([, bucket]) => bucket.count > 0)
+    .map(([label, bucket]) => (withValues ? `${label} ${formatCurrency(bucket.totalValue)}` : `${label} ${bucket.count}`))
+    .join(' · ');
 }
 
-function formatServiceFortnightValueSummary(summary: ServiceFortnightSummary) {
-  const parts: string[] = [];
-
-  if (summary.Q1.totalValue > 0) parts.push(`Q1 ${formatCurrency(summary.Q1.totalValue)}`);
-  if (summary.Q2.totalValue > 0) parts.push(`Q2 ${formatCurrency(summary.Q2.totalValue)}`);
-  if (summary.unassigned.totalValue > 0) parts.push(`Sem quinzena ${formatCurrency(summary.unassigned.totalValue)}`);
-
-  return parts.join(' | ') || 'Sem valor';
-}
-
+/** The service's technician by id; the name is only a fallback for rows that never got an id. */
 function serviceBelongsToTechnician(service: Service, technician: Technician) {
-  if (service.technician_id === technician.id) return true;
+  if (service.technician_id) return service.technician_id === technician.id;
 
   const serviceTechnicianName = normalizeText(service.technician_name);
   return Boolean(serviceTechnicianName && serviceTechnicianName === normalizeText(technician.name));
 }
 
-
 function calculateCalculationBase(totalServicesValue: number, commissionPercentage: number) {
   return roundMoney(Math.max(0, totalServicesValue) * (commissionPercentage / 100));
 }
 
-function calculateCommissionRemainder(
-  calculationBase: number,
-  baseSalary: number,
-  vrAllowance: number,
-  vaAllowance: number,
-) {
+function calculateCommissionRemainder(calculationBase: number, baseSalary: number, vrAllowance: number, vaAllowance: number) {
   return roundMoney(
-    Math.max(
-      0,
-      moneyValue(calculationBase) -
-        moneyValue(baseSalary) -
-        moneyValue(vrAllowance) -
-        moneyValue(vaAllowance),
-    ),
+    Math.max(0, moneyValue(calculationBase) - moneyValue(baseSalary) - moneyValue(vrAllowance) - moneyValue(vaAllowance)),
   );
-}
-
-function convertCalculationBaseToTotalServices(calculationBase: number, commissionPercentage: number) {
-  if (commissionPercentage <= 0) {
-    return roundMoney(calculationBase);
-  }
-
-  return roundMoney((Math.max(0, calculationBase) * 100) / commissionPercentage);
 }
 
 function calculateFormulaCommission(draft: PayrollDraft, commissionPercentage: number) {
@@ -246,6 +210,7 @@ function calculateFormulaCommission(draft: PayrollDraft, commissionPercentage: n
   );
 }
 
+/** Salary + commission + extras + award − discounts − advances: what goes to the technician's account. */
 function calculateCashNet(draft: PayrollDraft) {
   return roundMoney(
     moneyValue(draft.base_salary) +
@@ -288,7 +253,10 @@ function normalizeDraft(payroll: Partial<PayrollDraft>): PayrollDraft {
   };
 }
 
+/** The draft shown when the folha is opened: the saved values when there are any, the table's estimate otherwise. */
 function createDraftFromRow(row: PayrollRow, competenceMonth: string) {
+  if (row.payrollItem) return normalizeDraft(row.payrollItem);
+
   return normalizeDraft({
     technician_id: row.technician.id,
     competence_month: competenceMonth,
@@ -301,80 +269,67 @@ function createDraftFromRow(row: PayrollRow, competenceMonth: string) {
     advances_total: row.advancesTotal,
     extra_hours_value: row.extraHoursValue,
     extraordinary_award_value: row.extraordinaryAward,
-    hour_bank_balance: 0,
+    hour_bank_balance: row.hourBankBalance,
     net_total: row.cashNetTotal,
   });
 }
 
-function MoneyInput({
+/** One line of the folha: what it is on the left, the amount to read or type on the right. */
+function AmountRow({
   label,
+  hint,
   value,
   onChange,
-  hint,
+  unit = 'R$',
+  readOnly = false,
+  emphasis = false,
 }: {
   label: string;
+  hint?: string;
   value: number;
   onChange: (value: number) => void;
-  hint?: string;
+  unit?: 'R$' | 'h';
+  readOnly?: boolean;
+  emphasis?: boolean;
 }) {
-  const [draftValue, setDraftValue] = useState(() => formatMoneyInputValue(value));
-  const [isEditing, setIsEditing] = useState(false);
-
-  useEffect(() => {
-    if (!isEditing) {
-      setDraftValue(formatMoneyInputValue(value));
-    }
-  }, [isEditing, value]);
+  const [text, setText] = useState('');
+  const [editing, setEditing] = useState(false);
 
   return (
-    <label className="space-y-1.5">
-      <span className="text-xs font-medium uppercase text-muted-foreground">{label}</span>
-      <input
-        type="number"
-        step="0.01"
-        inputMode="decimal"
-        value={isEditing ? draftValue : formatMoneyInputValue(value)}
-        onFocus={() => setIsEditing(true)}
-        onChange={(event) => {
-          const nextValue = event.target.value;
-          setDraftValue(nextValue);
-
-          if (!nextValue.trim()) {
-            onChange(0);
-            return;
-          }
-
-          onChange(parseMoneyInputValue(nextValue, value));
-        }}
-        onBlur={() => {
-          const normalizedValue = parseMoneyInputValue(draftValue, value);
-          setIsEditing(false);
-          setDraftValue(formatMoneyInputValue(normalizedValue));
-          onChange(normalizedValue);
-        }}
-        className="h-10 w-full rounded-md border border-border bg-background px-3 text-sm font-medium outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20"
-      />
-      {hint ? <span className="block text-xs text-muted-foreground">{hint}</span> : null}
+    <label className={cn('flex items-center justify-between gap-4', emphasis ? 'py-3' : 'py-2.5')}>
+      <span className="min-w-0">
+        <span className={cn('block text-sm', emphasis ? 'font-semibold' : '', 'text-foreground')}>{label}</span>
+        {hint ? <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{hint}</span> : null}
+      </span>
+      <span
+        className={cn(
+          'flex h-10 w-40 shrink-0 items-center gap-2 rounded-lg border px-3 transition',
+          readOnly ? 'border-transparent bg-secondary/50' : 'border-border bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20',
+          emphasis && !readOnly ? 'border-foreground/25' : '',
+        )}
+      >
+        <span className="text-xs text-muted-foreground">{unit}</span>
+        <input
+          type="text"
+          inputMode="decimal"
+          readOnly={readOnly}
+          value={editing ? text : numberFormat.format(value)}
+          onFocus={(event) => {
+            if (readOnly) return;
+            setText(value === 0 ? '' : String(value).replace('.', ','));
+            setEditing(true);
+            event.currentTarget.select();
+          }}
+          onChange={(event) => {
+            const nextText = event.target.value.replace(/[^\d.,-]/g, '');
+            setText(nextText);
+            onChange(parseMoneyText(nextText, value));
+          }}
+          onBlur={() => setEditing(false)}
+          className={cn('w-full min-w-0 bg-transparent text-right text-sm tabular-nums outline-none', emphasis ? 'font-semibold' : 'font-medium')}
+        />
+      </span>
     </label>
-  );
-}
-
-function HelpTip({ text }: { text: string }) {
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <button
-          type="button"
-          aria-label="Ajuda"
-          className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-background text-[11px] font-semibold text-muted-foreground transition hover:border-primary hover:text-foreground"
-        >
-          ?
-        </button>
-      </TooltipTrigger>
-      <TooltipContent side="top" sideOffset={6} className="max-w-xs px-3 py-2 text-xs leading-relaxed">
-        {text}
-      </TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -390,6 +345,7 @@ export default function PayrollPage() {
   const [openingTechnicianId, setOpeningTechnicianId] = useState('');
   const [competenceMonth, setCompetenceMonth] = useState(brasiliaDateKey().slice(0, 7));
   const [isDataLoading, setIsDataLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [dataError, setDataError] = useState('');
   const [selectedRow, setSelectedRow] = useState<PayrollRow | null>(null);
   const [isPayrollDialogOpen, setIsPayrollDialogOpen] = useState(false);
@@ -404,16 +360,23 @@ export default function PayrollPage() {
   const selectedCompetenceYear = Number(competenceMonth.slice(0, 4)) || new Date().getFullYear();
   const selectedCompetenceMonth = Number(competenceMonth.slice(5, 7)) || new Date().getMonth() + 1;
   const competenceYearOptions = useMemo(
-    () => Array.from(new Set([
-      selectedCompetenceYear,
-      new Date().getFullYear() - 2,
-      new Date().getFullYear() - 1,
-      new Date().getFullYear(),
-      new Date().getFullYear() + 1,
-      new Date().getFullYear() + 2,
-    ])).sort((left, right) => left - right),
+    () =>
+      Array.from(
+        new Set([
+          selectedCompetenceYear,
+          new Date().getFullYear() - 2,
+          new Date().getFullYear() - 1,
+          new Date().getFullYear(),
+          new Date().getFullYear() + 1,
+        ]),
+      ).sort((left, right) => left - right),
     [selectedCompetenceYear],
   );
+
+  function shiftMonth(delta: number) {
+    const [year, month] = competenceMonth.split('-').map(Number);
+    setCompetenceMonth(new Date(Date.UTC(year, month - 1 + delta, 1)).toISOString().slice(0, 7));
+  }
 
   useEffect(() => {
     let mounted = true;
@@ -467,6 +430,7 @@ export default function PayrollPage() {
       if (mounted) {
         setDataError(errors.length ? `Não foi possível carregar os dados de ${errors.join(', ')}.` : '');
         setIsDataLoading(false);
+        setHasLoaded(true);
       }
     }
 
@@ -478,109 +442,83 @@ export default function PayrollPage() {
   }, [competenceMonth, user]);
 
   const rows = useMemo<PayrollRow[]>(() => {
-    return technicians.filter((technician) => technician.status === 'active').map((technician) => {
-      const payrollItem = payroll.find(
-        (item) => item.technician_id === technician.id && item.competence_month === competenceMonth,
-      );
-      const technicianServices = services.filter(
-        (service) => serviceBelongsToTechnician(service, technician) && getServiceCompetence(service) === competenceMonth,
-      );
-      const technicianDiscounts = discounts.filter(
-        (discount) => discount.technician_id === technician.id && discount.competence_month === competenceMonth,
-      );
-      const hasMonthlyActivity = Boolean(payrollItem || technicianServices.length > 0 || technicianDiscounts.length > 0);
-      const hasMonthlyObligation = true;
-      const serviceFortnightSummary = createServiceFortnightSummary(technicianServices);
-      const servicesTotal = roundMoney(technicianServices.reduce((total, service) => total + moneyValue(service.value), 0));
-      const serviceCount = technicianServices.length;
-      const totalServicesValue = roundMoney(servicesTotal || payrollItem?.total_services_value);
-      const commissionPercentage = valueOrDefault(technician.commission_percentage, organizationSettings.commissionPercentage);
-      const baseSalary = roundMoney(
-        payrollItem ? payrollItem.base_salary : valueOrDefault(technician.base_salary, organizationSettings.baseSalary),
-      );
-      const vaAllowance = roundMoney(
-        payrollItem ? payrollItem.va_deduction : valueOrDefault(technician.va_allowance, organizationSettings.vaAllowance),
-      );
-      const vrAllowance = roundMoney(
-        payrollItem ? payrollItem.vr_deduction : valueOrDefault(technician.vr_allowance, organizationSettings.vrAllowance),
-      );
-      const benefitsTotal = roundMoney(vaAllowance + vrAllowance);
-      const calculationBase = calculateCalculationBase(totalServicesValue, commissionPercentage);
-      const commission = payrollItem
-        ? roundMoney(payrollItem.commission_value)
-        : calculateCommissionRemainder(calculationBase, baseSalary, vrAllowance, vaAllowance);
-      const discountsTotal = payrollItem
-        ? roundMoney(payrollItem.discounts_total)
-        : roundMoney(technicianDiscounts
-            .filter((discount) => discount.type === 'discount' || discount.type === 'other')
-            .reduce((total, discount) => total + moneyValue(discount.amount), 0));
-      const advancesTotal = payrollItem
-        ? roundMoney(payrollItem.advances_total)
-        : roundMoney(technicianDiscounts
-            .filter((discount) => discount.type === 'advance')
-            .reduce((total, discount) => total + moneyValue(discount.amount), 0));
-      const totalDeductions = roundMoney(discountsTotal + advancesTotal);
-      const extraHoursValue = roundMoney(payrollItem?.extra_hours_value);
-      const extraordinaryAward = payrollItem
-        ? roundMoney(payrollItem.extraordinary_award_value)
-        : calculateServiceAward(serviceCount, organizationSettings.serviceAwardTiers);
-      const projectedCashNetTotal = payrollItem
-        ? roundMoney(payrollItem.net_total)
-        : roundMoney(baseSalary + commission + extraHoursValue + extraordinaryAward - totalDeductions);
-      const cashNetTotal = hasMonthlyObligation ? projectedCashNetTotal : 0;
-      const displayBenefitsTotal = hasMonthlyObligation ? benefitsTotal : 0;
-      const displayCommission = hasMonthlyObligation ? commission : 0;
-      const displayDiscountsTotal = hasMonthlyObligation ? discountsTotal : 0;
-      const displayAdvancesTotal = hasMonthlyObligation ? advancesTotal : 0;
-      const displayTotalDeductions = hasMonthlyObligation ? totalDeductions : 0;
-      const displayExtraHoursValue = hasMonthlyObligation ? extraHoursValue : 0;
-      const displayExtraordinaryAward = hasMonthlyObligation ? extraordinaryAward : 0;
+    return technicians
+      .filter((technician) => technician.status === 'active')
+      .map((technician) => {
+        const payrollItem = payroll.find((item) => item.technician_id === technician.id && item.competence_month === competenceMonth);
+        const technicianServices = services.filter(
+          (service) => serviceBelongsToTechnician(service, technician) && getServiceCompetence(service) === competenceMonth,
+        );
+        const technicianDiscounts = discounts.filter(
+          (discount) => discount.technician_id === technician.id && discount.competence_month === competenceMonth,
+        );
+        const serviceCount = technicianServices.length;
+        const commissionPercentage = valueOrDefault(technician.commission_percentage, organizationSettings.commissionPercentage);
 
-      return {
-        technician,
-        payrollItem,
-        hasMonthlyActivity,
-        hasMonthlyObligation,
-        serviceCount,
-        totalServicesValue,
-        profitValue: hasMonthlyObligation ? roundMoney(totalServicesValue - roundMoney(cashNetTotal + displayBenefitsTotal)) : 0,
-        serviceFortnightSummary,
-        commissionPercentage,
-        calculationBase,
-        baseSalary,
-        vaAllowance,
-        vrAllowance,
-        benefitsTotal: displayBenefitsTotal,
-        commission: displayCommission,
-        discountsTotal: displayDiscountsTotal,
-        advancesTotal: displayAdvancesTotal,
-        totalDeductions: displayTotalDeductions,
-        extraHoursValue: displayExtraHoursValue,
-        extraordinaryAward: displayExtraordinaryAward,
-        cashNetTotal,
-        payrollNetTotal: roundMoney(cashNetTotal + displayBenefitsTotal),
-      };
-    });
+        // A saved folha (draft or closed) is the truth for its month: the OS list may have changed since.
+        const totalServicesValue = payrollItem
+          ? roundMoney(payrollItem.total_services_value)
+          : roundMoney(technicianServices.reduce((total, service) => total + moneyValue(service.value), 0));
+        const baseSalary = roundMoney(payrollItem ? payrollItem.base_salary : valueOrDefault(technician.base_salary, organizationSettings.baseSalary));
+        const vaAllowance = roundMoney(payrollItem ? payrollItem.va_deduction : valueOrDefault(technician.va_allowance, organizationSettings.vaAllowance));
+        const vrAllowance = roundMoney(payrollItem ? payrollItem.vr_deduction : valueOrDefault(technician.vr_allowance, organizationSettings.vrAllowance));
+        const commission = payrollItem
+          ? roundMoney(payrollItem.commission_value)
+          : calculateCommissionRemainder(calculateCalculationBase(totalServicesValue, commissionPercentage), baseSalary, vrAllowance, vaAllowance);
+        const discountsTotal = payrollItem
+          ? roundMoney(payrollItem.discounts_total)
+          : roundMoney(
+              technicianDiscounts
+                .filter((discount) => discount.type === 'discount' || discount.type === 'other')
+                .reduce((total, discount) => total + moneyValue(discount.amount), 0),
+            );
+        const advancesTotal = payrollItem
+          ? roundMoney(payrollItem.advances_total)
+          : roundMoney(technicianDiscounts.filter((discount) => discount.type === 'advance').reduce((total, discount) => total + moneyValue(discount.amount), 0));
+        // Overtime needs the hours: only the folha opened (or its preview) knows it, so unopened rows leave it out.
+        const extraHoursValue = roundMoney(payrollItem?.extra_hours_value);
+        const extraordinaryAward = payrollItem
+          ? roundMoney(payrollItem.extraordinary_award_value)
+          : calculateServiceAward(serviceCount, organizationSettings.serviceAwardTiers);
+        const cashNetTotal = payrollItem
+          ? roundMoney(payrollItem.net_total)
+          : roundMoney(baseSalary + commission + extraHoursValue + extraordinaryAward - discountsTotal - advancesTotal);
+        const payrollNetTotal = roundMoney(cashNetTotal + vaAllowance + vrAllowance);
+
+        return {
+          technician,
+          payrollItem,
+          serviceCount,
+          totalServicesValue,
+          profitValue: roundMoney(totalServicesValue - payrollNetTotal),
+          serviceFortnightSummary: createServiceFortnightSummary(technicianServices),
+          commissionPercentage,
+          baseSalary,
+          vaAllowance,
+          vrAllowance,
+          commission,
+          discountsTotal,
+          advancesTotal,
+          extraHoursValue,
+          extraordinaryAward,
+          hourBankBalance: roundMoney(payrollItem?.hour_bank_balance),
+          cashNetTotal,
+          payrollNetTotal,
+        };
+      });
   }, [competenceMonth, discounts, organizationSettings, payroll, services, technicians]);
 
-  const filteredRows = rows.filter((row) => {
-    const haystack = normalizeText(`${row.technician.name} ${row.technician.qra}`);
-    return normalizeText(haystack).includes(normalizeText(query));
-  });
+  const filteredRows = rows.filter((row) => normalizeText(`${row.technician.name} ${row.technician.qra}`).includes(normalizeText(query)));
 
-  const rowsWithMonthlyActivity = rows.filter((row) => row.hasMonthlyActivity);
-  const rowsWithMonthlyObligation = rows.filter((row) => row.hasMonthlyObligation);
-
-  const totalCashNet = rowsWithMonthlyObligation.reduce((total, row) => total + row.cashNetTotal, 0);
-  const totalBenefits = rowsWithMonthlyObligation.reduce((total, row) => total + row.benefitsTotal, 0);
-  const totalPayrollNet = rowsWithMonthlyObligation.reduce((total, row) => total + row.payrollNetTotal, 0);
-  const totalServiceCount = rowsWithMonthlyActivity.reduce((total, row) => total + row.serviceCount, 0);
-  const totalServicesValue = rowsWithMonthlyActivity.reduce((total, row) => total + row.totalServicesValue, 0);
-  const totalProfit = rowsWithMonthlyObligation.reduce((total, row) => total + row.profitValue, 0);
-  const closedCount = rowsWithMonthlyObligation.filter((row) => row.payrollItem?.status === 'closed').length;
-  const draftCount = rowsWithMonthlyObligation.filter((row) => row.payrollItem && row.payrollItem.status !== 'closed').length;
-  const pendingClosureCount = rowsWithMonthlyObligation.length - closedCount;
-  const isPayrollAwaitingClosure = rowsWithMonthlyObligation.length > 0 && pendingClosureCount > 0;
+  const totalCashNet = roundMoney(rows.reduce((total, row) => total + row.cashNetTotal, 0));
+  const totalBenefits = roundMoney(rows.reduce((total, row) => total + row.vaAllowance + row.vrAllowance, 0));
+  const totalPayrollNet = roundMoney(rows.reduce((total, row) => total + row.payrollNetTotal, 0));
+  const totalServicesValue = roundMoney(rows.reduce((total, row) => total + row.totalServicesValue, 0));
+  const totalProfit = roundMoney(rows.reduce((total, row) => total + row.profitValue, 0));
+  const closedCount = rows.filter((row) => row.payrollItem?.status === 'closed').length;
+  const pendingCount = rows.length - closedCount;
+  const notOpenedCount = rows.filter((row) => !row.payrollItem).length;
+  const progress = rows.length ? Math.round((closedCount / rows.length) * 100) : 0;
 
   function resetDialogState() {
     setSelectedRow(null);
@@ -594,14 +532,6 @@ export default function PayrollPage() {
     setDraftStatus('none');
   }
 
-  function handleDialogOpenChange(open: boolean) {
-    setIsPayrollDialogOpen(open);
-
-    if (!open) {
-      resetDialogState();
-    }
-  }
-
   async function loadPreview(row: PayrollRow) {
     setIsPreviewLoading(true);
     setOpeningTechnicianId(row.technician.id);
@@ -611,10 +541,7 @@ export default function PayrollPage() {
       const response = await fetch('/api/payroll/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          technicianId: row.technician.id,
-          competenceMonth,
-        }),
+        body: JSON.stringify({ technicianId: row.technician.id, competenceMonth }),
       });
 
       if (!response.ok) {
@@ -623,9 +550,11 @@ export default function PayrollPage() {
 
       const data = await response.json();
       setPayrollDraft(normalizeDraft(data.payroll));
+      return true;
     } catch {
       setPayrollDraft(createDraftFromRow(row, competenceMonth));
-      setDraftError('Não foi possível recalcular automaticamente. Revise os valores carregados antes de finalizar.');
+      setDraftError('Não foi possível recalcular automaticamente. Revise os valores antes de fechar.');
+      return false;
     } finally {
       setIsPreviewLoading(false);
       setOpeningTechnicianId('');
@@ -633,10 +562,6 @@ export default function PayrollPage() {
   }
 
   async function openPayrollDialog(row: PayrollRow) {
-    if (!row.hasMonthlyObligation) {
-      return;
-    }
-
     setSelectedRow(row);
     setIsPayrollDialogOpen(true);
     setDraftError('');
@@ -646,7 +571,7 @@ export default function PayrollPage() {
     setDraftStatus(row.payrollItem ? (row.payrollItem.status === 'closed' ? 'closed' : 'draft') : 'none');
 
     if (row.payrollItem) {
-      // Já existe rascunho/fechamento salvo: carrega os valores gravados, sem recalcular.
+      // Already saved (draft or closed): show exactly what was saved, no recalculation.
       setPayrollDraft(createDraftFromRow(row, competenceMonth));
     } else {
       setPayrollDraft(null);
@@ -712,15 +637,15 @@ export default function PayrollPage() {
             </thead>
             <tbody>
               <tr><td>Ordens de serviço</td><td>${escapeHtml(String(row.serviceCount))}</td></tr>
-              <tr><td>Resumo de quinzena</td><td>${escapeHtml(formatServiceFortnightCountSummary(row.serviceFortnightSummary))}</td></tr>
-              <tr><td>Valor por quinzena</td><td>${escapeHtml(formatServiceFortnightValueSummary(row.serviceFortnightSummary))}</td></tr>
+              <tr><td>Quinzenas</td><td>${escapeHtml(formatFortnights(row.serviceFortnightSummary) || 'Sem OS')}</td></tr>
+              <tr><td>Valor por quinzena</td><td>${escapeHtml(formatFortnights(row.serviceFortnightSummary, true) || 'Sem valor')}</td></tr>
               <tr><td>Comissão</td><td>${escapeHtml(formatCurrency(payrollItem.commission_value))}</td></tr>
               <tr><td>Salário base</td><td>${escapeHtml(formatCurrency(payrollItem.base_salary))}</td></tr>
               <tr><td>Vale-refeição</td><td>${escapeHtml(formatCurrency(payrollItem.vr_deduction))}</td></tr>
               <tr><td>Vale-alimentação</td><td>${escapeHtml(formatCurrency(payrollItem.va_deduction))}</td></tr>
               <tr><td>Horas extras</td><td>${escapeHtml(formatCurrency(payrollItem.extra_hours_value))}</td></tr>
-              <tr><td>Prêmio extraordinário</td><td>${escapeHtml(formatCurrency(payrollItem.extraordinary_award_value))}</td></tr>
-              <tr><td>Banco de horas</td><td>${escapeHtml(formatCurrency(payrollItem.hour_bank_balance))}</td></tr>
+              <tr><td>Prêmio por produção</td><td>${escapeHtml(formatCurrency(payrollItem.extraordinary_award_value ?? 0))}</td></tr>
+              <tr><td>Banco de horas</td><td>${escapeHtml(formatHours(payrollItem.hour_bank_balance))}</td></tr>
               <tr><td>Descontos</td><td>${escapeHtml(formatCurrency(payrollItem.discounts_total))}</td></tr>
               <tr><td>Adiantamentos</td><td>${escapeHtml(formatCurrency(payrollItem.advances_total))}</td></tr>
             </tbody>
@@ -742,29 +667,26 @@ export default function PayrollPage() {
     printWindow.document.close();
   }
 
-  function updateCalculationBase(value: number) {
-    const commissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
-    updateDraftNumber('total_services_value', convertCalculationBaseToTotalServices(value, commissionPercentage));
-  }
+  const currentCommissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
+  const isClosed = draftStatus === 'closed';
 
   function updateDraftNumber(field: PayrollDraftField, value: number) {
+    if (isClosed) return;
+
     setIsDirty(true);
     setPayrollDraft((current) => {
       if (!current) return current;
 
-      const commissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
-
-      const next = {
-        ...current,
-        [field]: roundMoney(value),
-      };
+      const next = { ...current, [field]: roundMoney(value) };
 
       if (commissionFormulaFields.includes(field)) {
-        next.commission_value = calculateFormulaCommission(next, commissionPercentage);
+        next.commission_value = calculateFormulaCommission(next, currentCommissionPercentage);
       }
 
       if (field !== 'net_total') {
-        next.net_total = calculateCashNet(next);
+        // A hand-set "em conta" keeps its adjustment when something else changes, instead of being thrown away.
+        const adjustment = roundMoney(current.net_total - calculateCashNet(current));
+        next.net_total = roundMoney(calculateCashNet(next) + adjustment);
       }
 
       return next;
@@ -772,41 +694,27 @@ export default function PayrollPage() {
   }
 
   function applyCommissionFormula() {
-    setIsDirty(true);
-    setPayrollDraft((current) => {
-      if (!current) return current;
-      const commissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
-      const next = {
-        ...current,
-        commission_value: calculateFormulaCommission(current, commissionPercentage),
-      };
-
-      return {
-        ...next,
-        net_total: calculateCashNet(next),
-      };
-    });
+    updateDraftNumber('commission_value', payrollDraft ? calculateFormulaCommission(payrollDraft, currentCommissionPercentage) : 0);
   }
 
-  async function persistPayroll(status: 'draft' | 'closed') {
+  async function persistPayroll(status: 'draft' | 'closed', reopen = false) {
     if (!payrollDraft) return null;
 
     const response = await fetch('/api/payroll', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...normalizeDraft(payrollDraft), status }),
+      body: JSON.stringify({ ...normalizeDraft(payrollDraft), status, reopen }),
     });
 
     if (!response.ok) {
-      throw new Error('Save failed');
+      const data = await response.json().catch(() => null);
+      throw new Error(typeof data?.error === 'string' ? data.error : 'Não foi possível salvar a folha.');
     }
 
     const savedPayroll = (await response.json()) as Payroll;
     setPayroll((current) => {
       const others = current.filter(
-        (item) =>
-          item.technician_id !== savedPayroll.technician_id ||
-          item.competence_month !== savedPayroll.competence_month,
+        (item) => item.technician_id !== savedPayroll.technician_id || item.competence_month !== savedPayroll.competence_month,
       );
 
       return [savedPayroll, ...others];
@@ -816,7 +724,7 @@ export default function PayrollPage() {
   }
 
   async function autoSaveDraft() {
-    if (!payrollDraft || isClosing) return;
+    if (!payrollDraft || isClosing || isClosed) return true;
 
     setAutoSaveState('saving');
     setDraftError('');
@@ -827,9 +735,11 @@ export default function PayrollPage() {
       setDraftStatus('draft');
       setLastSavedAt(new Date());
       setAutoSaveState('saved');
-    } catch {
+      return true;
+    } catch (error) {
       setAutoSaveState('error');
-      setDraftError('Não foi possível salvar automaticamente. Verifique a conexão e tente novamente.');
+      setDraftError(error instanceof Error ? error.message : 'Não foi possível salvar automaticamente.');
+      return false;
     }
   }
 
@@ -842,22 +752,66 @@ export default function PayrollPage() {
     try {
       await persistPayroll('closed');
       setIsDirty(false);
-      setDraftStatus('closed');
-      setLastSavedAt(new Date());
       setIsPayrollDialogOpen(false);
       resetDialogState();
-    } catch {
-      setDraftError('Não foi possível fechar a folha. Confira os valores e tente novamente.');
+    } catch (error) {
+      setDraftError(error instanceof Error ? error.message : 'Não foi possível fechar a folha.');
     } finally {
       setIsClosing(false);
     }
   }
 
-  // Salva automaticamente como rascunho toda vez que um valor da folha muda,
-  // com um pequeno atraso para agrupar edições consecutivas. O fechamento
-  // continua sendo uma ação manual e explícita.
+  async function reopenPayroll() {
+    if (!payrollDraft || !selectedRow) return;
+
+    const confirmed = window.confirm(
+      `Reabrir a folha de ${selectedRow.technician.name}? Ela deixa de aparecer para o técnico até ser fechada de novo.`,
+    );
+    if (!confirmed) return;
+
+    setAutoSaveState('saving');
+    setDraftError('');
+
+    try {
+      await persistPayroll('draft', true);
+      setDraftStatus('draft');
+      setIsDirty(false);
+      setLastSavedAt(new Date());
+      setAutoSaveState('saved');
+    } catch (error) {
+      setAutoSaveState('error');
+      setDraftError(error instanceof Error ? error.message : 'Não foi possível reabrir a folha.');
+    }
+  }
+
+  async function recalculate() {
+    if (!selectedRow) return;
+
+    if (draftStatus === 'draft') {
+      const confirmed = window.confirm('Recalcular troca os valores desta folha pelos que o sistema calcula agora. Continuar?');
+      if (!confirmed) return;
+    }
+
+    if (await loadPreview(selectedRow)) setIsDirty(true);
+  }
+
+  /** Closing the window never loses an edit: what is still waiting for the auto-save goes first. */
+  async function requestClose() {
+    if (isClosing || autoSaveState === 'saving') return;
+
+    // After a failed save the second try closes anyway, so the window can always be left.
+    if (isDirty && payrollDraft && !isClosed && autoSaveState !== 'error') {
+      const saved = await autoSaveDraft();
+      if (!saved) return;
+    }
+
+    setIsPayrollDialogOpen(false);
+    resetDialogState();
+  }
+
+  // Saves a draft a moment after each change (grouping quick edits). Closing stays a manual, explicit action.
   useEffect(() => {
-    if (!isPayrollDialogOpen || !payrollDraft || !isDirty || isClosing) return;
+    if (!isPayrollDialogOpen || !payrollDraft || !isDirty || isClosing || isClosed) return;
 
     const handle = setTimeout(() => {
       void autoSaveDraft();
@@ -865,57 +819,49 @@ export default function PayrollPage() {
 
     return () => clearTimeout(handle);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [payrollDraft, isDirty, isPayrollDialogOpen, isClosing]);
+  }, [payrollDraft, isDirty, isPayrollDialogOpen, isClosing, isClosed]);
 
-  const currentCommissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
   const formulaCommission = payrollDraft ? calculateFormulaCommission(payrollDraft, currentCommissionPercentage) : 0;
   const formulaCashNet = payrollDraft ? calculateCashNet(payrollDraft) : 0;
-  const previewPayrollNet = payrollDraft ? calculatePayrollNet(payrollDraft) : 0;
-  const previewProfit = payrollDraft ? roundMoney(payrollDraft.total_services_value - previewPayrollNet) : 0;
-  const isClosed = draftStatus === 'closed';
-  const autoSaveLabel =
+  const draftPayrollNet = payrollDraft ? calculatePayrollNet(payrollDraft) : 0;
+  const draftProfit = payrollDraft ? roundMoney(payrollDraft.total_services_value - draftPayrollNet) : 0;
+  const draftBase = payrollDraft ? calculateCalculationBase(payrollDraft.total_services_value, currentCommissionPercentage) : 0;
+  const commissionAdjusted = payrollDraft ? roundMoney(payrollDraft.commission_value) !== roundMoney(formulaCommission) : false;
+  const netAdjusted = payrollDraft ? roundMoney(payrollDraft.net_total) !== roundMoney(formulaCashNet) : false;
+
+  const saveStatus =
     autoSaveState === 'saving'
-      ? 'Salvando alterações...'
+      ? 'Salvando...'
       : autoSaveState === 'error'
-        ? 'Falha ao salvar automaticamente'
-        : lastSavedAt
-          ? `Alterações salvas automaticamente às ${lastSavedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
-          : 'As alterações são salvas automaticamente como rascunho';
-  const hasManualNetAdjustment = payrollDraft ? roundMoney(payrollDraft.net_total) !== roundMoney(formulaCashNet) : false;
+        ? 'Não salvou'
+        : isClosed
+          ? lastSavedAt
+            ? `Fechada em ${lastSavedAt.toLocaleDateString('pt-BR')}`
+            : 'Folha fechada'
+          : isDirty
+            ? 'Alterações pendentes'
+            : lastSavedAt
+              ? `Salvo às ${lastSavedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
+              : 'Salva sozinha como rascunho';
 
   function renderRowStatus(row: PayrollRow) {
-    if (row.payrollItem?.status === 'closed') return <StatusBadge tone="success">Folha fechada</StatusBadge>;
-    if (row.payrollItem) return <StatusBadge tone="info">Rascunho salvo</StatusBadge>;
-    if (row.hasMonthlyObligation) return <StatusBadge tone="warning">Aguardando fechamento</StatusBadge>;
-    return <StatusBadge tone="neutral">Sem movimento</StatusBadge>;
+    if (row.payrollItem?.status === 'closed') return <StatusBadge tone="success">Fechada</StatusBadge>;
+    if (row.payrollItem) return <StatusBadge tone="info">Rascunho</StatusBadge>;
+    return <StatusBadge tone="warning">Não aberta</StatusBadge>;
   }
 
   function renderRowActions(row: PayrollRow) {
-    if (!row.hasMonthlyObligation) {
-      return <span className="text-sm text-muted-foreground">-</span>;
-    }
-
     const isClosedRow = row.payrollItem?.status === 'closed';
     const isLoadingRow = openingTechnicianId === row.technician.id;
 
     return (
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant={isClosedRow ? 'outline' : 'default'}
-          onClick={() => openPayrollDialog(row)}
-          disabled={isLoadingRow}
-        >
-          <Calculator className="h-4 w-4" />
-          {isLoadingRow ? 'Carregando' : isClosedRow ? 'Editar' : row.payrollItem ? 'Continuar rascunho' : 'Abrir folha'}
-        </Button>
+      <div className="flex items-center justify-end gap-2">
         {isClosedRow ? (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
                 size="icon-sm"
                 onClick={() => openPayrollPdf(row)}
                 aria-label={`Gerar PDF da folha de ${row.technician.name}`}
@@ -923,14 +869,17 @@ export default function PayrollPage() {
                 <FileText className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>Gerar PDF da folha</TooltipContent>
+            <TooltipContent side="top" sideOffset={6}>Gerar PDF</TooltipContent>
           </Tooltip>
         ) : null}
+        <Button type="button" size="sm" variant={isClosedRow ? 'outline' : 'default'} onClick={() => openPayrollDialog(row)} disabled={isLoadingRow}>
+          {isLoadingRow ? 'Abrindo...' : isClosedRow ? 'Ver folha' : row.payrollItem ? 'Continuar' : 'Abrir folha'}
+        </Button>
       </div>
     );
   }
 
-  if (loading || isDataLoading || !user) {
+  if (loading || !user || (isDataLoading && !hasLoaded)) {
     return <LoadingShell role="admin" />;
   }
 
@@ -939,29 +888,29 @@ export default function PayrollPage() {
       <PageHeader
         eyebrow="Fechamento"
         title="Folha de pagamento"
-        description="Abra a folha do técnico e edite à vontade: cada alteração é salva automaticamente como rascunho. A folha só é enviada ao técnico quando você clicar em Fechar folha."
+        description="Abra a folha de cada técnico, confira e feche. Enquanto estiver aberta, ela fica só com você."
       >
-        <div className="flex items-end gap-2" role="group" aria-label="Competência">
-          <label className="text-sm">
-            <span className="mb-1.5 block text-xs font-medium text-muted-foreground">Competência</span>
-            <select
-              aria-label="Mês"
-              value={String(selectedCompetenceMonth)}
-              onChange={(event) => setCompetenceMonth(`${selectedCompetenceYear}-${String(Number(event.target.value)).padStart(2, '0')}`)}
-              className="min-h-11 min-w-40 rounded-lg border border-input bg-card px-3 text-sm font-medium outline-none transition focus:ring-2 focus:ring-ring"
-            >
-              {monthNames.map((month, index) => (
-                <option key={month} value={index + 1}>
-                  {month}
-                </option>
-              ))}
-            </select>
-          </label>
+        <div className="flex items-center gap-1.5" role="group" aria-label="Competência">
+          <Button type="button" variant="outline" size="icon" onClick={() => shiftMonth(-1)} aria-label="Mês anterior">
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <select
+            aria-label="Mês"
+            value={String(selectedCompetenceMonth)}
+            onChange={(event) => setCompetenceMonth(`${selectedCompetenceYear}-${String(Number(event.target.value)).padStart(2, '0')}`)}
+            className="h-10 min-w-36 rounded-lg border border-input bg-card px-3 text-sm font-medium outline-none transition focus:ring-2 focus:ring-ring"
+          >
+            {monthNames.map((month, index) => (
+              <option key={month} value={index + 1}>
+                {month}
+              </option>
+            ))}
+          </select>
           <select
             aria-label="Ano"
             value={String(selectedCompetenceYear)}
             onChange={(event) => setCompetenceMonth(`${event.target.value}-${String(selectedCompetenceMonth).padStart(2, '0')}`)}
-            className="min-h-11 rounded-lg border border-input bg-card px-3 text-sm font-medium outline-none transition focus:ring-2 focus:ring-ring"
+            className="h-10 rounded-lg border border-input bg-card px-3 text-sm font-medium outline-none transition focus:ring-2 focus:ring-ring"
           >
             {competenceYearOptions.map((year) => (
               <option key={year} value={year}>
@@ -969,202 +918,164 @@ export default function PayrollPage() {
               </option>
             ))}
           </select>
+          <Button type="button" variant="outline" size="icon" onClick={() => shiftMonth(1)} aria-label="Próximo mês">
+            <ChevronRight className="h-4 w-4" />
+          </Button>
         </div>
       </PageHeader>
 
       {dataError ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{dataError}</div> : null}
 
-      {/* Two full rows, no gaps: production and result on top (4), payroll cost below (3, wider). */}
-      <div className="mb-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
-        <div className="grid xl:col-span-3">
-          <MetricCard title="Valor bruto" value={formatCurrency(totalServicesValue)} hint="Produção do mês" icon={Calculator} />
-        </div>
-        <div className="grid xl:col-span-3">
-          <MetricCard title="OS" value={totalServiceCount} hint="Ordens do mês" icon={Calculator} />
-        </div>
-        <div className="grid xl:col-span-3">
-          <MetricCard title="Lucro gerado" value={formatCurrency(totalProfit)} hint="Valor bruto - folha total" icon={WalletCards} tone={totalProfit >= 0 ? 'success' : 'danger'} accentText />
-        </div>
-        <div className="grid xl:col-span-3">
-          <MetricCard
-            title="Finalizados"
-            value={`${closedCount}/${rowsWithMonthlyObligation.length}`}
-            hint={isPayrollAwaitingClosure ? `Faltam ${pendingClosureCount} folha(s) (${draftCount} em rascunho).` : 'Todas as folhas da competência foram fechadas.'}
-            icon={WalletCards}
-            tone={isPayrollAwaitingClosure ? 'warning' : 'success'}
-          />
-        </div>
-        <div className="grid xl:col-span-4">
-          <MetricCard title="Em conta" value={formatCurrency(totalCashNet)} hint="Valor já devido em conta" icon={WalletCards} tone="success" />
-        </div>
-        <div className="grid xl:col-span-4">
-          <MetricCard title="Cartões" value={formatCurrency(totalBenefits)} hint="VR + VA já devidos" icon={CreditCard} />
-        </div>
-        <div className="grid sm:col-span-2 xl:col-span-4">
-          <MetricCard title="Líquido da folha" value={formatCurrency(totalPayrollNet)} hint="Custo total já devido" icon={Calculator} tone="success" />
-        </div>
+      <div className={cn('space-y-5 transition-opacity', isDataLoading && 'pointer-events-none opacity-60')} aria-busy={isDataLoading}>
+        <SummaryBand
+          items={[
+            { label: 'Valor bruto', value: formatCurrency(totalServicesValue) },
+            { label: 'Em conta', value: formatCurrency(totalCashNet) },
+            { label: 'Cartões (VR e VA)', value: formatCurrency(totalBenefits) },
+            { label: 'Folha total', value: formatCurrency(totalPayrollNet) },
+            { label: 'Lucro gerado', value: formatCurrency(totalProfit), tone: totalProfit >= 0 ? 'good' : 'bad' },
+          ]}
+        />
+
+        <DataPanel
+          title={rows.length ? `${closedCount} de ${rows.length} folhas fechadas` : 'Técnicos'}
+          description={
+            !rows.length
+              ? 'Nenhum técnico ativo. Cadastre técnicos para montar a folha.'
+              : pendingCount === 0
+                ? `A folha de ${formatCompetenceLabel(competenceMonth)} está completa.`
+                : notOpenedCount > 0
+                  ? `Faltam ${pendingCount} para fechar ${formatCompetenceLabel(competenceMonth)}. Nas folhas ainda não abertas, os valores são uma estimativa (sem horas extras).`
+                  : `Faltam ${pendingCount} para fechar ${formatCompetenceLabel(competenceMonth)}.`
+          }
+          action={
+            <div className="flex min-h-10 w-full items-center gap-2 rounded-lg border border-border bg-background px-3 sm:w-auto">
+              <Search className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              <input
+                value={query}
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Buscar técnico"
+                aria-label="Buscar técnico"
+                className="w-full bg-transparent text-sm outline-none sm:w-52"
+              />
+            </div>
+          }
+        >
+          {rows.length ? (
+            <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-valuenow={progress} aria-valuemin={0} aria-valuemax={100} aria-label="Folhas fechadas">
+              <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${progress}%` }} />
+            </div>
+          ) : null}
+
+          <div className="hidden overflow-x-auto lg:block">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border text-left text-[13px] text-muted-foreground">
+                  <th className="py-3 pr-4 font-medium">Técnico</th>
+                  <th className="py-3 pr-4 text-right font-medium">OS</th>
+                  <th className="py-3 pr-4 text-right font-medium">Valor bruto</th>
+                  <th className="py-3 pr-4 text-right font-medium">Em conta</th>
+                  <th className="py-3 pr-4 text-right font-medium">Folha total</th>
+                  <th className="py-3 pr-4 text-right font-medium">Lucro</th>
+                  <th className="py-3 pr-4 font-medium">Situação</th>
+                  <th className="py-3 text-right font-medium">
+                    <span className="sr-only">Ações</span>
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredRows.map((row) => (
+                  <tr key={row.technician.id} className="border-b border-border last:border-0">
+                    <td className="py-3 pr-4">
+                      <div className="font-medium">{row.technician.name}</div>
+                      {row.technician.qra ? <div className="text-xs text-muted-foreground">{row.technician.qra}</div> : null}
+                    </td>
+                    <td className="py-3 pr-4 text-right tabular-nums">{row.serviceCount}</td>
+                    <td className="whitespace-nowrap py-3 pr-4 text-right tabular-nums">{formatCurrency(row.totalServicesValue)}</td>
+                    <td className="whitespace-nowrap py-3 pr-4 text-right font-semibold tabular-nums">{formatCurrency(row.cashNetTotal)}</td>
+                    <td className="whitespace-nowrap py-3 pr-4 text-right tabular-nums">{formatCurrency(row.payrollNetTotal)}</td>
+                    <td className={cn('whitespace-nowrap py-3 pr-4 text-right font-semibold tabular-nums', row.profitValue >= 0 ? 'text-emerald-700' : 'text-rose-700')}>
+                      {formatCurrency(row.profitValue)}
+                    </td>
+                    <td className="py-3 pr-4">{renderRowStatus(row)}</td>
+                    <td className="py-3">{renderRowActions(row)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="grid gap-3 lg:hidden">
+            {filteredRows.map((row) => (
+              <div key={row.technician.id} className="rounded-xl border border-border bg-background p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="font-medium">{row.technician.name}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {row.technician.qra ? `${row.technician.qra} · ` : ''}
+                      {row.serviceCount} OS
+                    </div>
+                  </div>
+                  {renderRowStatus(row)}
+                </div>
+
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Valor bruto</dt>
+                    <dd className="font-medium tabular-nums">{formatCurrency(row.totalServicesValue)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Em conta</dt>
+                    <dd className="font-semibold tabular-nums">{formatCurrency(row.cashNetTotal)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Folha total</dt>
+                    <dd className="font-medium tabular-nums">{formatCurrency(row.payrollNetTotal)}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-xs text-muted-foreground">Lucro</dt>
+                    <dd className={cn('font-semibold tabular-nums', row.profitValue >= 0 ? 'text-emerald-700' : 'text-rose-700')}>{formatCurrency(row.profitValue)}</dd>
+                  </div>
+                </dl>
+
+                <div className="mt-4">{renderRowActions(row)}</div>
+              </div>
+            ))}
+          </div>
+
+          {rows.length && !filteredRows.length ? <p className="py-6 text-center text-sm text-muted-foreground">Nenhum técnico encontrado para “{query}”.</p> : null}
+        </DataPanel>
       </div>
 
-      {isPayrollAwaitingClosure ? (
-        <div className="mb-4 flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <div>
-            A competência {formatCompetenceLabel(competenceMonth)} ainda não foi fechada. Falta concluir a folha de {pendingClosureCount} técnico(s). Enquanto isso, os totais desta tela servem como conferência e o painel administrativo continua aguardando o fechamento completo.
-          </div>
-        </div>
-      ) : null}
-
-
-      {!rowsWithMonthlyActivity.length && rowsWithMonthlyObligation.length ? (
-        <div className="mb-4 rounded-xl border border-sky-200 bg-sky-50 p-4 text-sm text-sky-800">
-          Esta competência ainda não tem OS lançadas. Os totais do topo já mostram o salário fixo e os benefícios que a operação deve pagar no mês.
-        </div>
-      ) : null}
-
-      <DataPanel
-        title="Fechamento por técnico"
-        description="A tabela mostra o resumo do mês, a base de cálculo (valor usado para os 25%) e o breakdown de Q1 e Q2. Abra a folha para editar (salva sozinho como rascunho) e feche quando estiver pronto para o técnico."
-        action={
-          <div className="flex min-h-10 w-full items-center gap-2 rounded-md border border-border bg-background px-3 sm:w-auto">
-            <Search className="h-4 w-4 text-muted-foreground" />
-            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar técnico" className="w-full bg-transparent text-sm outline-none sm:w-56" />
-          </div>
-        }
+      <Dialog
+        open={isPayrollDialogOpen}
+        onOpenChange={(open) => {
+          if (open) setIsPayrollDialogOpen(true);
+          else void requestClose();
+        }}
       >
-        <div className="hidden overflow-x-auto lg:block">
-          <table className="w-full min-w-6xl text-sm">
-            <thead>
-              <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                <th className="py-3 pr-4 font-medium">Técnico</th>
-                <th className="py-3 pr-4 font-medium">OS</th>
-                <th className="py-3 pr-4 font-medium">Valor bruto</th>
-                <th className="py-3 pr-4 font-medium">Base de cálculo</th>
-                <th className="py-3 pr-4 font-medium">Comissão</th>
-                <th className="py-3 pr-4 font-medium">Descontos</th>
-                <th className="py-3 pr-4 font-medium">Em conta</th>
-                <th className="py-3 pr-4 font-medium">Líquido da folha</th>
-                <th className="py-3 pr-4 font-medium">LUCRO GERADO</th>
-                <th className="py-3 pr-4 font-medium">Status</th>
-                <th className="py-3 font-medium">Ação</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRows.map((row) => (
-                <tr key={row.technician.id} className="border-b border-border last:border-0">
-                  <td className="py-3 pr-4">
-                    <div className="font-medium">{row.technician.name}</div>
-                    {row.technician.qra ? <div className="text-xs text-muted-foreground">{row.technician.qra}</div> : null}
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div className="font-medium">{row.serviceCount}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.hasMonthlyActivity ? formatServiceFortnightCountSummary(row.serviceFortnightSummary) : row.hasMonthlyObligation ? 'Sem OS na competência' : 'Sem movimento na competência'}
-                    </div>
-                  </td>
-                  <td className="py-3 pr-4">
-                    <div className="font-medium">{formatCurrency(row.totalServicesValue)}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {row.hasMonthlyActivity ? formatServiceFortnightValueSummary(row.serviceFortnightSummary) : row.hasMonthlyObligation ? 'Somente custo fixo' : 'Sem valor lançado'}
-                    </div>
-                  </td>
-                  <td className="whitespace-nowrap py-3 pr-4">
-                    <div className="font-medium">{row.hasMonthlyObligation ? formatCurrency(row.calculationBase) : '-'}</div>
-                    {row.hasMonthlyObligation ? (
-                      <div className="text-xs text-muted-foreground">{row.commissionPercentage}% do bruto</div>
-                    ) : null}
-                  </td>
-                  <td className="whitespace-nowrap py-3 pr-4">{row.hasMonthlyObligation ? formatCurrency(row.commission) : '-'}</td>
-                  <td className="whitespace-nowrap py-3 pr-4">{row.hasMonthlyObligation ? formatCurrency(row.totalDeductions) : '-'}</td>
-                  <td className="whitespace-nowrap py-3 pr-4 font-semibold">{row.hasMonthlyObligation ? formatCurrency(row.cashNetTotal) : '-'}</td>
-                  <td className="whitespace-nowrap py-3 pr-4 font-semibold">{row.hasMonthlyObligation ? formatCurrency(row.payrollNetTotal) : '-'}</td>
-                  <td className={`whitespace-nowrap py-3 pr-4 font-semibold ${row.profitValue >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                    {row.hasMonthlyObligation ? formatCurrency(row.profitValue) : '-'}
-                  </td>
-                  <td className="py-3 pr-4">{renderRowStatus(row)}</td>
-                  <td className="py-3">{renderRowActions(row)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="grid gap-3 lg:hidden">
-          {filteredRows.map((row) => (
-            <div key={row.technician.id} className="rounded-lg border border-border bg-background p-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="font-medium">{row.technician.name}</div>
-                  {row.technician.qra ? <div className="text-xs text-muted-foreground">{row.technician.qra}</div> : null}
-                </div>
-                {renderRowStatus(row)}
-              </div>
-
-              <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-sm">
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">OS</dt>
-                  <dd className="font-medium">
-                    {row.serviceCount}
-                    <span className="block text-xs font-normal text-muted-foreground">
-                      {row.hasMonthlyActivity ? formatServiceFortnightCountSummary(row.serviceFortnightSummary) : row.hasMonthlyObligation ? 'Sem OS' : 'Sem movimento'}
-                    </span>
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">Valor bruto</dt>
-                  <dd className="font-medium">{formatCurrency(row.totalServicesValue)}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">Base de cálculo</dt>
-                  <dd className="font-medium">
-                    {row.hasMonthlyObligation ? formatCurrency(row.calculationBase) : '-'}
-                    {row.hasMonthlyObligation ? <span className="block text-xs font-normal text-muted-foreground">{row.commissionPercentage}% do bruto</span> : null}
-                  </dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">Comissão</dt>
-                  <dd className="font-medium">{row.hasMonthlyObligation ? formatCurrency(row.commission) : '-'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">Descontos</dt>
-                  <dd className="font-medium">{row.hasMonthlyObligation ? formatCurrency(row.totalDeductions) : '-'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">Em conta</dt>
-                  <dd className="font-semibold">{row.hasMonthlyObligation ? formatCurrency(row.cashNetTotal) : '-'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">Líquido da folha</dt>
-                  <dd className="font-semibold">{row.hasMonthlyObligation ? formatCurrency(row.payrollNetTotal) : '-'}</dd>
-                </div>
-                <div>
-                  <dt className="text-xs uppercase text-muted-foreground">Lucro gerado</dt>
-                  <dd className={`font-semibold ${row.profitValue >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                    {row.hasMonthlyObligation ? formatCurrency(row.profitValue) : '-'}
-                  </dd>
-                </div>
-              </dl>
-
-              <div className="mt-4">{renderRowActions(row)}</div>
+        <DialogContent className="flex max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:max-w-4xl">
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <div className="flex flex-wrap items-center gap-3">
+              <DialogTitle className={MODAL_TITLE_CLASS}>{selectedRow ? selectedRow.technician.name : 'Folha do técnico'}</DialogTitle>
+              {payrollDraft ? (
+                <StatusBadge tone={isClosed ? 'success' : draftStatus === 'draft' ? 'info' : 'warning'}>
+                  {isClosed ? 'Fechada' : draftStatus === 'draft' ? 'Rascunho' : 'Nova'}
+                </StatusBadge>
+              ) : null}
             </div>
-          ))}
-        </div>
-      </DataPanel>
-
-      <Dialog open={isPayrollDialogOpen} onOpenChange={handleDialogOpenChange}>
-        <DialogContent className="flex h-auto max-h-[calc(100dvh-1rem)] w-[calc(100vw-1rem)] max-w-[calc(100vw-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:w-[calc(100vw-2rem)] sm:max-w-5xl xl:max-w-6xl 2xl:max-w-7xl">
-          <DialogHeader className="shrink-0 border-b border-border p-4 pb-3 sm:p-6 sm:pb-4">
-            <DialogTitle>Folha do técnico</DialogTitle>
-            <DialogDescription>
-              {selectedRow ? `${selectedRow.technician.name} - competência ${formatCompetenceLabel(competenceMonth)}` : 'Abra a folha, revise os valores e feche quando estiver certo.'}
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
+              {formatCompetenceLabel(competenceMonth)}
+              {selectedRow ? ` · ${selectedRow.serviceCount} OS${formatFortnights(selectedRow.serviceFortnightSummary) ? ` (${formatFortnights(selectedRow.serviceFortnightSummary)})` : ''}` : ''}
             </DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-6">
-            {draftError ? <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{draftError}</div> : null}
-            {selectedRow && selectedRow.serviceCount === 0 ? (
-              <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
-                Não há OS lançadas para este técnico nesta competência. A prévia abaixo já considera salário base, VR, VA e demais valores fixos do mês.
-              </div>
+          <div className={cn(MODAL_BODY_CLASS, 'space-y-6')}>
+            {draftError ? <ModalNotice tone="error">{draftError}</ModalNotice> : null}
+            {isClosed ? (
+              <ModalNotice tone="success">Esta folha está fechada e o técnico já a vê. Para mudar algum valor, reabra a folha.</ModalNotice>
+            ) : selectedRow && selectedRow.serviceCount === 0 && payrollDraft ? (
+              <ModalNotice tone="warning">Este técnico não tem OS nesta competência. Valem só os valores fixos do mês.</ModalNotice>
             ) : null}
 
             {isPreviewLoading && !payrollDraft ? (
@@ -1172,187 +1083,171 @@ export default function PayrollPage() {
             ) : null}
 
             {payrollDraft ? (
-              <div className="space-y-5">
-                <div className="rounded-lg border border-border bg-muted/20 p-4">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-base font-semibold">Resumo</h3>
-                    <HelpTip text="As alterações são salvas automaticamente como rascunho. A folha só fica visível para o técnico quando você clicar em Fechar folha." />
-                    <StatusBadge tone={isClosed ? 'success' : draftStatus === 'draft' ? 'info' : 'warning'}>
-                      {isClosed ? 'Fechada' : draftStatus === 'draft' ? 'Rascunho salvo' : 'Em aberto'}
-                    </StatusBadge>
-                    <StatusBadge tone={hasManualNetAdjustment ? 'warning' : 'info'}>
-                      {hasManualNetAdjustment ? 'Ajuste manual' : 'Fórmula'}
-                    </StatusBadge>
-                    <StatusBadge tone="info">{currentCommissionPercentage}% bruto</StatusBadge>
-                    {selectedRow ? <StatusBadge tone="info">{selectedRow.serviceCount} OS</StatusBadge> : null}
-                    {selectedRow ? <StatusBadge tone="info">Q1 {selectedRow.serviceFortnightSummary.Q1.count}</StatusBadge> : null}
-                    {selectedRow ? <StatusBadge tone="info">Q2 {selectedRow.serviceFortnightSummary.Q2.count}</StatusBadge> : null}
-                    {selectedRow && selectedRow.serviceFortnightSummary.unassigned.count > 0 ? (
-                      <StatusBadge tone="warning">Sem quinzena {selectedRow.serviceFortnightSummary.unassigned.count}</StatusBadge>
-                    ) : null}
+              <>
+                <SummaryBand
+                  items={[
+                    { label: 'Valor bruto', value: formatCurrency(payrollDraft.total_services_value) },
+                    { label: 'Em conta', value: formatCurrency(payrollDraft.net_total) },
+                    { label: 'Folha total', value: formatCurrency(draftPayrollNet) },
+                    { label: 'Lucro gerado', value: formatCurrency(draftProfit), tone: draftProfit >= 0 ? 'good' : 'bad' },
+                  ]}
+                />
+
+                <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
+                  <div className="space-y-8">
+                    <ModalSection title="Produção">
+                      <div className="divide-y divide-border">
+                        <AmountRow
+                          label="Valor bruto das OS"
+                          hint={selectedRow ? formatFortnights(selectedRow.serviceFortnightSummary, true) || 'Sem OS no mês' : undefined}
+                          value={payrollDraft.total_services_value}
+                          onChange={(value) => updateDraftNumber('total_services_value', value)}
+                          readOnly={isClosed}
+                        />
+                      </div>
+                    </ModalSection>
+
+                    <ModalSection title="Pago em conta">
+                      <div className="divide-y divide-border">
+                        <AmountRow label="Salário base" value={payrollDraft.base_salary} onChange={(value) => updateDraftNumber('base_salary', value)} readOnly={isClosed} />
+                        <AmountRow
+                          label="Comissão"
+                          hint={commissionAdjusted ? `Ajustada à mão. Pela fórmula: ${formatCurrency(formulaCommission)}` : undefined}
+                          value={payrollDraft.commission_value}
+                          onChange={(value) => updateDraftNumber('commission_value', value)}
+                          readOnly={isClosed}
+                        />
+                        <AmountRow label="Horas extras" value={payrollDraft.extra_hours_value} onChange={(value) => updateDraftNumber('extra_hours_value', value)} readOnly={isClosed} />
+                        <AmountRow
+                          label="Prêmio por produção"
+                          value={payrollDraft.extraordinary_award_value}
+                          onChange={(value) => updateDraftNumber('extraordinary_award_value', value)}
+                          readOnly={isClosed}
+                        />
+                        <AmountRow label="Descontos" value={payrollDraft.discounts_total} onChange={(value) => updateDraftNumber('discounts_total', value)} readOnly={isClosed} />
+                        <AmountRow label="Adiantamentos" value={payrollDraft.advances_total} onChange={(value) => updateDraftNumber('advances_total', value)} readOnly={isClosed} />
+                        <AmountRow
+                          emphasis
+                          label="Valor em conta"
+                          hint={netAdjusted ? `Ajustado à mão. Pela soma acima: ${formatCurrency(formulaCashNet)}` : 'Soma dos ganhos menos descontos e adiantamentos'}
+                          value={payrollDraft.net_total}
+                          onChange={(value) => updateDraftNumber('net_total', value)}
+                          readOnly={isClosed}
+                        />
+                      </div>
+                      {netAdjusted && !isClosed ? (
+                        <button
+                          type="button"
+                          onClick={() => updateDraftNumber('net_total', formulaCashNet)}
+                          className="text-sm font-medium text-primary hover:underline"
+                        >
+                          Usar a soma ({formatCurrency(formulaCashNet)})
+                        </button>
+                      ) : null}
+                    </ModalSection>
                   </div>
 
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                    <div className="rounded-md border border-border bg-background p-3">
-                      <div className="text-xs uppercase text-muted-foreground">Bruto</div>
-                      <div className="mt-1 text-lg font-semibold">{formatCurrency(payrollDraft.total_services_value)}</div>
-                    </div>
-                    <div className="rounded-md border border-border bg-background p-3">
-                      <div className="text-xs uppercase text-muted-foreground">Comissão</div>
-                      <div className="mt-1 text-lg font-semibold">{formatCurrency(formulaCommission)}</div>
-                    </div>
-                    <div className="rounded-md border border-border bg-background p-3">
-                      <div className="text-xs uppercase text-muted-foreground">Em conta</div>
-                      <div className="mt-1 text-lg font-semibold">{formatCurrency(payrollDraft.net_total)}</div>
-                    </div>
-                    <div className="rounded-md border border-border bg-background p-3">
-                      <div className="text-xs uppercase text-muted-foreground">Folha total</div>
-                      <div className="mt-1 text-lg font-semibold">{formatCurrency(previewPayrollNet)}</div>
-                    </div>
-                    <div className="rounded-md border border-border bg-background p-3">
-                      <div className="text-xs uppercase text-muted-foreground">LUCRO GERADO</div>
-                      <div className={`mt-1 text-lg font-semibold ${previewProfit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{formatCurrency(previewProfit)}</div>
-                    </div>
-                  </div>
-                </div>
+                  <div className="space-y-8">
+                    <ModalSection title="Cartões" description="Pagos no cartão e abatidos da base da comissão.">
+                      <div className="divide-y divide-border">
+                        <AmountRow label="Vale-refeição (VR)" value={payrollDraft.vr_deduction} onChange={(value) => updateDraftNumber('vr_deduction', value)} readOnly={isClosed} />
+                        <AmountRow label="Vale-alimentação (VA)" value={payrollDraft.va_deduction} onChange={(value) => updateDraftNumber('va_deduction', value)} readOnly={isClosed} />
+                      </div>
+                    </ModalSection>
 
-                <div className="grid items-start gap-4 lg:grid-cols-2 2xl:grid-cols-4">
-                  <section className="rounded-md border border-border p-4">
-                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-semibold">1. Comissão</h3>
-                          <HelpTip text="Os 25% do bruto formam a base do técnico. A comissão é o que sobra depois de abater salário base, VR e VA." />
+                    <ModalSection title="Banco de horas">
+                      <div className="divide-y divide-border">
+                        <AmountRow
+                          label="Saldo do mês"
+                          unit="h"
+                          value={payrollDraft.hour_bank_balance}
+                          onChange={(value) => updateDraftNumber('hour_bank_balance', value)}
+                          readOnly={isClosed}
+                        />
+                      </div>
+                    </ModalSection>
+
+                    <ModalSection
+                      title="Como a comissão é calculada"
+                      action={
+                        commissionAdjusted && !isClosed ? (
+                          <button type="button" onClick={applyCommissionFormula} className="text-sm font-medium text-primary hover:underline">
+                            Usar a fórmula
+                          </button>
+                        ) : undefined
+                      }
+                    >
+                      <dl className="space-y-1.5 rounded-xl bg-secondary/40 px-4 py-3 text-sm tabular-nums">
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-muted-foreground">
+                            {currentCommissionPercentage}% de {formatCurrency(payrollDraft.total_services_value)}
+                          </dt>
+                          <dd>{formatCurrency(draftBase)}</dd>
                         </div>
-                        {selectedRow ? (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            {selectedRow.serviceCount} OS | {formatServiceFortnightCountSummary(selectedRow.serviceFortnightSummary)} | {formatServiceFortnightValueSummary(selectedRow.serviceFortnightSummary)}
-                          </p>
-                        ) : null}
-                      </div>
-                      <Button type="button" variant="secondary" size="sm" onClick={applyCommissionFormula} className="shrink-0">
-                        <RefreshCw className="h-4 w-4" />
-                        Atualizar
-                      </Button>
-                    </div>
-                    <div className="grid gap-3">
-                      <MoneyInput
-                        label="Base do cálculo"
-                        value={calculateCalculationBase(payrollDraft.total_services_value, selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage)}
-                        onChange={updateCalculationBase}
-                        hint={`${selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage}% do total bruto (${formatCurrency(payrollDraft.total_services_value)})`}
-                      />
-                      <MoneyInput
-                        label="Comissão"
-                        value={payrollDraft.commission_value}
-                        onChange={(value) => updateDraftNumber('commission_value', value)}
-                        hint="Base do cálculo - salário base - VR - VA"
-                      />
-                    </div>
-                  </section>
-
-                  <section className="rounded-md border border-border p-4">
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">2. Fixo e benefícios</h3>
-                        <HelpTip text="Salário base, VR e VA entram como abatimento da base dos 25%. VR e VA continuam aparecendo no total da folha porque são pagos no cartão." />
-                      </div>
-                    </div>
-                    <div className="grid gap-3">
-                      <MoneyInput label="Salário base" value={payrollDraft.base_salary} onChange={(value) => updateDraftNumber('base_salary', value)} />
-                      <MoneyInput label="Vale-refeição" value={payrollDraft.vr_deduction} onChange={(value) => updateDraftNumber('vr_deduction', value)} />
-                      <MoneyInput label="Vale-alimentação" value={payrollDraft.va_deduction} onChange={(value) => updateDraftNumber('va_deduction', value)} />
-                    </div>
-                  </section>
-
-                  <section className="rounded-md border border-border p-4">
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">3. Acréscimos</h3>
-                        <HelpTip text="Horas extras e prêmio extraordinário aumentam o valor pago em conta. Banco de horas é apenas informativo neste bloco." />
-                      </div>
-                    </div>
-                    <div className="grid gap-3">
-                      <MoneyInput label="Horas extras" value={payrollDraft.extra_hours_value} onChange={(value) => updateDraftNumber('extra_hours_value', value)} />
-                      <MoneyInput label="Prêmio extraordinário" value={payrollDraft.extraordinary_award_value} onChange={(value) => updateDraftNumber('extraordinary_award_value', value)} />
-                      <MoneyInput label="Banco de horas" value={payrollDraft.hour_bank_balance} onChange={(value) => updateDraftNumber('hour_bank_balance', value)} />
-                    </div>
-                  </section>
-
-                  <section className="rounded-md border border-border p-4">
-                    <div className="mb-4">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-semibold">4. Descontos e pagamento</h3>
-                        <HelpTip text="Descontos de folha e adiantamentos reduzem o valor em conta. Se necessário, você pode ajustar o valor final manualmente antes de fechar a folha." />
-                      </div>
-                    </div>
-                    <div className="grid gap-3">
-                      <MoneyInput label="Descontos de folha" value={payrollDraft.discounts_total} onChange={(value) => updateDraftNumber('discounts_total', value)} />
-                      <MoneyInput label="Adiantamento" value={payrollDraft.advances_total} onChange={(value) => updateDraftNumber('advances_total', value)} />
-                      <MoneyInput label="Valor em conta a pagar" value={payrollDraft.net_total} onChange={(value) => updateDraftNumber('net_total', value)} />
-                    </div>
-                  </section>
-                </div>
-
-                <div className="rounded-md border border-border bg-muted/25 p-4">
-                  <div className="flex items-center gap-2">
-                    <h3 className="font-semibold">Resumo em conta</h3>
-                    <HelpTip text="A fórmula faz: 25% do bruto - salário base - VR - VA. Depois soma extras e prêmio, e por fim desconta descontos e adiantamentos para chegar no valor em conta." />
-                  </div>
-                  <div className="mt-3 grid gap-3 text-sm md:grid-cols-3">
-                    <div>
-                      <span className="block text-xs uppercase text-muted-foreground">Comissão</span>
-                      <strong>{formatCurrency(formulaCommission)}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-xs uppercase text-muted-foreground">Pela fórmula</span>
-                      <strong>{formatCurrency(formulaCashNet)}</strong>
-                    </div>
-                    <div>
-                      <span className="block text-xs uppercase text-muted-foreground">Para fechar</span>
-                      <strong>{formatCurrency(payrollDraft.net_total)}</strong>
-                    </div>
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-muted-foreground">− salário base, VR e VA</dt>
+                          <dd>− {formatCurrency(payrollDraft.base_salary + payrollDraft.vr_deduction + payrollDraft.va_deduction)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-4 border-t border-border pt-1.5 font-semibold">
+                          <dt>Comissão</dt>
+                          <dd>{formatCurrency(formulaCommission)}</dd>
+                        </div>
+                      </dl>
+                    </ModalSection>
                   </div>
                 </div>
-              </div>
+              </>
             ) : null}
           </div>
 
-          <DialogFooter className="shrink-0 flex-col gap-3 border-t border-border p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+          <DialogFooter className={cn(MODAL_FOOTER_CLASS, 'flex-col items-stretch sm:flex-row sm:items-center sm:justify-between')}>
             <div
-              className={`flex items-center gap-2 text-xs font-medium ${
-                autoSaveState === 'error' ? 'text-rose-600' : autoSaveState === 'saving' ? 'text-muted-foreground' : 'text-emerald-700'
-              }`}
+              className={cn(
+                'flex items-center gap-2 text-sm',
+                autoSaveState === 'error' ? 'font-medium text-rose-600' : 'text-muted-foreground',
+              )}
               aria-live="polite"
             >
               {autoSaveState === 'saving' ? (
-                <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                <RefreshCw className="h-4 w-4 animate-spin" />
               ) : autoSaveState === 'error' ? (
-                <AlertCircle className="h-3.5 w-3.5" />
+                <AlertCircle className="h-4 w-4" />
               ) : (
-                <CheckCircle2 className="h-3.5 w-3.5" />
+                <CheckCircle2 className={cn('h-4 w-4', !isDirty && (lastSavedAt || isClosed) ? 'text-emerald-600' : '')} />
               )}
-              <span>{autoSaveLabel}</span>
+              <span>{saveStatus}</span>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-              <Button
-                type="button"
-                variant="secondary"
-                onClick={() => selectedRow && loadPreview(selectedRow).then(() => setIsDirty(true))}
-                disabled={!selectedRow || isPreviewLoading || isClosing}
-                className="w-full sm:w-auto"
-              >
-                <RefreshCw className="h-4 w-4" />
-                {isPreviewLoading ? 'Recalculando' : 'Recalcular'}
-              </Button>
-              <Button type="button" variant="secondary" onClick={() => handleDialogOpenChange(false)} disabled={isClosing || autoSaveState === 'saving'} className="w-full sm:w-auto">
-                Fechar janela
-              </Button>
-              <Button type="button" onClick={closePayroll} disabled={!payrollDraft || isClosing || isPreviewLoading || autoSaveState === 'saving'} className="w-full sm:w-auto">
-                <CheckCircle2 className="h-4 w-4" />
-                {isClosing ? 'Fechando' : isClosed ? 'Atualizar fechamento' : 'Fechar folha'}
-              </Button>
+            <div className="flex flex-wrap gap-2 sm:items-center">
+              {isClosed ? (
+                <>
+                  <Button type="button" variant="outline" onClick={() => selectedRow && openPayrollPdf(selectedRow)} disabled={!selectedRow?.payrollItem} className="flex-1 sm:flex-none">
+                    <FileText className="h-4 w-4" />
+                    Gerar PDF
+                  </Button>
+                  <Button type="button" variant="outline" onClick={reopenPayroll} disabled={autoSaveState === 'saving'} className="flex-1 sm:flex-none">
+                    <LockOpen className="h-4 w-4" />
+                    Reabrir folha
+                  </Button>
+                  <Button type="button" onClick={() => void requestClose()} className="order-first basis-full sm:order-none sm:basis-auto">
+                    Fechar janela
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button type="button" variant="ghost" onClick={recalculate} disabled={!selectedRow || isPreviewLoading || isClosing} className="flex-1 sm:flex-none">
+                    <RefreshCw className={cn('h-4 w-4', isPreviewLoading && 'animate-spin')} />
+                    {isPreviewLoading ? 'Recalculando' : 'Recalcular'}
+                  </Button>
+                  <Button type="button" variant="outline" onClick={() => void requestClose()} disabled={isClosing || autoSaveState === 'saving'} className="flex-1 sm:flex-none">
+                    {autoSaveState === 'error' ? 'Sair sem salvar' : 'Fechar janela'}
+                  </Button>
+                  <Button type="button" onClick={closePayroll} disabled={!payrollDraft || isClosing || isPreviewLoading || autoSaveState === 'saving'} className="order-first basis-full sm:order-none sm:basis-auto">
+                    <CheckCircle2 className="h-4 w-4" />
+                    {isClosing ? 'Fechando...' : 'Fechar folha'}
+                  </Button>
+                </>
+              )}
             </div>
           </DialogFooter>
         </DialogContent>

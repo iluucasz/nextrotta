@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
+import { isCompetenceMonth } from '@/lib/payroll-input';
 import { calculatePayroll } from '@/lib/payroll-utils';
 import { sql } from '@/lib/db';
 
@@ -25,12 +26,12 @@ export async function POST(request: NextRequest) {
 
     const { technicianId, competenceMonth } = await request.json();
 
-    if (!technicianId || !competenceMonth) {
-      return NextResponse.json({ error: 'technicianId and competenceMonth are required' }, { status: 400 });
+    if (!technicianId || !isCompetenceMonth(competenceMonth)) {
+      return NextResponse.json({ error: 'Informe o técnico e a competência (AAAA-MM).' }, { status: 400 });
     }
 
     if (!(await isActiveTechnician(auth.organizationId, technicianId))) {
-      return NextResponse.json({ error: 'Selecione um tecnico ativo para fechar folha.' }, { status: 409 });
+      return NextResponse.json({ error: 'Selecione um técnico ativo para a folha.' }, { status: 409 });
     }
 
     const payroll = await calculatePayroll({ organizationId: auth.organizationId, technicianId, competenceMonth });
