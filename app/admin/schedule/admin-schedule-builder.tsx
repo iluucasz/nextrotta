@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { CalendarDays, ChevronDown, Clock3, Download, FileText, Plus, Trash2, Upload, Users, WandSparkles } from 'lucide-react';
+import { CalendarDays, Check, ChevronDown, Clock3, Download, FileText, Plus, Trash2, Upload, Users, WandSparkles } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
 import { EmptyState } from '@/components/empty-state';
@@ -279,6 +279,8 @@ const PORTO_SCHEDULE_NOTE_PREFIX = 'Importado do Porto:';
 interface BuilderActionCardProps {
   eyebrow: string;
   title: string;
+  /** One plain sentence about what this is for. */
+  description?: string;
   value: string;
   buttonLabel?: string;
   onClick: () => void;
@@ -1121,13 +1123,14 @@ function DayKeyChecklist({ value, onToggle }: DayKeyChecklistProps) {
   );
 }
 
-function BuilderActionCard({ eyebrow, title, value, buttonLabel = 'Editar', onClick }: BuilderActionCardProps) {
+function BuilderActionCard({ eyebrow, title, description, value, buttonLabel = 'Editar', onClick }: BuilderActionCardProps) {
   return (
     <section className="rounded-xl border border-border bg-card p-4" aria-label={eyebrow}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h4 className="text-sm font-semibold text-foreground">{title}</h4>
-          <p className="mt-1 truncate text-sm text-muted-foreground">{value}</p>
+          {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
+          <p className={`${description ? 'mt-2' : 'mt-1'} truncate text-sm font-medium text-foreground`}>{value}</p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onClick}>
           {buttonLabel}
@@ -1238,6 +1241,20 @@ export function AdminScheduleBuilderPage() {
   if (loading) return <LoadingShell role="admin" />;
   return <AdminScheduleBuilderContent organizationSettings={settings} />;
 }
+
+const BUILDER_STEPS = [
+  { key: 'periodo', label: 'Período e equipe', help: 'Escolha o período que você quer montar e quem entra na escala.' },
+  { key: 'semana', label: 'A semana', help: 'Defina os horários e, para cada dia da semana, quem trabalha.' },
+  { key: 'excecoes', label: 'Alternância e folgas', help: 'Opcional: use para equipes que se revezam e para folgas e ajustes. Se não precisar, é só continuar.' },
+  { key: 'conferir', label: 'Conferir e salvar', help: 'Confira o resultado. Estando certo, é só salvar.' },
+] as const;
+
+type WeekPreset = 'mon-fri' | 'mon-sat' | 'every-day';
+const WEEK_PRESETS: Array<{ value: WeekPreset; label: string; workingDays: ScheduleDayRuleKey[] }> = [
+  { value: 'mon-fri', label: 'Segunda a sexta', workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] },
+  { value: 'mon-sat', label: 'Segunda a sábado', workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'] },
+  { value: 'every-day', label: 'Todos os dias', workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] },
+];
 
 const ATTENDANCE_OPTIONS: Array<{ value: AttendanceStatus; label: string }> = [
   { value: 'not_marked', label: 'Não lançar' },
@@ -1397,6 +1414,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [builderDialog, setBuilderDialog] = useState<ScheduleBuilderDialog>(null);
   const [activeDayRuleKey, setActiveDayRuleKey] = useState<ScheduleDayRuleKey | null>(null);
   const [selectedPreviewDate, setSelectedPreviewDate] = useState<string | null>(null);
+  const [builderStep, setBuilderStep] = useState(0);
   // With the Porto automation on, days imported from Porto are kept when a new escala is saved (the server decides).
   const [portoAutomationEnabled, setPortoAutomationEnabled] = useState(false);
   const [formData, setFormData] = useState<ScheduleBuilderForm>(createInitialBuilderForm);
@@ -1990,6 +2008,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setExceptionDraft(createExceptionDraft());
     setExceptionError('');
     setSelectedPreviewDate(null);
+    setBuilderStep(0);
   }
 
   function handleFormDialogChange(open: boolean) {
@@ -2979,6 +2998,49 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     }
 
     return '';
+  }
+
+  const lastBuilderStep = BUILDER_STEPS.length - 1;
+
+  function goToBuilderStep(step: number) {
+    setFormError('');
+    setBuilderStep(Math.min(Math.max(step, 0), lastBuilderStep));
+    document.getElementById('schedule-builder-form')?.scrollTo({ top: 0 });
+  }
+
+  function goToNextBuilderStep() {
+    const validationError = validateForm();
+    if (validationError) {
+      setFormError(validationError);
+      return;
+    }
+
+    goToBuilderStep(builderStep + 1);
+  }
+
+  /** Which of the ready-made weeks the current rules match (null when the week was customised). */
+  function detectWeekPreset(): WeekPreset | null {
+    const matches = (workingDays: ScheduleDayRuleKey[]) =>
+      dayRuleDefinitions.every(({ key }) => {
+        const rule = formData.day_rules[key];
+        const cadence = rule.rotation_cadence ?? 'weekly';
+        return workingDays.includes(key) ? rule.mode === 'all' && cadence === 'weekly' : rule.mode === 'off';
+      });
+
+    return WEEK_PRESETS.find((preset) => matches(preset.workingDays))?.value ?? null;
+  }
+
+  function applyWeekPreset(value: WeekPreset) {
+    const preset = WEEK_PRESETS.find((item) => item.value === value);
+    if (!preset) return;
+
+    setFormData((current) => ({
+      ...current,
+      day_rules: Object.fromEntries(
+        dayRuleDefinitions.map(({ key }) => [key, { ...createCoverageRule(preset.workingDays.includes(key) ? 'all' : 'off'), start_time: current.day_rules[key].start_time, end_time: current.day_rules[key].end_time }]),
+      ) as Record<ScheduleDayRuleKey, WeekendCoverageRule>,
+      day_rule_group_ids: { monday: '', tuesday: '', wednesday: '', thursday: '', friday: '', saturday: '', sunday: '' },
+    }));
   }
 
   async function handleSubmit(event: React.FormEvent) {
@@ -4281,13 +4343,57 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             <DialogHeader className={MODAL_HEADER_CLASS}>
               <DialogTitle className={MODAL_TITLE_CLASS}>Montar escala</DialogTitle>
               <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
-                Defina período, equipe e regra semanal. Ao salvar, a escala aberta do período é substituída e os dias já concluídos são preservados.
+                Quatro passos curtos. Ao salvar, a escala ainda aberta do período é substituída e os dias já concluídos são preservados.
               </DialogDescription>
             </DialogHeader>
 
-            <form id="schedule-builder-form" onSubmit={handleSubmit} className={MODAL_BODY_CLASS}>
+            <nav aria-label="Passos para montar a escala" className="border-b border-border px-6 py-2.5 sm:px-8">
+              <ol className="flex flex-wrap items-center gap-y-1">
+                {BUILDER_STEPS.map((step, index) => {
+                  const current = index === builderStep;
+                  const done = index < builderStep;
+                  return (
+                    <li key={step.key} className="flex items-center">
+                      {index > 0 ? <span className="mx-1 h-px w-5 bg-border sm:mx-2 sm:w-10" aria-hidden="true" /> : null}
+                      <button
+                        type="button"
+                        onClick={() => goToBuilderStep(index)}
+                        aria-current={current ? 'step' : undefined}
+                        className={`flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-secondary ${current ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+                      >
+                        <span
+                          className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+                            current ? 'bg-primary text-primary-foreground' : done ? 'bg-emerald-100 text-emerald-700' : 'bg-secondary text-muted-foreground'
+                          }`}
+                        >
+                          {done ? <Check className="h-3.5 w-3.5" aria-hidden="true" /> : index + 1}
+                        </span>
+                        <span className={current ? '' : 'hidden sm:inline'}>{step.label}</span>
+                      </button>
+                    </li>
+                  );
+                })}
+              </ol>
+            </nav>
+
+            <form
+              id="schedule-builder-form"
+              onSubmit={(event) => {
+                if (builderStep < lastBuilderStep) {
+                  event.preventDefault();
+                  goToNextBuilderStep();
+                  return;
+                }
+                handleSubmit(event);
+              }}
+              className={MODAL_BODY_CLASS}
+            >
               {formError ? <div className="mb-5"><ModalNotice tone="error">{formError}</ModalNotice></div> : null}
 
+              <p className="mb-5 text-sm text-muted-foreground">{BUILDER_STEPS[builderStep].help}</p>
+
+              {builderStep === 0 ? (
+                <div className="space-y-6">
               <div className="flex flex-wrap items-center gap-3">
                 <SegmentedControl
                   label="Período da escala"
@@ -4331,42 +4437,47 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   {formatDate(range.startDate)} até {formatDate(range.endDate)}
                 </span>
 
-                {lastRules ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={applyLastRules}
-                    className="sm:ml-auto"
-                    title="Traz horários, semana, equipes que se alternam e folgas fixas. Feriados e ajustes de um dia não são copiados."
-                  >
-                    <CalendarDays className="h-4 w-4" />
-                    Usar as regras da última escala salva
-                  </Button>
-                ) : null}
               </div>
 
-              <div className="mt-5">
-                <SummaryBand
-                  items={[
-                    { label: 'Quem entra', value: scopeSummary },
-                    { label: 'Linhas previstas', value: generationPreview.totalRows },
-                    { label: 'Ajustes', value: optionalAdjustmentsCount },
-                  ]}
-                />
-              </div>
 
-              <section className="mt-8 space-y-3">
-                <h3 className="text-base font-semibold text-foreground">Equipe e exceções</h3>
+                  <div className="space-y-3">
+                    <BuilderActionCard
+                      eyebrow="Equipe"
+                      title="Quem entra na escala"
+                      description="Todos os técnicos ativos, ou só alguns."
+                      value={scopeSummary}
+                      onClick={() => setBuilderDialog('scope')}
+                    />
+                  </div>
 
-                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <BuilderActionCard eyebrow="Equipe" title="Quem entra" value={scopeSummary} onClick={() => setBuilderDialog('scope')} />
-                  <BuilderActionCard eyebrow="Alternância" title="Equipes que se alternam" value={formatCount(formData.rotation_groups.length, 'regra', 'regras')} onClick={() => setBuilderDialog('rotation')} />
-                  <BuilderActionCard eyebrow="Exceções" title="Folgas e ajustes" value={formatCount(formData.general_days_off.length + formData.recurring_rules.length + formData.overrides.length, 'exceção', 'exceções')} onClick={() => setBuilderDialog('exceptions')} />
+                  {lastRules ? (
+                    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-secondary/40 px-5 py-4">
+                      <div>
+                        <p className="text-sm font-semibold text-foreground">Já montou uma escala antes?</p>
+                        <p className="mt-0.5 text-sm text-muted-foreground">Traz os horários, a semana, as equipes que se alternam e as folgas fixas. Feriados e ajustes de um dia não são copiados.</p>
+                      </div>
+                      <Button type="button" variant="outline" onClick={applyLastRules}>
+                        <CalendarDays className="h-4 w-4" />
+                        Usar as regras da última escala salva
+                      </Button>
+                    </div>
+                  ) : null}
                 </div>
-              </section>
+              ) : null}
 
-              <section className="mt-8 space-y-4">
-                <h3 className="text-base font-semibold text-foreground">A semana: horário e quem trabalha</h3>
+              {builderStep === 1 ? (
+              <section className="space-y-5" aria-label="A semana: horário e quem trabalha">
+
+                <div className="flex flex-wrap items-center gap-3">
+                  <span className="text-sm font-medium text-foreground">Como é a semana da equipe?</span>
+                  <SegmentedControl
+                    label="Modelo de semana"
+                    value={(detectWeekPreset() ?? 'custom') as WeekPreset | 'custom'}
+                    onChange={(value) => value !== 'custom' && applyWeekPreset(value)}
+                    options={WEEK_PRESETS.map((preset) => ({ value: preset.value as WeekPreset | 'custom', label: preset.label }))}
+                  />
+                  {detectWeekPreset() ? null : <span className="text-sm text-muted-foreground">Semana personalizada: ajuste dia a dia abaixo.</span>}
+                </div>
 
                 <div className="grid gap-3 xl:grid-cols-2">
                   <div className="rounded-xl bg-secondary/40 p-4">
@@ -4446,7 +4557,41 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                 </div>
               </section>
 
-              <section className="mt-8 space-y-3">
+
+              ) : null}
+
+              {builderStep === 2 ? (
+                <div className="grid gap-3 md:grid-cols-2">
+                  <BuilderActionCard
+                    eyebrow="Alternância"
+                    title="Equipes que se alternam"
+                    description="Duas equipes se revezam no mesmo dia da semana: uma trabalha numa semana e a outra na seguinte."
+                    value={formatCount(formData.rotation_groups.length, 'regra', 'regras')}
+                    buttonLabel={formData.rotation_groups.length ? 'Editar' : 'Adicionar'}
+                    onClick={() => setBuilderDialog('rotation')}
+                  />
+                  <BuilderActionCard
+                    eyebrow="Exceções"
+                    title="Folgas e ajustes"
+                    description="Feriados, a folga de um técnico ou um turno diferente em algum dia."
+                    value={formatCount(formData.general_days_off.length + formData.recurring_rules.length + formData.overrides.length, 'exceção', 'exceções')}
+                    buttonLabel={formData.general_days_off.length + formData.recurring_rules.length + formData.overrides.length ? 'Editar' : 'Adicionar'}
+                    onClick={() => setBuilderDialog('exceptions')}
+                  />
+                </div>
+              ) : null}
+
+              {builderStep === 3 ? (
+                <div className="space-y-6">
+                  <SummaryBand
+                    items={[
+                      { label: 'Período', value: `${formatDate(range.startDate)} a ${formatDate(range.endDate)}` },
+                      { label: 'Quem entra', value: scopeSummary },
+                      { label: 'Linhas previstas', value: generationPreview.totalRows },
+                      { label: 'Ajustes', value: optionalAdjustmentsCount },
+                    ]}
+                  />
+              <section className="space-y-3">
                 <h3 className="text-base font-semibold text-foreground">Como a escala vai ficar</h3>
 
                 {previewDays ? (
@@ -4507,20 +4652,38 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   <p className="text-sm text-muted-foreground">A prévia aparece para períodos de até dois meses.</p>
                 )}
               </section>
+
+                </div>
+              ) : null}
             </form>
 
             <DialogFooter className={MODAL_FOOTER_CLASS}>
-              <p className="mr-auto text-xs text-muted-foreground sm:max-w-xl">
-                {replaceInfo.replaced || replaceInfo.kept
-                  ? `Ao salvar, ${formatCount(replaceInfo.replaced, 'linha aberta', 'linhas abertas')} deste período serão substituídas e ${formatCount(replaceInfo.kept, 'linha concluída ou apontada', 'linhas concluídas ou apontadas')} ficam como estão.`
-                  : 'Ainda não há escala salva neste período: nada será substituído.'}
+              <p className="mr-auto text-sm text-muted-foreground sm:max-w-xl">
+                {builderStep < lastBuilderStep
+                  ? `${formatDate(range.startDate)} a ${formatDate(range.endDate)} · ${scopeSummary} · ${formatCount(generationPreview.totalRows, 'linha prevista', 'linhas previstas')}`
+                  : replaceInfo.replaced || replaceInfo.kept
+                    ? `Ao salvar, ${formatCount(replaceInfo.replaced, 'linha aberta', 'linhas abertas')} deste período serão substituídas e ${formatCount(replaceInfo.kept, 'linha concluída ou apontada', 'linhas concluídas ou apontadas')} ficam como estão.`
+                    : 'Ainda não há escala salva neste período: nada será substituído.'}
               </p>
-              <Button type="button" variant="outline" onClick={() => handleFormDialogChange(false)}>
-                Cancelar
-              </Button>
-              <Button type="submit" form="schedule-builder-form" disabled={isSubmitting} className="min-w-44">
-                {isSubmitting ? 'Salvando...' : `Salvar ${formatCount(generationPreview.totalRows, 'linha', 'linhas')}`}
-              </Button>
+              {builderStep === 0 ? (
+                <Button type="button" variant="outline" onClick={() => handleFormDialogChange(false)}>
+                  Cancelar
+                </Button>
+              ) : (
+                <Button type="button" variant="outline" onClick={() => goToBuilderStep(builderStep - 1)}>
+                  Voltar
+                </Button>
+              )}
+              {builderStep < lastBuilderStep ? (
+                // Own key: the same button must not turn into the submit button while this click is still being handled.
+                <Button key="continue" type="button" onClick={goToNextBuilderStep}>
+                  Continuar
+                </Button>
+              ) : (
+                <Button key="save" type="submit" form="schedule-builder-form" disabled={isSubmitting} className="min-w-44">
+                  {isSubmitting ? 'Salvando...' : `Salvar ${formatCount(generationPreview.totalRows, 'linha', 'linhas')}`}
+                </Button>
+              )}
             </DialogFooter>
           </div>
         </DialogContent>
