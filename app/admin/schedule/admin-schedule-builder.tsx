@@ -71,7 +71,7 @@ import {
 import type { Schedule, Technician, WorkHours } from '@/lib/types';
 import { DEFAULT_ORGANIZATION_SETTINGS, type OrganizationSettings } from '@/lib/organization-settings';
 import { useAppSession } from '@/hooks/use-app-session';
-import { fetchOrganizationSettings, useOrganizationSettings } from '@/hooks/use-organization-settings';
+import { fetchOrganizationSettings, resetOrganizationSettingsCache, useOrganizationSettings } from '@/hooks/use-organization-settings';
 
 interface DayOffDraft {
   id: string;
@@ -1242,6 +1242,9 @@ export function AdminScheduleBuilderPage() {
   return <AdminScheduleBuilderContent organizationSettings={settings} />;
 }
 
+/** The largest daily break the company settings accept (4 hours). */
+const MAX_BREAK_MINUTES = 240;
+
 const BUILDER_STEPS = [
   { key: 'periodo', label: 'Período e equipe', help: 'Escolha o período que você quer montar e quem entra na escala.' },
   { key: 'semana', label: 'A semana', help: 'Defina os horários e, para cada dia da semana, quem trabalha.' },
@@ -1435,6 +1438,14 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [activeDayRuleKey, setActiveDayRuleKey] = useState<ScheduleDayRuleKey | null>(null);
   const [selectedPreviewDate, setSelectedPreviewDate] = useState<string | null>(null);
   const [builderStep, setBuilderStep] = useState(0);
+  // The daily break is a company-wide rule (Configurações). It can be changed from the escala dialog; until the
+  // page is reloaded, this keeps the value that was just saved.
+  const [breakOverride, setBreakOverride] = useState<number | null>(null);
+  const [isEditingBreak, setIsEditingBreak] = useState(false);
+  const [breakDraft, setBreakDraft] = useState('');
+  const [breakError, setBreakError] = useState('');
+  const [isSavingBreak, setIsSavingBreak] = useState(false);
+  if (breakOverride !== null) applyScheduleRules({ ...organizationSettings, dailyBreakMinutes: breakOverride });
   // With the Porto automation on, days imported from Porto are kept when a new escala is saved (the server decides).
   const [portoAutomationEnabled, setPortoAutomationEnabled] = useState(false);
   const [formData, setFormData] = useState<ScheduleBuilderForm>(createInitialBuilderForm);
@@ -2029,6 +2040,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setExceptionError('');
     setSelectedPreviewDate(null);
     setBuilderStep(0);
+    setIsEditingBreak(false);
+    setBreakError('');
   }
 
   function handleFormDialogChange(open: boolean) {
@@ -3021,6 +3034,38 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   }
 
   const lastBuilderStep = BUILDER_STEPS.length - 1;
+
+  async function saveBreakMinutes() {
+    const minutes = Number(breakDraft);
+    if (!Number.isInteger(minutes) || minutes < 0 || minutes > MAX_BREAK_MINUTES) {
+      setBreakError(`Informe um número inteiro de minutos, de 0 a ${MAX_BREAK_MINUTES} (${formatBreakLabel(MAX_BREAK_MINUTES)}).`);
+      return;
+    }
+
+    setIsSavingBreak(true);
+    setBreakError('');
+
+    try {
+      const response = await fetch('/api/organization-settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dailyBreakMinutes: minutes }),
+      });
+      const data = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        throw new Error(data?.error || 'Não foi possível salvar o intervalo.');
+      }
+
+      resetOrganizationSettingsCache();
+      setBreakOverride(minutes);
+      setIsEditingBreak(false);
+    } catch (error) {
+      setBreakError(error instanceof Error ? error.message : 'Não foi possível salvar o intervalo.');
+    } finally {
+      setIsSavingBreak(false);
+    }
+  }
 
   function goToBuilderStep(step: number) {
     setFormError('');
@@ -4502,6 +4547,76 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   </div>
                 </div>
 
+                {(() => {
+                  const breakMinutes = scheduleRules.dailyBreakMinutes;
+                  const describe = (label: string, start: string, end: string) => {
+                    const startMinutes = parseTimeToMinutes(start);
+                    const endMinutes = parseTimeToMinutes(end);
+                    if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return null;
+                    const gross = (endMinutes - startMinutes) / 60;
+                    const net = getHoursBetween(start, end);
+                    return gross > scheduleRules.dailyBreakHours
+                      ? `${label}: ${formatHours(gross)} no horário, menos ${formatBreakLabel(breakMinutes)} de intervalo, são ${formatHours(net)} de trabalho.`
+                      : `${label}: o horário (${formatHours(gross)}) é menor que o intervalo, então nada é descontado.`;
+                  };
+                  const lines = [
+                    describe('Dias úteis', formData.weekday_start_time, formData.weekday_end_time),
+                    describe('Fim de semana', formData.weekend_start_time, formData.weekend_end_time),
+                  ].filter(Boolean);
+
+                  return (
+                    <div className="rounded-xl bg-secondary/40 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-foreground">Intervalo de almoço</p>
+                          <p className="mt-0.5 text-sm text-muted-foreground">
+                            {breakMinutes > 0
+                              ? `Usando o padrão da empresa: ${formatBreakLabel(breakMinutes)} por dia, descontado das horas de trabalho.`
+                              : 'O padrão da empresa é não descontar intervalo.'}
+                          </p>
+                        </div>
+                        {isEditingBreak ? null : (
+                          <Button type="button" variant="outline" size="sm" onClick={() => { setBreakDraft(String(breakMinutes)); setBreakError(''); setIsEditingBreak(true); }}>
+                            Mudar
+                          </Button>
+                        )}
+                      </div>
+
+                      {isEditingBreak ? (
+                        <div className="mt-3 space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <input
+                              type="number"
+                              min={0}
+                              max={MAX_BREAK_MINUTES}
+                              step={5}
+                              value={breakDraft}
+                              onChange={(event) => setBreakDraft(event.target.value)}
+                              className="min-h-10 w-24 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                              aria-label="Intervalo em minutos"
+                            />
+                            <span className="text-sm text-muted-foreground">minutos (de 0 a {MAX_BREAK_MINUTES}, ou {formatBreakLabel(MAX_BREAK_MINUTES)})</span>
+                            <Button type="button" size="sm" onClick={saveBreakMinutes} disabled={isSavingBreak}>
+                              {isSavingBreak ? 'Salvando...' : 'Salvar para a empresa'}
+                            </Button>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => setIsEditingBreak(false)} disabled={isSavingBreak}>
+                              Cancelar
+                            </Button>
+                          </div>
+                          <p className="text-[13px] text-muted-foreground">Vale para toda a empresa: escala, banco de horas, folha e robô do Porto. Dá para mudar também em Configurações.</p>
+                          {breakError ? <p role="alert" className="text-sm text-rose-700">{breakError}</p> : null}
+                        </div>
+                      ) : lines.length ? (
+                        <ul className="mt-3 space-y-0.5 text-sm text-foreground">
+                          {lines.map((line) => (
+                            <li key={line}>{line}</li>
+                          ))}
+                        </ul>
+                      ) : null}
+                    </div>
+                  );
+                })()}
+
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm text-muted-foreground">Para cada dia da semana, escolha quem trabalha.</p>
                   <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
@@ -4578,6 +4693,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                     items={[
                       { label: 'Período', value: `${formatDate(range.startDate)} a ${formatDate(range.endDate)}` },
                       { label: 'Quem entra', value: scopeSummary },
+                      { label: 'Intervalo', value: scheduleRules.dailyBreakMinutes > 0 ? formatBreakLabel(scheduleRules.dailyBreakMinutes) : 'Sem intervalo' },
                       { label: 'Linhas previstas', value: generationPreview.totalRows },
                       { label: 'Ajustes', value: optionalAdjustmentsCount },
                     ]}
