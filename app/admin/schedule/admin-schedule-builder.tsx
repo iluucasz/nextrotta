@@ -3359,6 +3359,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                     <option value="day">Em um dia</option>
                     <option value="weekly">Toda semana, em certos dias</option>
                   </select>
+                  {forAll ? <span className="mt-1 block text-xs text-muted-foreground">Para todos os técnicos só vale folga em um dia. Escolha um técnico em &quot;Para quem&quot; para liberar as outras opções.</span> : null}
                 </label>
 
                 {exceptionDraft.when === 'day' ? (
@@ -3399,6 +3400,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                     <option value="off">Folga</option>
                     <option value="shift">Turno com horário próprio</option>
                   </select>
+                  {forAll ? <span className="mt-1 block text-xs text-muted-foreground">Fixo em folga quando é para todos.</span> : null}
                 </label>
 
                 {exceptionDraft.what === 'shift' ? (
