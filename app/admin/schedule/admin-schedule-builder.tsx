@@ -1349,6 +1349,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [calendarMonth, setCalendarMonth] = useState(() => Number(brasiliaDateKey().slice(5, 7)) - 1);
   const [calendarYear, setCalendarYear] = useState(() => Number(brasiliaDateKey().slice(0, 4)));
   const [calendarWeek, setCalendarWeek] = useState('all');
+  const [calendarTechnicianId, setCalendarTechnicianId] = useState('all');
   const [hourBankPeriodMode, setHourBankPeriodMode] = useState<HourBankPeriodMode>('month');
   const [hourBankDate, setHourBankDate] = useState(() => brasiliaDateKey());
   const [hourBankMonth, setHourBankMonth] = useState(() => brasiliaDateKey().slice(0, 7));
@@ -1808,8 +1809,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   }, [visibleSchedule]);
   const calendarMonthKey = `${calendarYear}-${String(calendarMonth + 1).padStart(2, '0')}`;
   const calendarScheduledEntries = useMemo(
-    () => visibleSchedule.filter((item) => normalizeDateKey(item.date).startsWith(calendarMonthKey) && (item.status !== 'cancelled' || Boolean(parseManualAttendanceNote(item.notes).attendance_status))),
-    [calendarMonthKey, visibleSchedule],
+    () => visibleSchedule.filter((item) => (
+      normalizeDateKey(item.date).startsWith(calendarMonthKey)
+      && (calendarTechnicianId === 'all' || item.technician_id === calendarTechnicianId)
+      && (item.status !== 'cancelled' || Boolean(parseManualAttendanceNote(item.notes).attendance_status))
+    )),
+    [calendarMonthKey, calendarTechnicianId, visibleSchedule],
   );
   const hourBankRange = useMemo(() => {
     if (hourBankPeriodMode === 'month') {
@@ -3236,7 +3241,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
   function getCalendarDayScheduled(day: number) {
     const dateKey = createDateKey(calendarYear, calendarMonth, day);
-    const dayEntries = scheduleByDate.get(dateKey) ?? [];
+    const dayEntries = (scheduleByDate.get(dateKey) ?? []).filter((entry) => calendarTechnicianId === 'all' || entry.technician_id === calendarTechnicianId);
     const entriesByTechnician = new Map<string, Schedule[]>();
 
     dayEntries.forEach((entry) => {
@@ -3249,7 +3254,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
         const manualStatus = parseManualAttendanceNote(entry?.notes).attendance_status;
 
-        if (!entry || (entry.status === 'cancelled' && !manualStatus)) {
+        // Looking at one technician, the days off are shown too (as "Folga"); in the team view they are left out.
+        if (!entry || (entry.status === 'cancelled' && !manualStatus && calendarTechnicianId === 'all')) {
           return scheduled;
         }
 
@@ -5033,7 +5039,19 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </DialogHeader>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 sm:px-7">
-              <div className="mb-5 grid gap-3 md:grid-cols-[1fr_1fr_1fr_auto]">
+              <div className="mb-5 grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_auto]">
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium">Técnico</span>
+                  <select value={calendarTechnicianId} onChange={(event) => setCalendarTechnicianId(event.target.value)} className={inputClassName}>
+                    <option value="all">Todos os técnicos</option>
+                    {sortedTechnicians.map((technician) => (
+                      <option key={technician.id} value={technician.id}>
+                        {technician.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
                 <label className="text-sm">
                   <span className="mb-1.5 block font-medium">Semana</span>
                   <select value={calendarWeek} onChange={(event) => setCalendarWeek(event.target.value)} className={inputClassName}>
@@ -5096,6 +5114,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                         const dateKey = createDateKey(calendarYear, calendarMonth, day);
                         const isToday = dateKey === todayKey;
                         const scheduledForDay = getCalendarDayScheduled(day);
+                        const scheduledCount = scheduledForDay.filter(({ entry }) => entry.status !== 'cancelled' || Boolean(parseManualAttendanceNote(entry.notes).attendance_status)).length;
 
                         return (
                           <div
@@ -5113,7 +5132,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                                   {isToday ? <StatusBadge tone="info">Hoje</StatusBadge> : null}
                                 </div>
                                 <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                                  {formatCount(scheduledForDay.length, 'escalado', 'escalados')}
+                                  {formatCount(scheduledCount, 'escalado', 'escalados')}
                                 </p>
                               </div>
                               <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={() => openAttendanceForDate(dateKey)}>
@@ -5124,18 +5143,21 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                             <div className="max-h-52 overflow-y-auto pr-1">
                               {scheduledForDay.length ? (
                                 <div className="space-y-1">
-                                  {scheduledForDay.map(({ name, entry }) => (
-                                    <div key={entry.id} className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-1">
-                                      <div className="flex items-start justify-between gap-2">
-                                        <p className="min-w-0 truncate text-xs font-semibold text-emerald-950">{name}</p>
-                                        <StatusBadge tone={getScheduleDisplayTone(entry)}>{getScheduleDisplayLabel(entry)}</StatusBadge>
+                                  {scheduledForDay.map(({ name, entry }) => {
+                                    const isDayOff = entry.status === 'cancelled' && !parseManualAttendanceNote(entry.notes).attendance_status;
+                                    return (
+                                      <div key={entry.id} className={`rounded-md border px-2 py-1 ${isDayOff ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                                        <div className="flex items-start justify-between gap-2">
+                                          <p className={`min-w-0 truncate text-xs font-semibold ${isDayOff ? 'text-amber-950' : 'text-emerald-950'}`}>{name}</p>
+                                          <StatusBadge tone={getScheduleDisplayTone(entry)}>{getScheduleDisplayLabel(entry)}</StatusBadge>
+                                        </div>
+                                        <p className={`mt-1 text-[11px] ${isDayOff ? 'text-amber-700' : 'text-emerald-700'}`}>{getScheduleTimeLabel(entry)}</p>
                                       </div>
-                                      <p className="mt-1 text-[11px] text-emerald-700">{getScheduleTimeLabel(entry)}</p>
-                                    </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               ) : (
-                                <p className="text-xs text-muted-foreground">Ninguém escalado.</p>
+                                <p className="text-xs text-muted-foreground">{calendarTechnicianId === 'all' ? 'Ninguém escalado.' : 'Sem escala neste dia.'}</p>
                               )}
                             </div>
                           </div>
