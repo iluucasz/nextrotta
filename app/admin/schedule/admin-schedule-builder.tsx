@@ -1424,7 +1424,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     () => new Map(technicians.map((technician) => [technician.id, technician.name])),
     [technicians],
   );
-  const inputClassName = 'min-h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring';
+  const inputClassName = 'min-h-10 w-full rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60';
   const scheduleByDate = useMemo(() => {
     const grouped = new Map<string, Schedule[]>();
 
@@ -3358,9 +3358,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   >
                     <option value="day">Em um dia</option>
                     <option value="weekly">Toda semana, em certos dias</option>
-                  </select>
-                  {forAll ? <span className="mt-1 block text-xs text-muted-foreground">Para todos os técnicos só vale folga em um dia. Escolha um técnico em &quot;Para quem&quot; para liberar as outras opções.</span> : null}
-                </label>
+                  </select>                </label>
 
                 {exceptionDraft.when === 'day' ? (
                   <label className="text-sm">
@@ -3399,9 +3397,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   >
                     <option value="off">Folga</option>
                     <option value="shift">Turno com horário próprio</option>
-                  </select>
-                  {forAll ? <span className="mt-1 block text-xs text-muted-foreground">Fixo em folga quando é para todos.</span> : null}
-                </label>
+                  </select>                </label>
 
                 {exceptionDraft.what === 'shift' ? (
                   <>
