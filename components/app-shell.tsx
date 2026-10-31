@@ -8,7 +8,7 @@ import { TECHNICIAN_PAGE_PATHS, type HideableTechnicianPage } from '@/lib/techni
 import { resetTechnicianVisibilityCache, useTechnicianVisibility } from '@/hooks/use-technician-visibility';
 import { resetOrganizationSettingsCache } from '@/hooks/use-organization-settings';
 import { TechnicianVisibilityDialog } from '@/components/technician-visibility-dialog';
-import { MaintenanceBanner, ModuleStatusBanner, SupportActions } from '@/components/organization-support';
+import { MaintenanceBanner, SupportActions } from '@/components/organization-support';
 import { NotificationsBell } from '@/components/notifications-bell';
 import { BrandLogo, BrandMark } from '@/components/brand-logo';
 import {
@@ -750,7 +750,6 @@ export function AppShell({ children, role, userName }: AppShellProps) {
           </div>
         </header>
         <div className="app-content">
-          {role === 'admin' && !previewMode ? <ModuleStatusBanner /> : null}
           {children}
         </div>
       </main>

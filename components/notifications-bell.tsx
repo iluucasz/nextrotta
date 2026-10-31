@@ -17,6 +17,8 @@ const SEVERITY_STYLE: Record<NotificationSeverity, { icon: LucideIcon; circle: s
 };
 
 const POLL_MS = 60_000;
+/** The system looks for things worth telling (modules down, folha left open...) this often while the page stays open. */
+const CHECK_MS = 5 * 60_000;
 
 function timeAgo(iso: string) {
   const seconds = Math.round((new Date(iso).getTime() - Date.now()) / 1000);
@@ -55,8 +57,12 @@ export function NotificationsBell() {
 
   useEffect(() => {
     load(true);
+    let lastCheck = Date.now();
     const timer = window.setInterval(() => {
-      if (document.visibilityState === 'visible') load();
+      if (document.visibilityState !== 'visible') return;
+      const due = Date.now() - lastCheck >= CHECK_MS;
+      if (due) lastCheck = Date.now();
+      load(due);
     }, POLL_MS);
     return () => window.clearInterval(timer);
   }, [load]);

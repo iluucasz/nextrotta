@@ -5,7 +5,7 @@ import { evolutionServer } from './whatsapp/store';
 /**
  * Whether the VPS modules answer: the Porto worker and the WhatsApp server (Evolution API) both live
  * on the VPS. When it's down nothing there can raise an alarm, so the app checks from Vercel and
- * shows each organization's admin which modules are under maintenance (ModuleStatusBanner).
+ * tells each organization's admin, through the bell, which modules are under maintenance (checkModules).
  */
 export type ModuleState = 'ok' | 'down' | 'not_configured';
 

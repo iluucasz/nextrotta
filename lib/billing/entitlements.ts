@@ -94,6 +94,15 @@ async function currentUsage(organizationId: string, key: keyof PlanLimits): Prom
   return Number(rows[0]?.used ?? 0);
 }
 
+/** What the organization has used of a plan limit, or null when that limit is unlimited. */
+export async function getLimitUsage(organizationId: string, key: keyof PlanLimits): Promise<{ used: number; limit: number } | null> {
+  const { limits } = await getEntitlements(organizationId);
+  const limit = limits[key];
+  if (limit === null) return null;
+
+  return { used: await currentUsage(organizationId, key), limit };
+}
+
 const LIMIT_MESSAGES: Record<keyof PlanLimits, (limit: number) => string> = {
   maxUsers: (limit) => `O plano permite até ${limit} usuários ativos. Desative um usuário ou fale com o suporte para ampliar.`,
   storageMb: (limit) => `O armazenamento do plano (${limit} MB) está cheio. Fale com o suporte para ampliar.`,

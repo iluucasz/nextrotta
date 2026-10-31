@@ -30,6 +30,12 @@ O sino do sistema da empresa (barra de cima, só para o admin) mostra dois tipos
 | Robô do Porto falhou ou terminou com avisos (1 por dia por problema) | `lib/porto-alerts.ts` | atenção |
 | Créditos de IA acabando / acabaram (1 por mês cada) | `lib/ai/assistant.ts` | atenção, crítica |
 | A escala termina em menos de 7 dias, ou não existe (empresa sem Porto) | `ensureScheduleReminder` | atenção |
+| Módulo Porto ou WhatsApp em manutenção (o servidor não responde). Sai do sino quando volta | `checkModules` | atenção |
+| Folha do mês que terminou ainda sem fechar (a partir do dia 3; nomeia os técnicos e some quando todas fecham) | `checkPayroll` | atenção |
+| WhatsApp da empresa desconectado (precisa ler o QR Code de novo) | `checkWhatsAppConnection` | atenção |
+| Armazenamento do plano em 90% e cheio | `checkStorage` | atenção, crítica |
+
+As verificações de `lib/notification-checks.ts` (`runNotificationChecks`) rodam em `GET /api/notifications?check=1`: quando o admin abre uma página e a cada 5 minutos com o sino aberto na tela. Cada uma avisa uma vez (chave de repetição) e, quando a situação se resolve sozinha, arquiva o aviso (`resolveNotifications`). Não há mais faixa amarela de "módulo em manutenção": o aviso vai para o sino. Teste: `node scripts/test-notification-checks.cjs`.
 
 Para avisar de algo novo: `await notifyOrganization(organizationId, { kind, severity, title, body, href, dedupeKey })`.
 

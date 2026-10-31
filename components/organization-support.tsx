@@ -32,63 +32,6 @@ export function MaintenanceBanner({ message }: { message: string }) {
   );
 }
 
-const MODULE_STATUS_POLL_MS = 2 * 60_000;
-
-type ModuleStatus = { porto: string; whatsapp: string };
-
-/**
- * Admin-only notice while a VPS module (Porto robot, WhatsApp) doesn't answer — says which ones are
- * under maintenance and what stops meanwhile (lib/system-status.ts).
- */
-export function ModuleStatusBanner() {
-  const [status, setStatus] = useState<ModuleStatus | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      if (document.visibilityState === 'hidden') return;
-      try {
-        const response = await fetch('/api/system-status', { cache: 'no-store' });
-        if (!response.ok) return;
-        const data = (await response.json()) as ModuleStatus;
-        if (!cancelled) setStatus(data);
-      } catch {
-        // The app itself being unreachable is not what this notice is about.
-      }
-    }
-
-    void load();
-    const intervalId = window.setInterval(() => void load(), MODULE_STATUS_POLL_MS);
-    document.addEventListener('visibilitychange', load);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-      document.removeEventListener('visibilitychange', load);
-    };
-  }, []);
-
-  const portoDown = status?.porto === 'down';
-  const whatsappDown = status?.whatsapp === 'down';
-  if (!portoDown && !whatsappDown) return null;
-
-  const title = portoDown && whatsappDown ? 'Módulos Porto e WhatsApp em manutenção' : `Módulo ${portoDown ? 'Porto' : 'WhatsApp'} em manutenção`;
-  const effects = [portoDown ? 'a importação de horas e escala do Porto' : null, whatsappDown ? 'os envios de WhatsApp' : null].filter(Boolean);
-
-  return (
-    <div className="mb-4 flex gap-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
-      <Wrench className="mt-0.5 h-4 w-4 shrink-0" aria-hidden />
-      <div>
-        <p className="font-semibold">{title}</p>
-        <p className="mt-0.5">
-          O servidor da automação não está respondendo. Enquanto isso, {effects.join(' e ')}{' '}
-          {whatsappDown ? 'ficam parados' : 'fica parada'}. O resto do sistema funciona normalmente.
-        </p>
-      </div>
-    </div>
-  );
-}
-
 const date = (value: string, time = false) =>
   new Intl.DateTimeFormat('pt-BR', {
     timeZone: 'America/Sao_Paulo',

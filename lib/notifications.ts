@@ -152,6 +152,20 @@ export async function markNotificationsRead(params: { organizationId: string; us
   );
 }
 
+/**
+ * Takes off the bell what no longer applies (the module is back, the folha got closed): archives the open
+ * notices of the company whose dedupe key starts with `dedupePrefix`. Nothing is deleted.
+ */
+export async function resolveNotifications(organizationId: string, dedupePrefix: string) {
+  await sql`
+    UPDATE notifications
+    SET archived_at = NOW()
+    WHERE organization_id = ${organizationId}
+      AND archived_at IS NULL
+      AND dedupe_key LIKE ${`${dedupePrefix}%`}
+  `;
+}
+
 function addDays(dateKey: string, days: number) {
   const [year, month, day] = dateKey.split('-').map(Number);
   return new Date(Date.UTC(year, month - 1, day + days)).toISOString().slice(0, 10);
