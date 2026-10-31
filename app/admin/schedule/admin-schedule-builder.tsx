@@ -3038,7 +3038,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   async function saveBreakMinutes() {
     const minutes = Number(breakDraft);
     if (!Number.isInteger(minutes) || minutes < 0 || minutes > MAX_BREAK_MINUTES) {
-      setBreakError(`Informe um número inteiro de minutos, de 0 a ${MAX_BREAK_MINUTES} (${formatBreakLabel(MAX_BREAK_MINUTES)}).`);
+      setBreakError(`Use de 0 a ${MAX_BREAK_MINUTES} minutos.`);
       return;
     }
 
@@ -4547,75 +4547,42 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   </div>
                 </div>
 
-                {(() => {
-                  const breakMinutes = scheduleRules.dailyBreakMinutes;
-                  const describe = (label: string, start: string, end: string) => {
-                    const startMinutes = parseTimeToMinutes(start);
-                    const endMinutes = parseTimeToMinutes(end);
-                    if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) return null;
-                    const gross = (endMinutes - startMinutes) / 60;
-                    const net = getHoursBetween(start, end);
-                    return gross > scheduleRules.dailyBreakHours
-                      ? `${label}: ${formatHours(gross)} no horário, menos ${formatBreakLabel(breakMinutes)} de intervalo, são ${formatHours(net)} de trabalho.`
-                      : `${label}: o horário (${formatHours(gross)}) é menor que o intervalo, então nada é descontado.`;
-                  };
-                  const lines = [
-                    describe('Dias úteis', formData.weekday_start_time, formData.weekday_end_time),
-                    describe('Fim de semana', formData.weekend_start_time, formData.weekend_end_time),
-                  ].filter(Boolean);
-
-                  return (
-                    <div className="rounded-xl bg-secondary/40 p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-foreground">Intervalo de almoço</p>
-                          <p className="mt-0.5 text-sm text-muted-foreground">
-                            {breakMinutes > 0
-                              ? `Usando o padrão da empresa: ${formatBreakLabel(breakMinutes)} por dia, descontado das horas de trabalho.`
-                              : 'O padrão da empresa é não descontar intervalo.'}
-                          </p>
-                        </div>
-                        {isEditingBreak ? null : (
-                          <Button type="button" variant="outline" size="sm" onClick={() => { setBreakDraft(String(breakMinutes)); setBreakError(''); setIsEditingBreak(true); }}>
-                            Mudar
-                          </Button>
-                        )}
-                      </div>
-
-                      {isEditingBreak ? (
-                        <div className="mt-3 space-y-2">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <input
-                              type="number"
-                              min={0}
-                              max={MAX_BREAK_MINUTES}
-                              step={5}
-                              value={breakDraft}
-                              onChange={(event) => setBreakDraft(event.target.value)}
-                              className="min-h-10 w-24 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
-                              aria-label="Intervalo em minutos"
-                            />
-                            <span className="text-sm text-muted-foreground">minutos (de 0 a {MAX_BREAK_MINUTES}, ou {formatBreakLabel(MAX_BREAK_MINUTES)})</span>
-                            <Button type="button" size="sm" onClick={saveBreakMinutes} disabled={isSavingBreak}>
-                              {isSavingBreak ? 'Salvando...' : 'Salvar para a empresa'}
-                            </Button>
-                            <Button type="button" variant="ghost" size="sm" onClick={() => setIsEditingBreak(false)} disabled={isSavingBreak}>
-                              Cancelar
-                            </Button>
-                          </div>
-                          <p className="text-[13px] text-muted-foreground">Vale para toda a empresa: escala, banco de horas, folha e robô do Porto. Dá para mudar também em Configurações.</p>
-                          {breakError ? <p role="alert" className="text-sm text-rose-700">{breakError}</p> : null}
-                        </div>
-                      ) : lines.length ? (
-                        <ul className="mt-3 space-y-0.5 text-sm text-foreground">
-                          {lines.map((line) => (
-                            <li key={line}>{line}</li>
-                          ))}
-                        </ul>
-                      ) : null}
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-secondary/40 px-5 py-3.5">
+                  {isEditingBreak ? (
+                    <div className="flex w-full flex-wrap items-center gap-2">
+                      <span className="mr-1 text-sm font-semibold text-foreground">Intervalo de almoço</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={MAX_BREAK_MINUTES}
+                        step={5}
+                        value={breakDraft}
+                        onChange={(event) => setBreakDraft(event.target.value)}
+                        className="min-h-9 w-20 rounded-lg border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+                        aria-label="Intervalo em minutos"
+                      />
+                      <span className="text-sm text-muted-foreground">minutos</span>
+                      <Button type="button" size="sm" onClick={saveBreakMinutes} disabled={isSavingBreak}>
+                        {isSavingBreak ? 'Salvando...' : 'Salvar'}
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={() => setIsEditingBreak(false)} disabled={isSavingBreak}>
+                        Cancelar
+                      </Button>
+                      <p className="w-full text-[13px] text-muted-foreground">Máximo de 4h. Vale para toda a empresa.</p>
+                      {breakError ? <p role="alert" className="w-full text-sm text-rose-700">{breakError}</p> : null}
                     </div>
-                  );
-                })()}
+                  ) : (
+                    <>
+                      <p className="text-sm">
+                        <span className="font-semibold text-foreground">Intervalo de almoço</span>
+                        <span className="text-muted-foreground"> · {scheduleRules.dailyBreakMinutes > 0 ? `${formatBreakLabel(scheduleRules.dailyBreakMinutes)} por dia` : 'sem intervalo'}</span>
+                      </p>
+                      <Button type="button" variant="outline" size="sm" onClick={() => { setBreakDraft(String(scheduleRules.dailyBreakMinutes)); setBreakError(''); setIsEditingBreak(true); }}>
+                        Mudar
+                      </Button>
+                    </>
+                  )}
+                </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
                   <p className="text-sm text-muted-foreground">Para cada dia da semana, escolha quem trabalha.</p>
