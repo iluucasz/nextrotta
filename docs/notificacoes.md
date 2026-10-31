@@ -34,6 +34,7 @@ O sino do sistema da empresa (barra de cima, só para o admin) mostra dois tipos
 | Folha do mês que terminou ainda sem fechar (a partir do dia 3; nomeia os técnicos e some quando todas fecham) | `checkPayroll` | atenção |
 | WhatsApp da empresa desconectado (precisa ler o QR Code de novo) | `checkWhatsAppConnection` | atenção |
 | Armazenamento do plano em 90% e cheio | `checkStorage` | atenção, crítica |
+| Contas vencidas, contas que vencem em breve (prazo das Configurações) e categoria acima do orçamento do mês | `checkExpenses` | crítica, atenção |
 
 As verificações de `lib/notification-checks.ts` (`runNotificationChecks`) rodam em `GET /api/notifications?check=1`: quando o admin abre uma página e a cada 5 minutos com o sino aberto na tela. Cada uma avisa uma vez (chave de repetição) e, quando a situação se resolve sozinha, arquiva o aviso (`resolveNotifications`). Não há mais faixa amarela de "módulo em manutenção": o aviso vai para o sino. Teste: `node scripts/test-notification-checks.cjs`.
 

@@ -69,10 +69,12 @@ test('who sees it: admins only, or everyone', async () => {
 
 test('read state is per person', async () => {
   const before = await n.countUnreadNotifications({ organizationId: kappa, userId: admin, isAdmin: true });
+  // The two people may already differ (earlier runs read things for one of them): only what a read changes counts.
+  const colleagueBefore = await n.countUnreadNotifications({ organizationId: kappa, userId: colleague, isAdmin: true });
   const mine = (await n.listNotifications({ organizationId: kappa, userId: admin, isAdmin: true, limit: 100 })).find((item) => item.title.startsWith('Só da kappa'));
   await n.markNotificationsRead({ organizationId: kappa, userId: admin, isAdmin: true, ids: [mine.id] });
   assert.equal(await n.countUnreadNotifications({ organizationId: kappa, userId: admin, isAdmin: true }), before - 1);
-  assert.equal(await n.countUnreadNotifications({ organizationId: kappa, userId: colleague, isAdmin: true }), before, 'a leitura de um admin não muda a do outro');
+  assert.equal(await n.countUnreadNotifications({ organizationId: kappa, userId: colleague, isAdmin: true }), colleagueBefore, 'a leitura de um admin não muda a do outro');
 
   await n.markNotificationsRead({ organizationId: kappa, userId: admin, isAdmin: true });
   assert.equal(await n.countUnreadNotifications({ organizationId: kappa, userId: admin, isAdmin: true }), 0, 'marcar todas zera');

@@ -4,7 +4,9 @@
 import { sql } from './db';
 import { getLimitUsage, organizationHasFeature } from './billing/entitlements';
 import { brasiliaDateKey } from './formatters';
+import { addDays } from './expenses';
 import { createNotification, ensureScheduleReminder, resolveNotifications } from './notifications';
+import { getOrganizationSettings } from './organization-settings-store';
 import { getOrganizationSystemStatus } from './system-status';
 
 const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
@@ -165,6 +167,83 @@ export async function checkStorage(organizationId: string) {
   }
 }
 
+const reais = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+/**
+ * Bills to pay: what is already late and what falls due in the next few days (the company's own "vence em breve"
+ * setting), once a day each, and a category that went over its monthly budget. All of it clears when it is settled.
+ */
+export async function checkExpenses(organizationId: string) {
+  if (!(await organizationHasFeature(organizationId, 'finance'))) return;
+
+  const settings = await getOrganizationSettings(organizationId);
+  const today = brasiliaDateKey();
+  const soonLimit = addDays(today, settings.financeDueSoonDays);
+
+  const [totals] = await sql`
+    SELECT
+      COUNT(*) FILTER (WHERE due_date < ${today})::int AS overdue_count,
+      COALESCE(SUM(amount - paid_amount) FILTER (WHERE due_date < ${today}), 0)::float AS overdue_total,
+      COUNT(*) FILTER (WHERE due_date >= ${today} AND due_date <= ${soonLimit})::int AS soon_count,
+      COALESCE(SUM(amount - paid_amount) FILTER (WHERE due_date >= ${today} AND due_date <= ${soonLimit}), 0)::float AS soon_total
+    FROM financial_entries
+    WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND type = 'payable' AND status = 'pending'
+  `;
+
+  const overdue = Number(totals?.overdue_count ?? 0);
+  if (overdue > 0) {
+    await createNotification({
+      organizationId,
+      kind: 'expenses',
+      severity: 'critical',
+      title: overdue === 1 ? '1 conta vencida' : `${overdue} contas vencidas`,
+      body: `Somam ${reais(Number(totals.overdue_total))}. Pague ou reprograme para não pagar juros e multa.`,
+      href: '/admin/despesas',
+      dedupeKey: `expenses:overdue:${today}`,
+    });
+  } else {
+    await resolveNotifications(organizationId, 'expenses:overdue:');
+  }
+
+  const soon = Number(totals?.soon_count ?? 0);
+  if (soon > 0) {
+    await createNotification({
+      organizationId,
+      kind: 'expenses',
+      severity: 'warning',
+      title: soon === 1 ? '1 conta vence em breve' : `${soon} contas vencem em breve`,
+      body: `${reais(Number(totals.soon_total))} até ${addDays(today, settings.financeDueSoonDays).split('-').reverse().join('/')}.`,
+      href: '/admin/despesas',
+      dedupeKey: `expenses:soon:${today}`,
+    });
+  } else {
+    await resolveNotifications(organizationId, 'expenses:soon:');
+  }
+
+  const month = today.slice(0, 7);
+  const over = await sql`
+    SELECT b.category, b.amount::float AS budget, COALESCE(SUM(e.amount), 0)::float AS spent
+    FROM finance_budgets b
+    LEFT JOIN financial_entries e
+      ON e.organization_id = b.organization_id AND e.category = b.category AND e.type = 'payable'
+     AND e.competence_month = ${month} AND e.deleted_at IS NULL
+    WHERE b.organization_id = ${organizationId} AND b.amount > 0
+    GROUP BY b.category, b.amount
+    HAVING COALESCE(SUM(e.amount), 0) >= b.amount
+  `;
+  for (const row of over) {
+    await createNotification({
+      organizationId,
+      kind: 'expenses',
+      severity: 'warning',
+      title: `Orçamento de ${row.category} estourado`,
+      body: `Já foram ${reais(Number(row.spent))} neste mês, para um limite de ${reais(Number(row.budget))}.`,
+      href: '/admin/despesas#orcamento',
+      dedupeKey: `expenses:budget:${month}:${row.category}`,
+    });
+  }
+}
+
 /** Every check, each isolated: one failing never hides the others (and never breaks the page that asked). */
 export async function runNotificationChecks(organizationId: string) {
   const checks: Array<[string, (id: string) => Promise<unknown>]> = [
@@ -173,6 +252,7 @@ export async function runNotificationChecks(organizationId: string) {
     ['payroll', checkPayroll],
     ['whatsapp', checkWhatsAppConnection],
     ['storage', checkStorage],
+    ['expenses', checkExpenses],
   ];
 
   await Promise.all(checks.map(([name, check]) => check(organizationId).catch((error) => console.error(`[notifications] ${name} check failed:`, error))));

@@ -1,0 +1,544 @@
+/* Controle de despesas: what the management look (.mg-*) does not already have. Everything lives under .mg-dashboard. */
+
+.mg-dashboard .ex-tabs {
+  margin-top: 6px;
+}
+.mg-dashboard .ex-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 0 15px;
+  color: var(--muted-foreground);
+  font-size: 16px;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+}
+.mg-dashboard .ex-tabs button:hover,
+.mg-dashboard .ex-tabs button.active {
+  color: var(--primary);
+  border-color: var(--primary);
+}
+.mg-dashboard .ex-tab-count {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: center;
+  color: #fff;
+  background: #c2410c;
+}
+
+.mg-dashboard .ex-month-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 2px;
+}
+.mg-dashboard .ex-month-bar strong {
+  min-width: 150px;
+  text-align: center;
+  font-size: 16px;
+}
+.mg-dashboard .ex-month-bar .mg-button-icon {
+  width: 36px;
+  height: 36px;
+}
+
+/* three header buttons side by side (the dashboard's header stacks its two) */
+.mg-dashboard .mg-header-actions.ex-header-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* the four numbers on top */
+.mg-dashboard .ex-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+}
+@media (max-width: 1180px) {
+  .mg-dashboard .ex-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 560px) {
+  .mg-dashboard .ex-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mg-dashboard .ex-stat {
+  padding: 18px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.mg-dashboard .ex-stat > span {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+.mg-dashboard .ex-stat > strong {
+  display: block;
+  margin: 4px 0 6px;
+  font-size: 27px;
+  letter-spacing: -0.5px;
+}
+.mg-dashboard .ex-stat > small {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.mg-dashboard .ex-stat.danger {
+  border-color: #f2c4c0;
+  background: #fff6f5;
+}
+.mg-dashboard .ex-stat.danger > strong {
+  color: #b42318;
+}
+.mg-dashboard .ex-stat.good > strong {
+  color: #15803d;
+}
+.mg-dashboard .ex-stat.bad > strong {
+  color: #b42318;
+}
+
+/* three numbers in a row on wide screens, one under the other on narrow ones */
+.mg-dashboard .ex-stats.three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 820px) {
+  .mg-dashboard .ex-stats.three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mg-dashboard .ex-tabs {
+  overflow-x: auto;
+  gap: 22px;
+}
+.mg-dashboard .ex-tabs button {
+  flex: none;
+  white-space: nowrap;
+}
+
+/* late bills by how late */
+.mg-dashboard .ex-aging {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mg-dashboard .ex-aging > div {
+  flex: 1 1 150px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #fff6f5;
+  border: 1px solid #f2c4c0;
+  font-size: 14px;
+  color: #7a271a;
+}
+.mg-dashboard .ex-aging > div.empty {
+  background: var(--secondary);
+  border-color: var(--border);
+  color: var(--muted-foreground);
+}
+.mg-dashboard .ex-aging strong {
+  display: block;
+  font-size: 17px;
+}
+
+/* lists of bills */
+.mg-dashboard .ex-group-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .ex-group-title:first-child {
+  padding-top: 0;
+}
+.mg-dashboard .ex-group-title.danger {
+  color: #b42318;
+}
+.mg-dashboard .ex-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mg-dashboard .ex-row:last-child {
+  border-bottom: 0;
+}
+.mg-dashboard .ex-row-main {
+  min-width: 0;
+  padding: 0;
+  text-align: left;
+  background: none;
+  border: 0;
+}
+.mg-dashboard .ex-row-main strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mg-dashboard .ex-row-main small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .ex-row-main small.late {
+  color: #b42318;
+  font-weight: 600;
+}
+.mg-dashboard .ex-amount {
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.mg-dashboard .ex-amount small {
+  display: block;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .ex-amount.receivable {
+  color: #15803d;
+}
+@media (max-width: 640px) {
+  .mg-dashboard .ex-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .mg-dashboard .ex-row > :last-child {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
+.mg-dashboard .ex-more {
+  display: block;
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: var(--secondary);
+  color: var(--primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* progress bars (budget and categories) */
+.mg-dashboard .ex-bars > div {
+  padding: 9px 0;
+}
+.mg-dashboard .ex-bars header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 15px;
+}
+.mg-dashboard .ex-bars header small {
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.mg-dashboard .ex-track {
+  position: relative;
+  height: 8px;
+  margin-top: 7px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--secondary);
+}
+.mg-dashboard .ex-track i {
+  display: block;
+  flex: none;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--primary);
+}
+.mg-dashboard .ex-track.ok i {
+  background: #2f9e6e;
+}
+.mg-dashboard .ex-track.warning i {
+  background: #e0a030;
+}
+.mg-dashboard .ex-track.over i {
+  background: #d6453a;
+}
+.mg-dashboard .ex-track i.fixed {
+  background: #6d5ef7;
+}
+.mg-dashboard .ex-track i.variable {
+  background: #bdb6fb;
+}
+.mg-dashboard .ex-track.split {
+  display: flex;
+}
+
+/* the accounts table */
+.mg-dashboard .ex-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.mg-dashboard .ex-chips {
+  display: inline-flex;
+  padding: 4px;
+  gap: 2px;
+  border-radius: 12px;
+  background: var(--secondary);
+}
+.mg-dashboard .ex-chips button {
+  height: 34px;
+  padding: 0 13px;
+  border: 0;
+  border-radius: 9px;
+  background: none;
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .ex-chips button.selected {
+  background: var(--card);
+  color: var(--foreground);
+  font-weight: 600;
+  box-shadow: 0 1px 3px #25233d14;
+}
+.mg-dashboard .ex-select {
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  font-size: 15px;
+}
+.mg-dashboard .ex-bulk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #f0eefe;
+  font-size: 15px;
+}
+.mg-dashboard .ex-bulk strong {
+  margin-right: auto;
+}
+.mg-dashboard .ex-table th,
+.mg-dashboard .ex-table td {
+  text-align: left;
+}
+.mg-dashboard .ex-table th:nth-child(4),
+.mg-dashboard .ex-table td:nth-child(4) {
+  text-align: right;
+}
+.mg-dashboard .ex-toolbar .mg-search {
+  flex: 1 1 280px;
+  min-width: 220px;
+}
+.mg-dashboard .ex-table td:first-child,
+.mg-dashboard .ex-table th:first-child {
+  width: 36px;
+}
+.mg-dashboard .ex-table .ex-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.mg-dashboard .ex-total-row td {
+  font-weight: 600;
+  background: var(--secondary);
+}
+
+/* calendar */
+.mg-dashboard .ex-calendar {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--card);
+}
+.mg-dashboard .ex-calendar > .ex-weekday {
+  padding: 10px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--secondary);
+  font-size: 14px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .ex-day {
+  min-height: 112px;
+  padding: 8px;
+  text-align: left;
+  border: 0;
+  border-right: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+.mg-dashboard .ex-day:nth-child(7n) {
+  border-right: 0;
+}
+.mg-dashboard .ex-day.outside {
+  background: #fafafc;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .ex-day:hover {
+  background: #f7f6ff;
+}
+.mg-dashboard .ex-day.selected {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+.mg-dashboard .ex-day-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 13px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.mg-dashboard .ex-day.today .ex-day-number {
+  background: var(--primary);
+  color: #fff;
+}
+.mg-dashboard .ex-chip {
+  display: block;
+  margin-top: 4px;
+  padding: 2px 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.mg-dashboard .ex-chip.upcoming,
+.mg-dashboard .ex-chip.partial {
+  background: #eef0ff;
+  color: #3a3aa8;
+}
+.mg-dashboard .ex-chip.due_today {
+  background: #fff1d6;
+  color: #8a5a00;
+}
+.mg-dashboard .ex-chip.overdue {
+  background: #fde4e1;
+  color: #b42318;
+}
+.mg-dashboard .ex-chip.paid {
+  background: #e3f5ec;
+  color: #166a45;
+  text-decoration: line-through;
+}
+.mg-dashboard .ex-chip.receivable {
+  box-shadow: inset 3px 0 0 #15803d;
+}
+.mg-dashboard .ex-day-more {
+  display: block;
+  margin-top: 4px;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+@media (max-width: 720px) {
+  .mg-dashboard .ex-day {
+    min-height: 64px;
+    padding: 4px;
+  }
+  .mg-dashboard .ex-chip {
+    height: 6px;
+    padding: 0;
+    font-size: 0;
+  }
+}
+
+/* budget editor */
+.mg-dashboard .ex-budget-row {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.1fr) minmax(150px, 190px) minmax(0, 2fr);
+  align-items: center;
+  gap: 18px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.mg-dashboard .ex-budget-row:last-child {
+  border-bottom: 0;
+}
+.mg-dashboard .ex-budget-input {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+}
+.mg-dashboard .ex-budget-input input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  text-align: right;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.mg-dashboard .ex-budget-input:focus-within {
+  border-color: var(--primary);
+}
+@media (max-width: 820px) {
+  .mg-dashboard .ex-budget-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+}
+
+.mg-dashboard .ex-toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: calc(100vw - 32px);
+  padding: 12px 16px;
+  transform: translateX(-50%);
+  border-radius: 12px;
+  background: #1b1a2e;
+  color: #fff;
+  font-size: 15px;
+  box-shadow: 0 10px 30px #1b1a2e40;
+}
+.mg-dashboard .ex-toast button {
+  border: 0;
+  background: none;
+  color: #bdb6fb;
+  font-weight: 600;
+}

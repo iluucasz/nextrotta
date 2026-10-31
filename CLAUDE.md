@@ -140,7 +140,7 @@ Dados de teste no banco: só a organização `kappa` está ativa. As demais de t
 - `verifyAuth()` devolve `organizationId`/`organizationSlug` e revalida usuário/organização no banco a cada requisição.
 
 Arquivos muito grandes — leia por trechos (Grep primeiro), nunca inteiros:
-`app/admin/schedule/admin-schedule-builder.tsx` (~5,2 mil linhas), `app/admin/financeiro/page.tsx`, `app/admin/services/page.tsx`, `app/admin/dashboard-gerencial/management-dashboard.tsx`, `app/admin/payroll/page.tsx` (1,3–1,7 mil linhas cada).
+`app/admin/schedule/admin-schedule-builder.tsx` (~5,2 mil linhas), `app/admin/services/page.tsx`, `app/admin/dashboard-gerencial/management-dashboard.tsx`, `app/admin/payroll/page.tsx` (1,3–1,7 mil linhas cada).
 
 ## Regras de negócio herdadas
 
@@ -170,6 +170,7 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/prompts/` — prompts de trabalho já executados ou para reaproveitar em outros projetos (configurações, assistente, WhatsApp na produção, venda de peças).
 - `docs/notificacoes.md` — sino de notificações: avisos da empresa (cobrança, chamados, Porto, créditos, escala) e avisos gerais do NextRotta; como criar um novo.
 - `docs/dashboard-gerencial.md` — critérios financeiros do dashboard gerencial.
+- `docs/despesas.md` — Controle de despesas (`/admin/despesas`): contas a pagar e a receber, previsão, orçamento, avisos.
 - `docs/faturamento.md` — relatório de Faturamento (mesmo visual e critérios do dashboard, sem despesas gerais).
 - `docs/calculo-folha.md` — exemplo do cálculo da folha.
 

@@ -17,6 +17,12 @@ const nextConfig = {
   // Development only: organizations live on <slug>.nextrotta.localhost, and the dev server refuses
   // its own scripts/HMR to origins it doesn't know — pages there wouldn't hydrate.
   allowedDevOrigins: ['nextrotta.localhost', '*.nextrotta.localhost'],
+  async redirects() {
+    return [
+      // Controle de despesas used to live at /admin/financeiro: old links and bookmarks keep working.
+      { source: '/admin/financeiro', destination: '/admin/despesas', permanent: true },
+    ];
+  },
 }
 
 export default nextConfig

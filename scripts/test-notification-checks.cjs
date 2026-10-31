@@ -105,6 +105,37 @@ test('a stale state is not trusted', async () => {
   assert.equal((await titles('O WhatsApp')).length, 0);
 });
 
+test('bills: late and due-soon are told once a day, and clear when they are paid', async () => {
+  const today = brasiliaDateKey();
+  const day = (offset) => new Date(Date.parse(`${today}T00:00:00Z`) + offset * 86400000).toISOString().slice(0, 10);
+  const bill = async (description, due, amount) => (await sql`
+    INSERT INTO financial_entries (id, organization_id, type, description, category, amount, due_date, competence_month)
+    VALUES (${`t-${description}-${Date.now()}`}, ${org}, 'payable', ${description}, 'Teste orçamento', ${amount}, ${due}, ${due.slice(0, 7)}) RETURNING id`)[0].id;
+  const late = await bill('Atrasada', day(-3), 100);
+  const near = await bill('Perto', day(2), 50);
+
+  await checks.checkExpenses(org);
+  await checks.checkExpenses(org);
+  assert.equal((await titles('1 conta vencida')).length, 1, 'said once');
+  assert.ok((await titles('1 conta vencida'))[0].body.includes('R$') && (await titles('1 conta vencida'))[0].body.includes('100'));
+  assert.equal((await titles('1 conta vence em breve')).length, 1);
+
+  await sql`UPDATE financial_entries SET paid_amount = amount, status = 'paid' WHERE id IN (${late}, ${near})`;
+  await checks.checkExpenses(org);
+  assert.equal((await titles('1 conta vencida')).length, 0);
+  assert.equal((await titles('1 conta vence em breve')).length, 0);
+});
+
+test('bills: a category over its monthly budget is told once', async () => {
+  const month = brasiliaDateKey().slice(0, 7);
+  await sql`INSERT INTO finance_budgets (organization_id, category, amount) VALUES (${org}, 'Teste orçamento', 100) ON CONFLICT (organization_id, category) DO UPDATE SET amount = 100`;
+  await sql`INSERT INTO financial_entries (id, organization_id, type, description, category, amount, due_date, competence_month, status, paid_amount)
+            VALUES (${`t-orc-${Date.now()}`}, ${org}, 'payable', 'Gasto', 'Teste orçamento', 150, ${`${month}-28`}, ${month}, 'paid', 150)`;
+  await checks.checkExpenses(org);
+  await checks.checkExpenses(org);
+  assert.equal((await titles('Orçamento de Teste orçamento')).length, 1);
+});
+
 test('resolveNotifications only touches the company and the prefix it was given', async () => {
   const mine = await n.createNotification({ organizationId: org, kind: 'x', title: 'Do prefixo', dedupeKey: 'teste:um:1' });
   const other = await n.createNotification({ organizationId: org, kind: 'x', title: 'De outro prefixo', dedupeKey: 'teste:dois:1' });
@@ -119,6 +150,8 @@ after(async () => {
   // nothing is deleted: notices and the company are archived, test rows are marked deleted like everywhere else
   await sql`UPDATE notifications SET archived_at = NOW() WHERE organization_id = ${org} AND archived_at IS NULL`;
   await sql`UPDATE payroll SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
+  await sql`UPDATE financial_entries SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
+  await sql`UPDATE finance_budgets SET amount = 0 WHERE organization_id = ${org}`;
   await sql`UPDATE services SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
   await sql`UPDATE technicians SET status = 'inactive', deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
   await sql`UPDATE organizations SET deleted_at = NOW() WHERE id = ${org}`;

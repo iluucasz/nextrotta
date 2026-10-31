@@ -99,7 +99,7 @@ const adminSections: NavSection[] = [
     items: [
       { href: '/admin/dashboard-gerencial', label: 'Dashboard Gerencial', icon: ChartNoAxesCombined },
       { href: '/admin/faturamento', label: 'Faturamento', icon: TrendingUp },
-      { href: '/admin/financeiro', label: 'Controle de Despesas', icon: Landmark },
+      { href: '/admin/despesas', label: 'Despesas', icon: Landmark },
     ],
   },
   {
@@ -125,7 +125,7 @@ const LINK_FEATURES: Record<string, string> = {
   '/admin/dashboard-gerencial': 'management_dashboard',
   '/admin/assistente': 'ai',
   '/admin/faturamento': 'billing_report',
-  '/admin/financeiro': 'finance',
+  '/admin/despesas': 'finance',
   '/admin/library': 'library',
   '/admin/whatsapp': 'whatsapp',
   '/admin/config-porto': 'porto',
