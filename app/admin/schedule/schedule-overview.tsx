@@ -1,5 +1,6 @@
 'use client';
 
+import type { ReactNode } from 'react';
 import { Users } from 'lucide-react';
 import { EmptyState } from '@/components/empty-state';
 import { formatDate, formatHours } from '@/lib/formatters';
@@ -119,26 +120,27 @@ function plural(value: number, singular: string, pluralForm: string) {
   return `${value} ${value === 1 ? singular : pluralForm}`;
 }
 
-export function HourBankNumbers({ planned, worked, balance, pending }: { planned: number; worked: number; balance: number; pending: number }) {
+/** The four totals of the period, in one band; `action` sits at the end of the same band. */
+export function HourBankNumbers({ planned, worked, balance, pending, action }: { planned: number; worked: number; balance: number; pending: number; action?: ReactNode }) {
+  const items = [
+    { label: 'Previsto', value: formatHours(planned), tone: 'text-foreground' },
+    { label: 'Realizado', value: formatHours(worked), tone: 'text-foreground' },
+    { label: 'Saldo', value: signedHours(balance), tone: balance < 0 ? 'text-rose-600' : balance > 0 ? 'text-emerald-600' : 'text-foreground' },
+    { label: 'Pendências', value: String(pending), tone: 'text-foreground' },
+  ];
+
   return (
-    <dl className="grid grid-cols-2 gap-x-8 gap-y-5 sm:grid-cols-4">
-      <div>
-        <dt className="text-sm text-muted-foreground">Previsto</dt>
-        <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatHours(planned)}</dd>
-      </div>
-      <div>
-        <dt className="text-sm text-muted-foreground">Realizado</dt>
-        <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatHours(worked)}</dd>
-      </div>
-      <div>
-        <dt className="text-sm text-muted-foreground">Saldo</dt>
-        <dd className={`mt-1 text-2xl font-semibold tabular-nums ${balance < 0 ? 'text-rose-600' : balance > 0 ? 'text-emerald-600' : 'text-foreground'}`}>{signedHours(balance)}</dd>
-      </div>
-      <div>
-        <dt className="text-sm text-muted-foreground">Pendências</dt>
-        <dd className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{pending}</dd>
-      </div>
-    </dl>
+    <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4 rounded-xl bg-secondary/40 px-5 py-4">
+      <dl className="flex flex-wrap gap-x-10 gap-y-4">
+        {items.map((item, index) => (
+          <div key={item.label} className={index > 0 ? 'sm:border-l sm:border-border sm:pl-10' : ''}>
+            <dt className="text-sm text-muted-foreground">{item.label}</dt>
+            <dd className={`mt-0.5 text-2xl font-semibold tabular-nums ${item.tone}`}>{item.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {action}
+    </div>
   );
 }
 
@@ -150,7 +152,7 @@ export function HourBankRows({ rows }: { rows: HourBankSummaryRow[] }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full min-w-[640px] text-sm">
-        <thead>
+        <thead className="bg-transparent">
           <tr className="text-left text-[13px] text-muted-foreground">
             <th className="pb-2 pr-4 font-normal">Técnico</th>
             <th className="pb-2 pr-4 font-normal">Horas no período</th>

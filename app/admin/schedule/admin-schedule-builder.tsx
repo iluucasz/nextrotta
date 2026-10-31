@@ -3927,6 +3927,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
       <div className="mt-5">
         <DataPanel
+          titleClassName="text-base"
+          descriptionClassName="text-sm"
           title="Banco de horas"
           description={`Previsto, realizado e saldo em ${hourBankPeriodLabel}.`}
           action={
@@ -3964,14 +3966,22 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           }
         >
 
-          <HourBankNumbers planned={hourBankTotals.planned} worked={hourBankTotals.worked} balance={hourBankTotals.balance} pending={hourBankTotals.pending} />
+          <HourBankNumbers
+            planned={hourBankTotals.planned}
+            worked={hourBankTotals.worked}
+            balance={hourBankTotals.balance}
+            pending={hourBankTotals.pending}
+            action={
+              <Button type="button" variant="outline" onClick={() => setIsHourBankDetailDialogOpen(true)}>
+                <Clock3 className="h-4 w-4" />
+                Ver banco de horas detalhado
+              </Button>
+            }
+          />
 
-          <div className="mb-3 mt-7 flex items-center justify-between gap-3">
+          <div className="mb-2 mt-7 flex items-baseline justify-between gap-3">
             <h3 className="text-sm font-semibold text-foreground">Resumo por técnico</h3>
-            <Button type="button" variant="outline" onClick={() => setIsHourBankDetailDialogOpen(true)}>
-              <Clock3 className="h-4 w-4" />
-              Ver banco de horas detalhado
-            </Button>
+            <span className="text-sm text-muted-foreground">{formatCount(hourBankVisibleRows.length, 'técnico', 'técnicos')}</span>
           </div>
 
           <HourBankRows rows={hourBankVisibleRows} />
@@ -5025,6 +5035,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
       <div className="mt-5">
         <DataPanel
+          titleClassName="text-base"
+          descriptionClassName="text-sm"
           title="Visão geral da escala"
           description="Os próximos 7 dias, técnico por técnico. Se um dia aparecer como “Sem escala”, é porque ele ainda não foi gravado para aquele técnico."
           action={
