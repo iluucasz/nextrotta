@@ -27,7 +27,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { brasiliaDateKey, compactName, formatDate, formatHours, formatTime, formatTimeRange, normalizeText } from '@/lib/formatters';
 import { applyBrazilianDateText, readSpreadsheet } from '@/lib/spreadsheet-import';
-import { PortoRunWizard } from './porto-run-wizard';
 import {
   getAttendanceStatusLabel,
   getScheduleDisplayLabel,
@@ -3893,8 +3892,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             <WandSparkles className="h-4 w-4" />
             Montar escala
           </Button>
-
-          <PortoRunWizard />
         </div>
       </PageHeader>
 

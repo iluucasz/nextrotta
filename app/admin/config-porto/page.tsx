@@ -16,6 +16,7 @@ import {
 } from '@/components/ui/dialog';
 import { Switch } from '@/components/ui/switch';
 import { useAppSession } from '@/hooks/use-app-session';
+import { PortoRunWizard } from './porto-run-wizard';
 import {
   actionSummaryLabel,
   formatDateTime,
@@ -335,7 +336,9 @@ export default function ConfigPortoPage() {
         eyebrow="Integrações"
         title="Config. Porto"
         description="Login automático no Portal do Prestador (Porto Seguro) para importar apontamento de horas e escala."
-      />
+      >
+        <PortoRunWizard />
+      </PageHeader>
 
       {dataError ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{dataError}</div> : null}
 

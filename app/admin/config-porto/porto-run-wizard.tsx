@@ -322,7 +322,7 @@ export function PortoRunWizard() {
     <>
       <Button type="button" variant="outline" onClick={handleOpen}>
         <PlayCircle className="h-4 w-4" />
-        Rodar agora (Porto)
+        Rodar importação agora
       </Button>
 
       <Dialog
@@ -357,7 +357,7 @@ export function PortoRunWizard() {
                     <p className="font-medium">
                       {config?.automation_enabled
                         ? 'A importação automática já está ligada — normalmente você não precisa rodar isso manualmente.'
-                        : 'Atenção: a automação está desligada em Config. Porto.'}
+                        : 'Atenção: a automação está desligada (chave "Automação ligada", nesta página).'}
                     </p>
                     <p className="mt-1">
                       Apontamento de horas: todo dia às {organizationSettings.portoHoursImportTime} (horário de Brasília), varre o mês
@@ -367,7 +367,7 @@ export function PortoRunWizard() {
                     <p className="mt-1">
                       Use este assistente só quando quiser forçar uma execução agora — por exemplo, pra ver um resultado sem esperar o
                       horário automático, ou pra importar um período específico.
-                      {config && config.dry_run_only ? ' O "Modo teste" está ligado em Config. Porto — mesmo assim, esta execução vai gravar de verdade.' : ''}
+                      {config && config.dry_run_only ? ' O "Modo teste" está ligado nesta página, mas esta execução vai gravar de verdade.' : ''}
                     </p>
                   </div>
                 </div>
@@ -500,7 +500,7 @@ export function PortoRunWizard() {
               {scheduleRunning ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin" />
-                  <p>Rodando... você pode fechar essa janela e conferir depois em Config. Porto ou direto na Escala.</p>
+                  <p>Rodando... você pode fechar essa janela e conferir depois no histórico desta página ou direto na Escala.</p>
                 </div>
               ) : scheduleResult ? (
                 <JobResultView result={scheduleResult} />
@@ -529,7 +529,7 @@ export function PortoRunWizard() {
               {hoursRunning ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin" />
-                  <p>Rodando... você pode fechar essa janela e conferir depois em Config. Porto ou direto na Escala.</p>
+                  <p>Rodando... você pode fechar essa janela e conferir depois no histórico desta página ou direto na Escala.</p>
                 </div>
               ) : hoursResult ? (
                 <JobResultView result={hoursResult} />

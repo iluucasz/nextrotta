@@ -1,5 +1,5 @@
 // Pure display helpers shared between app/admin/config-porto (test runs, history) and
-// app/admin/schedule's "Rodar agora" wizard — both render the same job-result/job-log shape.
+// app/admin/config-porto's "Rodar importação agora" wizard — both render the same job-result/job-log shape.
 
 export type PortoJobDetail = Record<string, unknown> & {
   qra?: string;
