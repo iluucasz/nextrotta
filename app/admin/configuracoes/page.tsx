@@ -15,6 +15,7 @@ import {
   PORTO_LAUDO_PENDING_MARKER,
   PORTO_WARNING_MARKER,
   buildPortoWarningNote,
+  type CommissionMode,
   endOfWorkDayMinutes,
   normalizeOrganizationSettings,
   overtimeMultiplierFromPercent,
@@ -45,11 +46,18 @@ type BooleanKey = 'chargeCancelledServicePlanned' | 'portoUseLaudoConclusion' | 
 type FormState = Record<NumericKey, string> &
   Record<TimeKey, string> &
   Record<BooleanKey, boolean> & {
+    commissionMode: CommissionMode;
     portoWarningText: string;
     portoAlertPhone: string;
     tiers: Array<{ id: number; minServices: string; amount: string }>;
     financeCategories: string[];
   };
+
+const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; description: string }> = [
+  { value: 'excess', title: 'Sobre o excedente', description: 'A comissão é o que a produção passa do fixo: % da produção − salário − vales. Abaixo disso, não há comissão.' },
+  { value: 'percentage', title: 'Percentual da produção', description: 'A comissão é o % da produção, somada ao salário. Os vales não são abatidos.' },
+  { value: 'none', title: 'Sem comissão', description: 'O técnico recebe salário, horas extras e prêmio. Não há cálculo de comissão.' },
+];
 
 const inputClassName =
   'min-h-10 w-full min-w-0 rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring';
@@ -71,6 +79,7 @@ function parseNumber(value: string) {
 
 function toForm(settings: OrganizationSettings): FormState {
   return {
+    commissionMode: settings.commissionMode,
     commissionPercentage: formatNumber(settings.commissionPercentage),
     baseSalary: formatNumber(settings.baseSalary),
     vaAllowance: formatNumber(settings.vaAllowance),
@@ -104,6 +113,7 @@ function toForm(settings: OrganizationSettings): FormState {
 function toPayload(form: FormState) {
   const number = (key: NumericKey) => parseNumber(form[key]);
   return {
+    commissionMode: form.commissionMode,
     commissionPercentage: number('commissionPercentage'),
     baseSalary: number('baseSalary'),
     vaAllowance: number('vaAllowance'),
@@ -311,8 +321,36 @@ export default function ConfiguracoesPage() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <div className="grid gap-4 lg:grid-cols-2">
           <DataPanel title="Padrões dos técnicos" description="Usados para o técnico que não tem valor próprio no cadastro e como valor inicial de um técnico novo.">
+            <fieldset className="mb-4">
+              <legend className="mb-1.5 text-sm font-medium text-foreground">Como a comissão é paga</legend>
+              <div className="grid gap-2">
+                {COMMISSION_OPTIONS.map((option) => (
+                  <label
+                    key={option.value}
+                    className={`flex cursor-pointer items-start gap-3 rounded-lg border px-3.5 py-3 transition ${
+                      form.commissionMode === option.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-secondary/50'
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="commission-mode"
+                      value={option.value}
+                      checked={form.commissionMode === option.value}
+                      onChange={() => setForm((current) => (current ? { ...current, commissionMode: option.value } : current))}
+                      className="mt-1"
+                    />
+                    <span>
+                      <span className="block text-sm font-medium text-foreground">{option.title}</span>
+                      <span className="mt-0.5 block text-xs leading-relaxed text-muted-foreground">{option.description}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
             <div className="grid gap-4 sm:grid-cols-2">
-              <NumberField id="commission" label="Comissão" unit="%" hint="Percentual sobre o total das OS." value={form.commissionPercentage} onChange={(value) => update('commissionPercentage', value)} />
+              {form.commissionMode !== 'none' ? (
+                <NumberField id="commission" label="Comissão" unit="%" hint="Percentual sobre o total das OS." value={form.commissionPercentage} onChange={(value) => update('commissionPercentage', value)} />
+              ) : null}
               <NumberField id="base-salary" label="Salário base" unit="R$" unitPosition="start" value={form.baseSalary} onChange={(value) => update('baseSalary', value)} />
               <NumberField id="va" label="Vale-alimentação (VA)" unit="R$" unitPosition="start" value={form.vaAllowance} onChange={(value) => update('vaAllowance', value)} />
               <NumberField id="vr" label="Vale-refeição (VR)" unit="R$" unitPosition="start" value={form.vrAllowance} onChange={(value) => update('vrAllowance', value)} />

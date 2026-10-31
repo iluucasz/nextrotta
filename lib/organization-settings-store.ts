@@ -33,7 +33,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
   const s = settings;
   const rows = await sql`
     INSERT INTO organization_settings (
-      organization_id, commission_percentage, base_salary, va_allowance, vr_allowance,
+      organization_id, commission_mode, commission_percentage, base_salary, va_allowance, vr_allowance,
       monthly_hours, overtime_multiplier, daily_break_minutes, default_shift_start, default_shift_end,
       monthly_hours_warning_floor, fortnight_split_day, charge_cancelled_service_planned, service_award_tiers,
       porto_hours_import_time, porto_schedule_import_time, porto_reprocess_days, porto_max_shift_hours,
@@ -42,7 +42,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
       finance_due_soon_days, finance_categories, updated_at, updated_by
     )
     VALUES (
-      ${organizationId}, ${s.commissionPercentage}, ${s.baseSalary}, ${s.vaAllowance}, ${s.vrAllowance},
+      ${organizationId}, ${s.commissionMode}, ${s.commissionPercentage}, ${s.baseSalary}, ${s.vaAllowance}, ${s.vrAllowance},
       ${s.monthlyHours}, ${s.overtimeMultiplier}, ${s.dailyBreakMinutes}, ${s.defaultShiftStart}, ${s.defaultShiftEnd},
       ${s.monthlyHoursWarningFloor}, ${s.fortnightSplitDay}, ${s.chargeCancelledServicePlanned}, ${JSON.stringify(s.serviceAwardTiers)}::jsonb,
       ${s.portoHoursImportTime}, ${s.portoScheduleImportTime}, ${s.portoReprocessDays}, ${s.portoMaxShiftHours},
@@ -51,7 +51,8 @@ export async function saveOrganizationSettings(organizationId: string, settings:
       ${s.financeDueSoonDays}, ${JSON.stringify(s.financeCategories)}::jsonb, NOW(), ${updatedBy}
     )
     ON CONFLICT (organization_id) DO UPDATE
-    SET commission_percentage = EXCLUDED.commission_percentage,
+    SET commission_mode = EXCLUDED.commission_mode,
+        commission_percentage = EXCLUDED.commission_percentage,
         base_salary = EXCLUDED.base_salary,
         va_allowance = EXCLUDED.va_allowance,
         vr_allowance = EXCLUDED.vr_allowance,

@@ -3,6 +3,15 @@
 Regras de negócio de cada organização, editadas pelo admin dela (e pelo dono, no painel). Nenhum
 número do cliente original fica no código: todos os pontos abaixo leem as configurações da organização.
 
+## Como a comissão é paga (`commissionMode`, migração `0030`)
+
+Cada empresa escolhe uma das três regras em Configurações → Padrões dos técnicos. O cálculo é um só
+(`lib/payroll-rules.ts`), usado pela API (`/api/payroll/preview`) e pela tela da Folha:
+
+- `excess` (padrão, regra do cliente original): comissão = `% da produção − salário − VR − VA`, nunca abaixo de zero.
+- `percentage`: comissão = `% da produção`, somada ao salário; os vales não são abatidos.
+- `none`: não há comissão (a linha some da folha).
+
 ## Onde fica
 
 - `lib/organization-settings.ts`: tipos, padrões de organização nova (`DEFAULT_ORGANIZATION_SETTINGS`),

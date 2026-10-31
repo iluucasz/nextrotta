@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronLeft, ChevronRight, FileText, LockOpen, RefreshCw, Search } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
@@ -25,7 +25,16 @@ import type { Discount, Payroll, Service, ServiceFortnight, Technician } from '@
 import { cn } from '@/lib/utils';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
+import type { CommissionMode } from '@/lib/organization-settings';
 import { calculateServiceAward, valueOrDefault } from '@/lib/organization-settings';
+import {
+  awardProgress,
+  calculateCashNet as sumCashNet,
+  calculateCommissionValue,
+  commissionBase,
+  fixedCosts,
+  type PayrollDetails,
+} from '@/lib/payroll-rules';
 
 const monthNames = [
   'Janeiro',
@@ -116,6 +125,11 @@ function escapeHtml(value: string) {
 
 const numberFormat = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
+/** 8,5 · 220 · 1,5 — no forced decimals. */
+function hoursText(value: number) {
+  return value.toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+}
+
 function formatHours(value: number) {
   return `${numberFormat.format(roundMoney(value))} h`;
 }
@@ -191,35 +205,31 @@ function serviceBelongsToTechnician(service: Service, technician: Technician) {
   return Boolean(serviceTechnicianName && serviceTechnicianName === normalizeText(technician.name));
 }
 
-function calculateCalculationBase(totalServicesValue: number, commissionPercentage: number) {
-  return roundMoney(Math.max(0, totalServicesValue) * (commissionPercentage / 100));
+/** Fields that may be negative; everything else is clamped at zero (the API refuses negatives too). */
+const signedFields: PayrollDraftField[] = ['hour_bank_balance', 'net_total'];
+const MAX_AMOUNT = 99_999_999.99;
+
+function formulaCommissionOf(draft: PayrollDraft, percentage: number, mode: CommissionMode) {
+  return calculateCommissionValue({
+    mode,
+    totalServices: moneyValue(draft.total_services_value),
+    percentage,
+    baseSalary: moneyValue(draft.base_salary),
+    vrAllowance: moneyValue(draft.vr_deduction),
+    vaAllowance: moneyValue(draft.va_deduction),
+  });
 }
 
-function calculateCommissionRemainder(calculationBase: number, baseSalary: number, vrAllowance: number, vaAllowance: number) {
-  return roundMoney(
-    Math.max(0, moneyValue(calculationBase) - moneyValue(baseSalary) - moneyValue(vrAllowance) - moneyValue(vaAllowance)),
-  );
-}
-
-function calculateFormulaCommission(draft: PayrollDraft, commissionPercentage: number) {
-  return calculateCommissionRemainder(
-    calculateCalculationBase(moneyValue(draft.total_services_value), commissionPercentage),
-    moneyValue(draft.base_salary),
-    moneyValue(draft.vr_deduction),
-    moneyValue(draft.va_deduction),
-  );
-}
-
-/** Salary + commission + extras + award − discounts − advances: what goes to the technician's account. */
+/** Salary + commission + overtime + award − discounts − advances: what goes to the technician's account. */
 function calculateCashNet(draft: PayrollDraft) {
-  return roundMoney(
-    moneyValue(draft.base_salary) +
-      moneyValue(draft.commission_value) +
-      moneyValue(draft.extra_hours_value) +
-      moneyValue(draft.extraordinary_award_value) -
-      moneyValue(draft.discounts_total) -
-      moneyValue(draft.advances_total),
-  );
+  return sumCashNet({
+    baseSalary: moneyValue(draft.base_salary),
+    commission: moneyValue(draft.commission_value),
+    extraHours: moneyValue(draft.extra_hours_value),
+    award: moneyValue(draft.extraordinary_award_value),
+    discounts: moneyValue(draft.discounts_total),
+    advances: moneyValue(draft.advances_total),
+  });
 }
 
 function calculateBenefitTotal(draft: PayrollDraft) {
@@ -274,62 +284,128 @@ function createDraftFromRow(row: PayrollRow, competenceMonth: string) {
   });
 }
 
-/** One line of the folha: what it is on the left, the amount to read or type on the right. */
+function formatAmount(unit: 'R$' | 'h', value: number) {
+  return unit === 'h' ? formatHours(value) : formatCurrency(value);
+}
+
+/**
+ * One line of the folha: what it is (and how it came about) on the left, the amount to read or type on the
+ * right. A value the admin changed shows what the system calculates, with a way back. A value that is
+ * normally derived stays locked until "Ajustar" is pressed.
+ */
 function AmountRow({
   label,
   hint,
   value,
   onChange,
   unit = 'R$',
+  sign,
   readOnly = false,
-  emphasis = false,
+  allowNegative = false,
+  calculated = null,
+  onRestore,
+  locked = false,
+  onUnlock,
 }: {
   label: string;
   hint?: string;
   value: number;
   onChange: (value: number) => void;
   unit?: 'R$' | 'h';
+  /** "−" for a deduction: only a visual cue, the amount itself is always positive. */
+  sign?: '−';
   readOnly?: boolean;
-  emphasis?: boolean;
+  allowNegative?: boolean;
+  /** What the system calculates for this line (null = unknown). */
+  calculated?: number | null;
+  onRestore?: () => void;
+  locked?: boolean;
+  onUnlock?: () => void;
 }) {
+  const id = useId();
   const [text, setText] = useState('');
   const [editing, setEditing] = useState(false);
+  const adjusted = !readOnly && calculated !== null && roundMoney(value) !== roundMoney(calculated);
+  const frozen = readOnly || locked;
 
   return (
-    <label className={cn('flex items-center justify-between gap-4', emphasis ? 'py-3' : 'py-2.5')}>
-      <span className="min-w-0">
-        <span className={cn('block text-sm', emphasis ? 'font-semibold' : '', 'text-foreground')}>{label}</span>
-        {hint ? <span className="mt-0.5 block text-xs leading-snug text-muted-foreground">{hint}</span> : null}
+    <div className="flex items-start justify-between gap-4 py-2.5">
+      <div className="min-w-0 pt-2">
+        <label htmlFor={id} className="block text-sm text-foreground">
+          {label}
+        </label>
+        {hint ? <p id={`${id}-hint`} className="mt-0.5 whitespace-pre-line text-xs leading-snug text-muted-foreground">{hint}</p> : null}
+        {adjusted && onRestore ? (
+          <p className="mt-0.5 text-xs leading-snug text-amber-700">
+            Ajustado. O sistema calcula {formatAmount(unit, calculated)}.{' '}
+            <button type="button" onClick={onRestore} className="font-medium underline underline-offset-2 hover:text-amber-900">
+              Restaurar
+            </button>
+          </p>
+        ) : null}
+      </div>
+      <div className="flex shrink-0 flex-col items-end gap-1">
+        <span
+          className={cn(
+            'flex h-10 w-40 items-center gap-1.5 rounded-lg border px-3 transition',
+            frozen ? 'border-transparent bg-secondary/50' : 'border-border bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20',
+            adjusted && !frozen ? 'border-amber-300' : '',
+          )}
+        >
+          <span className="shrink-0 whitespace-nowrap text-xs text-muted-foreground">{sign ? `${sign} ${unit}` : unit}</span>
+          <input
+            id={id}
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
+            readOnly={frozen}
+            aria-describedby={hint ? `${id}-hint` : undefined}
+            value={editing ? text : numberFormat.format(value)}
+            onFocus={(event) => {
+              if (frozen) return;
+              setText(value === 0 ? '' : String(value).replace('.', ','));
+              setEditing(true);
+              event.currentTarget.select();
+            }}
+            onChange={(event) => {
+              // Digits, a decimal comma (or dot) and, only where it makes sense, a leading minus.
+              const typed = event.target.value.replace(allowNegative ? /[^\d.,-]/g : /[^\d.,]/g, '');
+              const nextText = typed.replace(/(?!^)-/g, '');
+              setText(nextText);
+              const parsed = parseMoneyText(nextText, value);
+              onChange(Math.max(allowNegative ? -MAX_AMOUNT : 0, Math.min(MAX_AMOUNT, parsed)));
+            }}
+            onKeyDown={(event) => {
+              // Enter confirms the value; it must never submit or close anything.
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                event.currentTarget.blur();
+              }
+            }}
+            onBlur={() => setEditing(false)}
+            className="w-full min-w-0 bg-transparent text-right text-sm font-medium tabular-nums outline-none"
+          />
+        </span>
+        {locked && !readOnly && onUnlock ? (
+          <button type="button" onClick={onUnlock} className="text-xs font-medium text-primary hover:underline">
+            Ajustar
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+/** A subtotal under a group of lines. */
+function TotalLine({ label, value, sign }: { label: string; value: number; sign?: '−' }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-border pt-3 text-sm font-semibold tabular-nums">
+      <span>{label}</span>
+      <span>
+        {sign ? `${sign} ` : ''}
+        {formatCurrency(value)}
       </span>
-      <span
-        className={cn(
-          'flex h-10 w-40 shrink-0 items-center gap-2 rounded-lg border px-3 transition',
-          readOnly ? 'border-transparent bg-secondary/50' : 'border-border bg-background focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20',
-          emphasis && !readOnly ? 'border-foreground/25' : '',
-        )}
-      >
-        <span className="text-xs text-muted-foreground">{unit}</span>
-        <input
-          type="text"
-          inputMode="decimal"
-          readOnly={readOnly}
-          value={editing ? text : numberFormat.format(value)}
-          onFocus={(event) => {
-            if (readOnly) return;
-            setText(value === 0 ? '' : String(value).replace('.', ','));
-            setEditing(true);
-            event.currentTarget.select();
-          }}
-          onChange={(event) => {
-            const nextText = event.target.value.replace(/[^\d.,-]/g, '');
-            setText(nextText);
-            onChange(parseMoneyText(nextText, value));
-          }}
-          onBlur={() => setEditing(false)}
-          className={cn('w-full min-w-0 bg-transparent text-right text-sm tabular-nums outline-none', emphasis ? 'font-semibold' : 'font-medium')}
-        />
-      </span>
-    </label>
+    </div>
   );
 }
 
@@ -357,6 +433,13 @@ export default function PayrollPage() {
   const [autoSaveState, setAutoSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const [draftStatus, setDraftStatus] = useState<'none' | 'draft' | 'closed'>('none');
+  // What the system calculates for this folha (to show what was changed by hand) and how it got there.
+  const [calculated, setCalculated] = useState<PayrollDraft | null>(null);
+  const [details, setDetails] = useState<PayrollDetails | null>(null);
+  // Normally derived values (gross, commission, final amount) stay locked until "Ajustar" is pressed.
+  const [unlocked, setUnlocked] = useState<Set<PayrollDraftField>>(new Set());
+  const activeTechnicianRef = useRef('');
+  const commissionMode: CommissionMode = organizationSettings.commissionMode ?? 'excess';
   const selectedCompetenceYear = Number(competenceMonth.slice(0, 4)) || new Date().getFullYear();
   const selectedCompetenceMonth = Number(competenceMonth.slice(5, 7)) || new Date().getMonth() + 1;
   const competenceYearOptions = useMemo(
@@ -464,7 +547,14 @@ export default function PayrollPage() {
         const vrAllowance = roundMoney(payrollItem ? payrollItem.vr_deduction : valueOrDefault(technician.vr_allowance, organizationSettings.vrAllowance));
         const commission = payrollItem
           ? roundMoney(payrollItem.commission_value)
-          : calculateCommissionRemainder(calculateCalculationBase(totalServicesValue, commissionPercentage), baseSalary, vrAllowance, vaAllowance);
+          : calculateCommissionValue({
+              mode: commissionMode,
+              totalServices: totalServicesValue,
+              percentage: commissionPercentage,
+              baseSalary,
+              vrAllowance,
+              vaAllowance,
+            });
         const discountsTotal = payrollItem
           ? roundMoney(payrollItem.discounts_total)
           : roundMoney(
@@ -506,7 +596,7 @@ export default function PayrollPage() {
           payrollNetTotal,
         };
       });
-  }, [competenceMonth, discounts, organizationSettings, payroll, services, technicians]);
+  }, [commissionMode, competenceMonth, discounts, organizationSettings, payroll, services, technicians]);
 
   const filteredRows = rows.filter((row) => normalizeText(`${row.technician.name} ${row.technician.qra}`).includes(normalizeText(query)));
 
@@ -521,8 +611,12 @@ export default function PayrollPage() {
   const progress = rows.length ? Math.round((closedCount / rows.length) * 100) : 0;
 
   function resetDialogState() {
+    activeTechnicianRef.current = '';
     setSelectedRow(null);
     setPayrollDraft(null);
+    setCalculated(null);
+    setDetails(null);
+    setUnlocked(new Set());
     setDraftError('');
     setIsPreviewLoading(false);
     setIsClosing(false);
@@ -532,50 +626,74 @@ export default function PayrollPage() {
     setDraftStatus('none');
   }
 
-  async function loadPreview(row: PayrollRow) {
-    setIsPreviewLoading(true);
-    setOpeningTechnicianId(row.technician.id);
-    setDraftError('');
-
+  /** What the system calculates for this technician and month, with how it got there. Null when it fails. */
+  async function fetchPreview(row: PayrollRow) {
     try {
       const response = await fetch('/api/payroll/preview', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ technicianId: row.technician.id, competenceMonth }),
       });
-
-      if (!response.ok) {
-        throw new Error('Preview failed');
-      }
+      if (!response.ok) return null;
 
       const data = await response.json();
-      setPayrollDraft(normalizeDraft(data.payroll));
-      return true;
+      return { draft: normalizeDraft(data.payroll), details: (data.payroll?.details ?? null) as PayrollDetails | null };
     } catch {
-      setPayrollDraft(createDraftFromRow(row, competenceMonth));
-      setDraftError('Não foi possível recalcular automaticamente. Revise os valores antes de fechar.');
-      return false;
-    } finally {
-      setIsPreviewLoading(false);
-      setOpeningTechnicianId('');
+      return null;
     }
   }
 
+  async function loadPreview(row: PayrollRow) {
+    setIsPreviewLoading(true);
+    setOpeningTechnicianId(row.technician.id);
+    setDraftError('');
+
+    const preview = await fetchPreview(row);
+    if (activeTechnicianRef.current === row.technician.id) {
+      if (preview) {
+        setPayrollDraft(preview.draft);
+        setCalculated(preview.draft);
+        setDetails(preview.details);
+      } else {
+        setPayrollDraft(createDraftFromRow(row, competenceMonth));
+        setDraftError('Não foi possível recalcular automaticamente. Revise os valores antes de fechar.');
+      }
+    }
+
+    setIsPreviewLoading(false);
+    setOpeningTechnicianId('');
+    return Boolean(preview);
+  }
+
   async function openPayrollDialog(row: PayrollRow) {
+    activeTechnicianRef.current = row.technician.id;
     setSelectedRow(row);
     setIsPayrollDialogOpen(true);
     setDraftError('');
     setIsDirty(false);
+    setCalculated(null);
+    setDetails(null);
+    setUnlocked(new Set());
     setAutoSaveState('idle');
     setLastSavedAt(row.payrollItem?.updated_at ? new Date(row.payrollItem.updated_at) : null);
     setDraftStatus(row.payrollItem ? (row.payrollItem.status === 'closed' ? 'closed' : 'draft') : 'none');
 
-    if (row.payrollItem) {
-      // Already saved (draft or closed): show exactly what was saved, no recalculation.
-      setPayrollDraft(createDraftFromRow(row, competenceMonth));
-    } else {
+    if (!row.payrollItem) {
       setPayrollDraft(null);
       await loadPreview(row);
+      return;
+    }
+
+    // Already saved (draft or closed): show exactly what was saved, no recalculation.
+    setPayrollDraft(createDraftFromRow(row, competenceMonth));
+
+    // A draft is still being worked on: ask the system what it calculates now, to show what differs.
+    if (row.payrollItem.status !== 'closed') {
+      const preview = await fetchPreview(row);
+      if (preview && activeTechnicianRef.current === row.technician.id) {
+        setCalculated(preview.draft);
+        setDetails(preview.details);
+      }
     }
   }
 
@@ -670,17 +788,20 @@ export default function PayrollPage() {
   const currentCommissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
   const isClosed = draftStatus === 'closed';
 
-  function updateDraftNumber(field: PayrollDraftField, value: number) {
+  function updateDraftNumber(field: PayrollDraftField, rawValue: number) {
     if (isClosed) return;
 
+    const value = signedFields.includes(field) ? rawValue : Math.max(0, rawValue);
     setIsDirty(true);
     setPayrollDraft((current) => {
       if (!current) return current;
 
       const next = { ...current, [field]: roundMoney(value) };
 
+      // A commission set by hand is kept; one that was following the rule keeps following it.
       if (commissionFormulaFields.includes(field)) {
-        next.commission_value = calculateFormulaCommission(next, currentCommissionPercentage);
+        const wasAutomatic = roundMoney(current.commission_value) === formulaCommissionOf(current, currentCommissionPercentage, commissionMode);
+        if (wasAutomatic) next.commission_value = formulaCommissionOf(next, currentCommissionPercentage, commissionMode);
       }
 
       if (field !== 'net_total') {
@@ -693,8 +814,8 @@ export default function PayrollPage() {
     });
   }
 
-  function applyCommissionFormula() {
-    updateDraftNumber('commission_value', payrollDraft ? calculateFormulaCommission(payrollDraft, currentCommissionPercentage) : 0);
+  function unlock(field: PayrollDraftField) {
+    setUnlocked((current) => new Set(current).add(field));
   }
 
   async function persistPayroll(status: 'draft' | 'closed', reopen = false) {
@@ -821,13 +942,103 @@ export default function PayrollPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payrollDraft, isDirty, isPayrollDialogOpen, isClosing, isClosed]);
 
-  const formulaCommission = payrollDraft ? calculateFormulaCommission(payrollDraft, currentCommissionPercentage) : 0;
-  const formulaCashNet = payrollDraft ? calculateCashNet(payrollDraft) : 0;
-  const draftPayrollNet = payrollDraft ? calculatePayrollNet(payrollDraft) : 0;
-  const draftProfit = payrollDraft ? roundMoney(payrollDraft.total_services_value - draftPayrollNet) : 0;
-  const draftBase = payrollDraft ? calculateCalculationBase(payrollDraft.total_services_value, currentCommissionPercentage) : 0;
-  const commissionAdjusted = payrollDraft ? roundMoney(payrollDraft.commission_value) !== roundMoney(formulaCommission) : false;
-  const netAdjusted = payrollDraft ? roundMoney(payrollDraft.net_total) !== roundMoney(formulaCashNet) : false;
+  const draft = payrollDraft;
+  const money = formatCurrency;
+  const formulaCommission = draft ? formulaCommissionOf(draft, currentCommissionPercentage, commissionMode) : 0;
+  const cashSum = draft ? calculateCashNet(draft) : 0;
+  const draftPayrollNet = draft ? calculatePayrollNet(draft) : 0;
+  const draftProfit = draft ? roundMoney(draft.total_services_value - draftPayrollNet) : 0;
+  const draftBase = draft ? commissionBase(draft.total_services_value, currentCommissionPercentage) : 0;
+  const draftFixed = draft ? fixedCosts(draft.base_salary, draft.vr_deduction, draft.va_deduction) : 0;
+  const earningsTotal = draft ? roundMoney(draft.base_salary + draft.commission_value + draft.extra_hours_value + draft.extraordinary_award_value) : 0;
+  const deductionsTotal = draft ? roundMoney(draft.discounts_total + draft.advances_total) : 0;
+  const cardsTotal = draft ? calculateBenefitTotal(draft) : 0;
+  const netAdjustment = draft ? roundMoney(draft.net_total - cashSum) : 0;
+
+  /** What the system calculates for a line (null when unknown), to show what was changed by hand. */
+  function systemValue(field: PayrollDraftField): number | null {
+    if (!draft) return null;
+    if (field === 'commission_value') return formulaCommission;
+    if (field === 'net_total') return cashSum;
+    return calculated ? Number(calculated[field]) : null;
+  }
+
+  function isAdjusted(field: PayrollDraftField) {
+    const system = systemValue(field);
+    return !isClosed && Boolean(draft) && system !== null && roundMoney(draft![field] as number) !== roundMoney(system);
+  }
+
+  function lineProps(field: PayrollDraftField, extra: { locked?: boolean } = {}) {
+    return {
+      value: Number(draft?.[field] ?? 0),
+      onChange: (value: number) => updateDraftNumber(field, value),
+      readOnly: isClosed,
+      calculated: isClosed ? null : systemValue(field),
+      onRestore: () => {
+        const system = systemValue(field);
+        if (system !== null) updateDraftNumber(field, system);
+      },
+      ...(extra.locked ? { locked: !unlocked.has(field) && !isAdjusted(field), onUnlock: () => unlock(field) } : {}),
+    };
+  }
+
+  const adjustedLabels = (
+    [
+      ['total_services_value', 'Valor bruto'],
+      ['base_salary', 'Salário base'],
+      ['commission_value', 'Comissão'],
+      ['extra_hours_value', 'Horas extras'],
+      ['extraordinary_award_value', 'Prêmio'],
+      ['discounts_total', 'Descontos'],
+      ['advances_total', 'Adiantamentos'],
+      ['vr_deduction', 'VR'],
+      ['va_deduction', 'VA'],
+      ['hour_bank_balance', 'Banco de horas'],
+      ['net_total', 'Valor em conta'],
+    ] as Array<[PayrollDraftField, string]>
+  )
+    .filter(([field]) => isAdjusted(field))
+    .map(([, label]) => label);
+
+  const awardTiers = organizationSettings.serviceAwardTiers;
+  const showCommission = commissionMode !== 'none' || Boolean(draft?.commission_value);
+  const showAward = awardTiers.length > 0 || Boolean(draft?.extraordinary_award_value);
+
+  let commissionHint: string | undefined;
+  if (draft) {
+    if (commissionMode === 'none') {
+      commissionHint = 'A empresa não paga comissão (Configurações).';
+    } else if (commissionMode === 'percentage') {
+      commissionHint = `${currentCommissionPercentage}% de ${money(draft.total_services_value)}`;
+    } else {
+      commissionHint = `${currentCommissionPercentage}% de ${money(draft.total_services_value)} = ${money(draftBase)}
+menos o fixo de ${money(draftFixed)} (salário + VR + VA)`;
+      if (draftBase <= draftFixed) commissionHint += `
+Ainda não passou do fixo: faltam ${money(roundMoney(draftFixed - draftBase))} de produção.`;
+    }
+  }
+
+  let overtimeHint: string | undefined;
+  if (details && draft && !isClosed) {
+    if (!(draft.base_salary > 0)) overtimeHint = 'Sem salário base, a hora extra não tem valor.';
+    else if (details.extraHours > 0)
+      overtimeHint = `${hoursText(details.extraHours)} h acima de ${hoursText(details.monthlyHours)} h
+× ${money(details.hourlyRate)} por hora × ${hoursText(details.overtimeMultiplier)}`;
+    else overtimeHint = `${hoursText(details.totalHours)} h trabalhadas de ${hoursText(details.monthlyHours)} h: sem horas extras.`;
+  }
+
+  let awardHint: string | undefined;
+  if (selectedRow && awardTiers.length) {
+    const progress = awardProgress(selectedRow.serviceCount, awardTiers);
+    if (progress.reached) awardHint = `${selectedRow.serviceCount} OS: faixa de ${progress.reached.minServices} OS atingida.`;
+    else if (progress.next)
+      awardHint = `${selectedRow.serviceCount} OS: faltam ${progress.next.minServices - selectedRow.serviceCount} para o prêmio de ${money(progress.next.amount)}.`;
+  }
+
+  const bankHint = details && !isClosed
+    ? `${hoursText(details.previousHourBank)} h do mês anterior + ${hoursText(details.extraHours)} h deste mês.
+Só informativo: não entra no valor em conta.`
+    : 'Só informativo: não entra no valor em conta.';
 
   const saveStatus =
     autoSaveState === 'saving'
@@ -1082,117 +1293,105 @@ export default function PayrollPage() {
               <div className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">Calculando valores...</div>
             ) : null}
 
-            {payrollDraft ? (
+            {draft ? (
               <>
                 <SummaryBand
                   items={[
-                    { label: 'Valor bruto', value: formatCurrency(payrollDraft.total_services_value) },
-                    { label: 'Em conta', value: formatCurrency(payrollDraft.net_total) },
-                    { label: 'Folha total', value: formatCurrency(draftPayrollNet) },
-                    { label: 'Lucro gerado', value: formatCurrency(draftProfit), tone: draftProfit >= 0 ? 'good' : 'bad' },
+                    { label: 'Valor bruto', value: money(draft.total_services_value) },
+                    { label: 'Em conta', value: money(draft.net_total) },
+                    { label: 'Folha total', value: money(draftPayrollNet) },
+                    { label: 'Lucro gerado', value: money(draftProfit), tone: draftProfit >= 0 ? 'good' : 'bad' },
                   ]}
                 />
 
-                <div className="grid gap-x-12 gap-y-8 lg:grid-cols-2">
+                {adjustedLabels.length ? (
+                  <p className="text-sm text-amber-800">
+                    Ajustado à mão: {adjustedLabels.join(', ')}.
+                  </p>
+                ) : null}
+
+                <div className="grid gap-x-12 gap-y-8 lg:grid-cols-[1.15fr_1fr]">
                   <div className="space-y-8">
-                    <ModalSection title="Produção">
+                    <ModalSection title="Ganhos">
                       <div className="divide-y divide-border">
-                        <AmountRow
-                          label="Valor bruto das OS"
-                          hint={selectedRow ? formatFortnights(selectedRow.serviceFortnightSummary, true) || 'Sem OS no mês' : undefined}
-                          value={payrollDraft.total_services_value}
-                          onChange={(value) => updateDraftNumber('total_services_value', value)}
-                          readOnly={isClosed}
-                        />
+                        <AmountRow label="Salário base" {...lineProps('base_salary')} />
+                        {showCommission ? <AmountRow label="Comissão" hint={commissionHint} {...lineProps('commission_value', { locked: true })} /> : null}
+                        <AmountRow label="Horas extras" hint={overtimeHint} {...lineProps('extra_hours_value')} />
+                        {showAward ? <AmountRow label="Prêmio por produção" hint={awardHint} {...lineProps('extraordinary_award_value')} /> : null}
                       </div>
+                      <TotalLine label="Total de ganhos" value={earningsTotal} />
                     </ModalSection>
 
-                    <ModalSection title="Pago em conta">
+                    <ModalSection title="Descontos">
                       <div className="divide-y divide-border">
-                        <AmountRow label="Salário base" value={payrollDraft.base_salary} onChange={(value) => updateDraftNumber('base_salary', value)} readOnly={isClosed} />
-                        <AmountRow
-                          label="Comissão"
-                          hint={commissionAdjusted ? `Ajustada à mão. Pela fórmula: ${formatCurrency(formulaCommission)}` : undefined}
-                          value={payrollDraft.commission_value}
-                          onChange={(value) => updateDraftNumber('commission_value', value)}
-                          readOnly={isClosed}
-                        />
-                        <AmountRow label="Horas extras" value={payrollDraft.extra_hours_value} onChange={(value) => updateDraftNumber('extra_hours_value', value)} readOnly={isClosed} />
-                        <AmountRow
-                          label="Prêmio por produção"
-                          value={payrollDraft.extraordinary_award_value}
-                          onChange={(value) => updateDraftNumber('extraordinary_award_value', value)}
-                          readOnly={isClosed}
-                        />
-                        <AmountRow label="Descontos" value={payrollDraft.discounts_total} onChange={(value) => updateDraftNumber('discounts_total', value)} readOnly={isClosed} />
-                        <AmountRow label="Adiantamentos" value={payrollDraft.advances_total} onChange={(value) => updateDraftNumber('advances_total', value)} readOnly={isClosed} />
-                        <AmountRow
-                          emphasis
-                          label="Valor em conta"
-                          hint={netAdjusted ? `Ajustado à mão. Pela soma acima: ${formatCurrency(formulaCashNet)}` : 'Soma dos ganhos menos descontos e adiantamentos'}
-                          value={payrollDraft.net_total}
-                          onChange={(value) => updateDraftNumber('net_total', value)}
-                          readOnly={isClosed}
-                        />
+                        <AmountRow label="Descontos" sign="−" {...lineProps('discounts_total')} />
+                        <AmountRow label="Adiantamentos" sign="−" {...lineProps('advances_total')} />
                       </div>
-                      {netAdjusted && !isClosed ? (
-                        <button
-                          type="button"
-                          onClick={() => updateDraftNumber('net_total', formulaCashNet)}
-                          className="text-sm font-medium text-primary hover:underline"
-                        >
-                          Usar a soma ({formatCurrency(formulaCashNet)})
-                        </button>
-                      ) : null}
+                      <TotalLine label="Total de descontos" value={deductionsTotal} sign="−" />
                     </ModalSection>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-4 rounded-xl bg-primary px-5 py-4 text-primary-foreground">
+                        <div>
+                          <p className="text-base font-semibold">Valor em conta</p>
+                          <p className="text-xs opacity-75">Ganhos menos descontos</p>
+                        </div>
+                        <p className="text-2xl font-semibold tabular-nums">{money(draft.net_total)}</p>
+                      </div>
+
+                      {isClosed ? (
+                        netAdjustment !== 0 ? (
+                          <p className="text-xs text-muted-foreground">
+                            Valor ajustado à mão: a soma dos ganhos e descontos daria {money(cashSum)}.
+                          </p>
+                        ) : null
+                      ) : unlocked.has('net_total') || netAdjustment !== 0 ? (
+                        <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-1">
+                          <AmountRow
+                            label="Valor em conta final"
+                            hint="Use só para combinar um valor diferente da soma."
+                            allowNegative
+                            {...lineProps('net_total')}
+                          />
+                        </div>
+                      ) : (
+                        <button type="button" onClick={() => unlock('net_total')} className="text-sm font-medium text-primary hover:underline">
+                          Ajustar o valor em conta manualmente
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-8">
-                    <ModalSection title="Cartões" description="Pagos no cartão e abatidos da base da comissão.">
-                      <div className="divide-y divide-border">
-                        <AmountRow label="Vale-refeição (VR)" value={payrollDraft.vr_deduction} onChange={(value) => updateDraftNumber('vr_deduction', value)} readOnly={isClosed} />
-                        <AmountRow label="Vale-alimentação (VA)" value={payrollDraft.va_deduction} onChange={(value) => updateDraftNumber('va_deduction', value)} readOnly={isClosed} />
-                      </div>
-                    </ModalSection>
-
-                    <ModalSection title="Banco de horas">
+                    <ModalSection title="Produção do mês">
                       <div className="divide-y divide-border">
                         <AmountRow
-                          label="Saldo do mês"
-                          unit="h"
-                          value={payrollDraft.hour_bank_balance}
-                          onChange={(value) => updateDraftNumber('hour_bank_balance', value)}
-                          readOnly={isClosed}
+                          label="Valor bruto das OS"
+                          hint={selectedRow ? `${selectedRow.serviceCount} OS${formatFortnights(selectedRow.serviceFortnightSummary, true) ? `\n${formatFortnights(selectedRow.serviceFortnightSummary, true)}` : ''}` : undefined}
+                          {...lineProps('total_services_value', { locked: true })}
                         />
                       </div>
                     </ModalSection>
 
                     <ModalSection
-                      title="Como a comissão é calculada"
-                      action={
-                        commissionAdjusted && !isClosed ? (
-                          <button type="button" onClick={applyCommissionFormula} className="text-sm font-medium text-primary hover:underline">
-                            Usar a fórmula
-                          </button>
-                        ) : undefined
+                      title="Cartões"
+                      description={
+                        commissionMode === 'excess'
+                          ? 'Pagos no cartão. Contam como fixo: a comissão só começa depois deles.'
+                          : 'Pagos no cartão, fora do valor em conta.'
                       }
                     >
-                      <dl className="space-y-1.5 rounded-xl bg-secondary/40 px-4 py-3 text-sm tabular-nums">
-                        <div className="flex justify-between gap-4">
-                          <dt className="text-muted-foreground">
-                            {currentCommissionPercentage}% de {formatCurrency(payrollDraft.total_services_value)}
-                          </dt>
-                          <dd>{formatCurrency(draftBase)}</dd>
-                        </div>
-                        <div className="flex justify-between gap-4">
-                          <dt className="text-muted-foreground">− salário base, VR e VA</dt>
-                          <dd>− {formatCurrency(payrollDraft.base_salary + payrollDraft.vr_deduction + payrollDraft.va_deduction)}</dd>
-                        </div>
-                        <div className="flex justify-between gap-4 border-t border-border pt-1.5 font-semibold">
-                          <dt>Comissão</dt>
-                          <dd>{formatCurrency(formulaCommission)}</dd>
-                        </div>
-                      </dl>
+                      <div className="divide-y divide-border">
+                        <AmountRow label="Vale-refeição (VR)" {...lineProps('vr_deduction')} />
+                        <AmountRow label="Vale-alimentação (VA)" {...lineProps('va_deduction')} />
+                      </div>
+                      <TotalLine label="Total nos cartões" value={cardsTotal} />
+                    </ModalSection>
+
+                    <ModalSection title="Banco de horas">
+                      <div className="divide-y divide-border">
+                        <AmountRow label="Saldo acumulado" unit="h" hint={bankHint} allowNegative {...lineProps('hour_bank_balance')} />
+                      </div>
                     </ModalSection>
                   </div>
                 </div>

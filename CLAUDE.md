@@ -145,7 +145,7 @@ Arquivos muito grandes — leia por trechos (Grep primeiro), nunca inteiros:
 ## Regras de negócio herdadas
 
 - Competência no formato `YYYY-MM`. Serviços têm quinzena `Q1`/`Q2`.
-- Comissão: `base = total de OS × commission_percentage`; `comissão = max(0, base − salário base − VA − VR)`. Valores do técnico (ou o padrão da organização quando vazios). Detalhes em `docs/calculo-folha.md` (exemplo com os valores do cliente original).
+- Comissão (`commissionMode` das Configurações, regras em `lib/payroll-rules.ts`): `base = total de OS × commission_percentage`; modo `excess` (padrão): `comissão = max(0, base − salário base − VA − VR)`; modo `percentage`: `comissão = base`; modo `none`: sem comissão. Valores do técnico (ou o padrão da organização quando vazios). Detalhes em `docs/calculo-folha.md` (exemplo com os valores do cliente original).
 - Hora extra: horas acima da jornada mensal × (salário base ÷ jornada) × adicional. Prêmio: valor da maior faixa de OS atingida no mês.
 - Folha tem status `draft`/`closed`; relatórios gerenciais usam só folhas fechadas por padrão.
 - Horas (escala e importação do Porto) descontam o intervalo diário da organização. O job de horas reprocessa hoje e os `portoReprocessDays` (1 a 7) dias anteriores, e todo dia `LAUDO PENDENTE:` (laudo ausente dentro do prazo `portoLaudoGraceHours`, padrão 6 h após o Concluído) até ele virar normal ou, vencido o prazo, advertência — a advertência nunca é recalculada. "Fim do expediente" relata o dia já encerrado (2 h depois do fim do turno padrão da organização); a importação automática que falha é tentada de novo (3 tentativas, 5 e 15 min, trava e navegador por tentativa). Detalhes em `docs/integracao-porto-seguro.md` ("Horários livres" e "Tentativas automáticas").

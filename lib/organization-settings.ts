@@ -9,7 +9,13 @@ export type ServiceAwardTier = {
   amount: number;
 };
 
+/** How commission is paid: see lib/payroll-rules.ts. */
+export type CommissionMode = 'excess' | 'percentage' | 'none';
+export const COMMISSION_MODES: CommissionMode[] = ['excess', 'percentage', 'none'];
+
 export type OrganizationSettings = {
+  /** What the commission is: the excess over the fixed costs, a plain percentage on top of the salary, or none. */
+  commissionMode: CommissionMode;
   // Technician defaults — used when a technician has no value of their own, and as a new one's start.
   /** % of the month's OS total that forms the commission base. */
   commissionPercentage: number;
@@ -102,6 +108,7 @@ export function endOfWorkDayMinutes(settings: Pick<OrganizationSettings, 'defaul
  * organization's own numbers (never the original client's), set by its admin.
  */
 export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
+  commissionMode: 'excess',
   commissionPercentage: 25,
   baseSalary: 0,
   vaAllowance: 0,
@@ -257,7 +264,10 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
     return typeof value === 'string' ? value.trim() : null;
   };
 
+  const mode = text('commissionMode');
+
   return {
+    commissionMode: COMMISSION_MODES.includes(mode as CommissionMode) ? (mode as CommissionMode) : null,
     commissionPercentage: number('commissionPercentage'),
     baseSalary: number('baseSalary'),
     vaAllowance: number('vaAllowance'),
@@ -295,6 +305,8 @@ const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.
 function validateField(key: keyof OrganizationSettings, value: unknown, all: OrganizationSettings): string | null {
   const n = value as number;
   switch (key) {
+    case 'commissionMode':
+      return COMMISSION_MODES.includes(value as CommissionMode) ? null : 'Escolha como a comissão é paga.';
     case 'commissionPercentage':
       return n >= 0 && n <= 100 ? null : 'O percentual de comissão deve estar entre 0 e 100.';
     case 'baseSalary':
@@ -383,6 +395,7 @@ export function parseOrganizationSettingsInput(body: unknown): { settings: Organ
 }
 
 const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
+  commissionMode: 'Escolha como a comissão é paga.',
   commissionPercentage: 'O percentual de comissão deve estar entre 0 e 100.',
   baseSalary: 'Salário, VA e VR não podem ser negativos.',
   vaAllowance: 'Salário, VA e VR não podem ser negativos.',

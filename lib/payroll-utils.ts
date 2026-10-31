@@ -1,6 +1,9 @@
 import { sql } from './db';
 import { calculateServiceAward, valueOrDefault, type OrganizationSettings } from './organization-settings';
 import { getOrganizationSettings } from './organization-settings-store';
+import { calculateCashNet, calculateCommissionValue, calculateOvertime, type PayrollDetails } from './payroll-rules';
+
+export type { PayrollDetails };
 
 /**
  * "YYYY-MM" of the month before `competenceMonth`. Pure arithmetic: new Date("YYYY-MM-01") + setMonth
@@ -69,6 +72,8 @@ export interface PayrollCalculationResult {
   extraordinary_award_value: number;
   hour_bank_balance: number;
   net_total: number;
+  /** How the numbers above came about: shown by the Folha screen so each value can be explained. Not stored. */
+  details?: PayrollDetails;
 }
 
 type PayrollReference = PayrollCalculationResult;
@@ -110,30 +115,6 @@ export async function calculateServiceCount(
   `;
 
   return Number(result[0]?.total || 0);
-}
-
-function calculateCommissionFromTotals(
-  totalServices: number,
-  commissionPercentage: number,
-): number {
-  return roundCurrency(Math.max(0, totalServices) * (commissionPercentage / 100));
-}
-
-function calculateCommissionRemainder(
-  calculationBase: number,
-  baseSalary: number,
-  vaAllowance: number,
-  vrAllowance: number,
-): number {
-  return roundCurrency(
-    Math.max(
-      0,
-      roundCurrency(calculationBase) -
-        roundCurrency(baseSalary) -
-        roundCurrency(vaAllowance) -
-        roundCurrency(vrAllowance),
-    ),
-  );
 }
 
 async function getPayrollReference(
@@ -223,17 +204,14 @@ export async function calculateCommission(
     return 0;
   }
 
-  const calculationBase = calculateCommissionFromTotals(
+  return calculateCommissionValue({
+    mode: settings.commissionMode,
     totalServices,
-    valueOrDefault(technician[0]?.commission_percentage, settings.commissionPercentage),
-  );
-
-  return calculateCommissionRemainder(
-    calculationBase,
-    valueOrDefault(technician[0]?.base_salary, settings.baseSalary),
-    valueOrDefault(technician[0]?.va_allowance, settings.vaAllowance),
-    valueOrDefault(technician[0]?.vr_allowance, settings.vrAllowance),
-  );
+    percentage: valueOrDefault(technician[0]?.commission_percentage, settings.commissionPercentage),
+    baseSalary: valueOrDefault(technician[0]?.base_salary, settings.baseSalary),
+    vrAllowance: valueOrDefault(technician[0]?.vr_allowance, settings.vrAllowance),
+    vaAllowance: valueOrDefault(technician[0]?.va_allowance, settings.vaAllowance),
+  });
 }
 
 /**
@@ -382,13 +360,14 @@ export async function calculatePayroll(
   const totalServices = usePayrollReference
     ? roundCurrency(payrollReference?.total_services_value)
     : roundCurrency(calculatedTotalServices);
-  const calculationBase = calculateCommissionFromTotals(totalServices, allowances.commission_percentage);
-  const commission = calculateCommissionRemainder(
-    calculationBase,
-    allowances.base_salary,
-    allowances.va_allowance,
-    allowances.vr_allowance,
-  );
+  const commission = calculateCommissionValue({
+    mode: settings.commissionMode,
+    totalServices,
+    percentage: allowances.commission_percentage,
+    baseSalary: allowances.base_salary,
+    vrAllowance: allowances.vr_allowance,
+    vaAllowance: allowances.va_allowance,
+  });
   const extraordinaryAward = calculateServiceAward(serviceCount, settings.serviceAwardTiers);
 
   // Calculate hours
@@ -400,7 +379,13 @@ export async function calculatePayroll(
     totalHours,
     settings.monthlyHours,
   );
-  const extraHoursValue = await calculateExtraHoursValue(extra_hours, allowances.base_salary, settings);
+  const overtime = calculateOvertime({
+    totalHours,
+    monthlyHours: settings.monthlyHours,
+    baseSalary: allowances.base_salary,
+    multiplier: settings.overtimeMultiplier,
+  });
+  const extraHoursValue = overtime.value;
 
   // Calculate discounts
   const calculatedDiscounts = await calculateDiscounts(organizationId, technicianId, competenceMonth);
@@ -413,19 +398,14 @@ export async function calculatePayroll(
       ? roundCurrency(payrollReference?.advances_total)
       : roundCurrency(calculatedDiscounts.advances_total);
 
-  // Calculate net total
-  const grossCashTotal = roundCurrency(
-    allowances.base_salary +
-    commission +
-    extraHoursValue +
-    extraordinaryAward,
-  );
-
-  const netTotal = roundCurrency(
-    grossCashTotal -
-    discounts_total -
-    advances_total,
-  );
+  const netTotal = calculateCashNet({
+    baseSalary: allowances.base_salary,
+    commission,
+    extraHours: extraHoursValue,
+    award: extraordinaryAward,
+    discounts: discounts_total,
+    advances: advances_total,
+  });
 
   return {
     technician_id: technicianId,
@@ -441,5 +421,16 @@ export async function calculatePayroll(
     extraordinary_award_value: roundCurrency(extraordinaryAward),
     hour_bank_balance: roundCurrency(bank_balance),
     net_total: roundCurrency(netTotal),
+    details: {
+      commissionMode: settings.commissionMode,
+      commissionPercentage: allowances.commission_percentage,
+      serviceCount,
+      totalHours: roundCurrency(totalHours),
+      monthlyHours: settings.monthlyHours,
+      extraHours: roundCurrency(extra_hours),
+      hourlyRate: roundCurrency(overtime.hourlyRate),
+      overtimeMultiplier: settings.overtimeMultiplier,
+      previousHourBank: roundCurrency(bank_balance - extra_hours),
+    },
   };
 }

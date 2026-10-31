@@ -21,6 +21,8 @@ Se o resultado for negativo, a comissão fica **R$ 0,00**.
 R$ 5.682,07 - R$ 3.452,00 - R$ 699,60 - R$ 249,00 = R$ 1.281,47
 ```
 
+> Este é o modo **sobre o excedente** (`excess`). Cada empresa pode usar também **percentual da produção** (comissão = % do bruto, somada ao salário) ou **sem comissão**: veja `docs/configuracoes.md`.
+
 ## Resultado
 
 - Comissão: **R$ 1.281,47**
@@ -39,3 +41,11 @@ Descontos, adiantamentos, horas extras e prêmios podem alterar o valor final em
 - Folha fechada abre somente para leitura. A API recusa (409) qualquer gravação de rascunho sobre ela; para editar é preciso **Reabrir folha** (`reopen: true`, registrado na auditoria como `payroll.reopened`), e ela some da área do técnico até ser fechada de novo.
 - A API valida a competência (`AAAA-MM`) e os valores (números finitos, sem negativos, exceto banco de horas e valor em conta): `lib/payroll-input.ts`, teste `scripts/test-payroll-input.cjs`.
 - O banco de horas é em **horas**, não em reais (no PDF aparece como "X h").
+
+## O modal da folha
+
+- Estrutura de extrato: **Ganhos** (salário, comissão, horas extras, prêmio) − **Descontos** (descontos, adiantamentos) = **Valor em conta**; os **Cartões** (VR e VA) e a **Produção** ficam ao lado, e a **Folha total** (custo) = valor em conta + cartões.
+- Cada valor calculado diz como chegou ali (comissão: % da produção e fixo; horas extras: horas acima da jornada × valor da hora × adicional; prêmio: faixa atingida). A explicação vem de `details` em `/api/payroll/preview`.
+- Valor que o admin mudou fica marcado ("Ajustado. O sistema calcula R$ X. Restaurar"). Bruto, comissão e valor em conta ficam travados até apertar "Ajustar". Uma comissão ajustada à mão não é sobrescrita quando outro campo muda; um ajuste manual do valor em conta é mantido como diferença.
+- Campos aceitam "1.234,56" ou "1234,5", não aceitam negativo (só banco de horas e valor em conta final) e limitam o valor máximo; Enter confirma sem enviar nada.
+- O banco de horas é só informativo: não entra no valor em conta.
