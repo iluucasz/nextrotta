@@ -44,7 +44,7 @@ export function TodayStrip({
 
   return (
     <section className="rounded-2xl border border-border bg-card p-6 sm:p-7" aria-label="Hoje">
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_auto]">
         <div className="min-w-0">
           <p className="text-sm text-muted-foreground">{dateLabel.charAt(0).toUpperCase() + dateLabel.slice(1)}</p>
           {technicians.length ? (
@@ -59,7 +59,7 @@ export function TodayStrip({
                   <li
                     key={technician.id}
                     title={`${technician.name}: ${TODAY_STYLE[technician.kind].label}`}
-                    className={`h-3 min-w-3 max-w-14 flex-1 rounded-full ${TODAY_STYLE[technician.kind].bar}`}
+                    className={`h-3 min-w-2 flex-1 rounded-full ${TODAY_STYLE[technician.kind].bar}`}
                   >
                     <span className="sr-only">{technician.name}: {TODAY_STYLE[technician.kind].label}</span>
                   </li>
@@ -83,16 +83,18 @@ export function TodayStrip({
           )}
         </div>
 
-        <dl className="flex gap-8 border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
+        <div className="flex items-center border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-10 lg:pt-0">
+          <dl className="flex items-start gap-10">
           <div>
             <dd className="text-2xl font-semibold tabular-nums text-foreground">{plannedUntil ? formatDate(plannedUntil) : '-'}</dd>
-            <dt className="mt-0.5 text-sm text-muted-foreground">{plannedUntil ? 'escala montada até' : 'nenhuma escala montada'}</dt>
+            <dt className="mt-0.5 max-w-40 text-sm text-muted-foreground">{plannedUntil ? 'escala montada até' : 'nenhuma escala montada'}</dt>
           </div>
           <div>
             <dd className={`text-2xl font-semibold tabular-nums ${missingDays > 0 ? 'text-amber-600' : 'text-foreground'}`}>{missingDays}</dd>
-            <dt className="mt-0.5 text-sm text-muted-foreground">{missingDays === 1 ? 'dia sem escala' : 'dias sem escala'} nos próximos 7 dias</dt>
+            <dt className="mt-0.5 max-w-40 text-sm text-muted-foreground">{missingDays === 1 ? 'dia sem escala' : 'dias sem escala'} nos próximos 7 dias</dt>
           </div>
         </dl>
+        </div>
       </div>
     </section>
   );
