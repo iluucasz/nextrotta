@@ -131,6 +131,7 @@ Dados de teste no banco: só a organização `kappa` está ativa. As demais de t
 - `lib/porto-integration/` + `lib/porto-jobs/` — automação do Portal do Prestador (só rodam no worker; excluídos do `tsconfig` raiz). O app chama o worker via `lib/porto-worker-client.ts`.
 - `lib/whatsapp/` — Evolution API, notificações e store.
 - `lib/schedule-planner.ts`, `lib/schedule-write-service.ts` — montagem da escala.
+- `app/admin/schedule/registros/` — histórico "Registros da escala" (submenu de Escala na sidebar: `children` em `adminLinks` de `components/app-shell.tsx`); a leitura/rotulagem das linhas fica em `lib/schedule-display.ts`, usada também pela tela de montagem.
 - `lib/types.ts` — tipos de domínio compartilhados.
 - `db/migrations/` — schema versionado. `scripts/lib/db.mjs` — conexão dos scripts (Pool WebSocket, carrega `.env.local`/`.env`).
 - `lib/tenant-host.ts` — resolve raiz × subdomínio pelo cabeçalho `Host` e monta URLs (`rootUrl`, `organizationUrl`, `sameHostUrl`). Em dev, `request.url` não traz o subdomínio: nunca montar redirect com `new URL(path, request.url)`.

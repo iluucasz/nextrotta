@@ -16,7 +16,9 @@ import {
   ChartNoAxesCombined,
   CreditCard,
   CalendarDays,
+  ChevronDown,
   Clock3,
+  History,
   Landmark,
   LayoutDashboard,
   Eye,
@@ -51,6 +53,8 @@ interface NavItem {
   href: string;
   label: string;
   icon: LucideIcon;
+  /** Pages that live under this one: shown indented below it, open while you are inside the section. */
+  children?: NavItem[];
 }
 
 interface AppShellProps {
@@ -65,7 +69,12 @@ const adminLinks: NavItem[] = [
   { href: '/admin/assistente', label: 'Assistente IA', icon: Sparkles },
   { href: '/admin/technicians', label: 'Técnicos', icon: Users },
   { href: '/admin/services', label: 'Serviços', icon: Wrench },
-  { href: '/admin/schedule', label: 'Escala', icon: CalendarDays },
+  {
+    href: '/admin/schedule',
+    label: 'Escala',
+    icon: CalendarDays,
+    children: [{ href: '/admin/schedule/registros', label: 'Registros da escala', icon: History }],
+  },
   { href: '/admin/payroll', label: 'Folha', icon: WalletCards },
   { href: '/admin/pecas', label: 'Venda de Peças', icon: Package },
   { href: '/admin/faturamento', label: 'Faturamento', icon: TrendingUp },
@@ -365,6 +374,8 @@ export function AppShell({ children, role, userName }: AppShellProps) {
     };
   }, []);
 
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+
   const allowedByPlan = (link: NavItem) => {
     const feature = LINK_FEATURES[link.href];
     const features = organizationStatus?.features;
@@ -383,7 +394,9 @@ export function AppShell({ children, role, userName }: AppShellProps) {
           );
           return !page || (!visibilityLoading && visibility[page].visible);
         })
-  ).filter(allowedByPlan);
+  )
+    .filter(allowedByPlan)
+    .map((link) => (link.children ? { ...link, children: link.children.filter(allowedByPlan) } : link));
 
   // Read from the client-visible marker cookie rather than refetching the session: it's only
   // deciding whether to render a banner, and the server-side cookies remain the source of truth
@@ -419,9 +432,11 @@ export function AppShell({ children, role, userName }: AppShellProps) {
 
   const motion = animated ? 'transition-all duration-300 ease-in-out' : '';
   const rootHref = role === 'admin' ? '/admin' : '/dashboard';
-  const activeLink = links.find((link) =>
-    link.href === rootHref ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`),
-  );
+  // The most specific page wins: /admin/schedule/registros is the child, not the Escala page above it.
+  const activeLink = links
+    .flatMap((link) => [link, ...(link.children ?? [])])
+    .filter((link) => (link.href === rootHref ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`)))
+    .sort((left, right) => right.href.length - left.href.length)[0];
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -533,29 +548,76 @@ export function AppShell({ children, role, userName }: AppShellProps) {
             {links.map((link) => {
               const Icon = link.icon;
               const isActive = activeLink?.href === link.href;
+              const children = link.children ?? [];
+              const inSection = children.some((child) => child.href === activeLink?.href);
+              const isExpanded = children.length > 0 && (expandedGroups[link.href] ?? inSection);
 
               return (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setOpen(false)}
-                  aria-current={isActive ? 'page' : undefined}
-                  title={collapsed ? link.label : undefined}
-                  className={`flex min-h-10 items-center gap-2.5 rounded-md px-3.5 text-sm font-medium ${motion || 'transition-colors'} ${
-                    collapsed ? 'lg:justify-center' : ''
-                  } ${
-                    isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
-                  }`}
-                >
-                  <Icon className="h-4 w-4 shrink-0" />
-                  <span
-                    className={`inline-block max-w-40 overflow-hidden whitespace-nowrap opacity-100 ${motion} ${collapsed ? 'lg:max-w-0 lg:opacity-0' : ''}`}
-                  >
-                    {link.label}
-                  </span>
-                </Link>
+                <div key={link.href}>
+                  <div className="relative">
+                    <Link
+                      href={link.href}
+                      onClick={() => setOpen(false)}
+                      aria-current={isActive ? 'page' : undefined}
+                      title={collapsed ? link.label : undefined}
+                      className={`flex min-h-10 items-center gap-2.5 rounded-md px-3.5 text-sm font-medium ${motion || 'transition-colors'} ${
+                        collapsed ? 'lg:justify-center' : ''
+                      } ${
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : inSection
+                            ? 'bg-secondary text-foreground'
+                            : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                      } ${children.length ? (collapsed ? 'lg:pr-3.5 pr-10' : 'pr-10') : ''}`}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <span
+                        className={`inline-block max-w-40 overflow-hidden whitespace-nowrap opacity-100 ${motion} ${collapsed ? 'lg:max-w-0 lg:opacity-0' : ''}`}
+                      >
+                        {link.label}
+                      </span>
+                    </Link>
+                    {children.length ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedGroups((current) => ({ ...current, [link.href]: !isExpanded }))}
+                        aria-expanded={isExpanded}
+                        aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${link.label}`}
+                        className={`absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md ${
+                          isActive ? 'text-primary-foreground hover:bg-white/15' : 'text-muted-foreground hover:bg-background hover:text-foreground'
+                        } ${collapsed ? 'lg:hidden' : ''}`}
+                      >
+                        <ChevronDown className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {isExpanded ? (
+                    <div className={`mt-1 space-y-1 border-l border-border pl-2 ml-5 ${collapsed ? 'lg:hidden' : ''}`}>
+                      {children.map((child) => {
+                        const ChildIcon = child.icon;
+                        const isChildActive = activeLink?.href === child.href;
+
+                        return (
+                          <Link
+                            key={child.href}
+                            href={child.href}
+                            onClick={() => setOpen(false)}
+                            aria-current={isChildActive ? 'page' : undefined}
+                            className={`flex min-h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${
+                              isChildActive
+                                ? 'bg-primary text-primary-foreground'
+                                : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
+                            }`}
+                          >
+                            <ChildIcon className="h-3.5 w-3.5 shrink-0" />
+                            <span className="truncate">{child.label}</span>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </div>
               );
             })}
           </nav>

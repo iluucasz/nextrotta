@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { CalendarDays, ChevronDown, Clock3, Download, FileText, Plus, Search, Trash2, Upload, Users, WandSparkles } from 'lucide-react';
+import { CalendarDays, ChevronDown, Clock3, Download, FileText, Plus, Trash2, Upload, Users, WandSparkles } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
 import { EmptyState } from '@/components/empty-state';
@@ -28,6 +28,18 @@ import {
 import { brasiliaDateKey, compactName, formatDate, formatHours, formatTime, formatTimeRange, normalizeText } from '@/lib/formatters';
 import { applyBrazilianDateText, readSpreadsheet } from '@/lib/spreadsheet-import';
 import { PortoRunWizard } from './porto-run-wizard';
+import {
+  getAttendanceStatusLabel,
+  getScheduleDisplayLabel,
+  getScheduleDisplayTone,
+  getScheduleObservation,
+  getSchedulePlannedTimes as plannedTimesOf,
+  getScheduleTimeLabel as timeLabelOf,
+  getStatusLabel,
+  getStatusTone,
+  normalizeTimeInput,
+  parseManualAttendanceNote,
+} from '@/lib/schedule-display';
 import {
   buildPersistedSchedule,
   createDateKey,
@@ -313,50 +325,8 @@ const dayRuleDefinitions: Array<{ key: ScheduleDayRuleKey; label: string; dayLab
   { key: 'saturday', label: 'Sábado', dayLabel: 'sábado' },
   { key: 'sunday', label: 'Domingo', dayLabel: 'domingo' },
 ];
-const MANUAL_ATTENDANCE_PREFIX = 'Apontamento manual:';
 
-function parseManualAttendanceNote(notes: string | null | undefined) {
-  const value = String(notes ?? '').trim();
-  if (!value.startsWith(MANUAL_ATTENDANCE_PREFIX)) {
-    return {
-      observation: '',
-    };
-  }
 
-  const statusMatch = value.match(/^Apontamento manual:\s*([^;]+)/i);
-  const normalizedStatus = normalizeText(statusMatch?.[1] ?? '');
-  const plannedMatch = value.match(/(?:^|;\s*)previsto=(\d{1,2}:\d{2})-(\d{1,2}:\d{2})/i);
-  const observationMatch = value.match(/(?:^|;\s*)obs=(.*)$/i);
-  let attendance_status: AttendanceStatus | undefined;
-
-  if (normalizedStatus.includes('servico cancelado')) {
-    attendance_status = 'cancelled_service';
-  } else if (normalizedStatus.includes('folga')) {
-    attendance_status = 'day_off';
-  } else if (normalizedStatus.includes('falta')) {
-    attendance_status = 'missed';
-  } else if (normalizedStatus.includes('justificado')) {
-    attendance_status = 'justified';
-  } else if (normalizedStatus.includes('trabalhou')) {
-    attendance_status = 'worked';
-  }
-
-  return {
-    attendance_status,
-    planned_start_time: plannedMatch?.[1],
-    planned_end_time: plannedMatch?.[2],
-    observation: observationMatch?.[1]?.trim() ?? '',
-  };
-}
-
-function getAttendanceStatusLabel(status: AttendanceStatus | undefined) {
-  if (status === 'worked') return 'Trabalhou';
-  if (status === 'day_off') return 'Folgou';
-  if (status === 'missed') return 'Faltou';
-  if (status === 'justified') return 'Justificou';
-  if (status === 'cancelled_service') return 'Serviço cancelado';
-  return 'Sem apontamento';
-}
 
 function createCoverageRule(mode: WeekendCoverageMode): WeekendCoverageRule {
   return {
@@ -416,12 +386,6 @@ function parseTimeToMinutes(value: string | null | undefined) {
   return hours * 60 + minutes;
 }
 
-function normalizeTimeInput(value: string | null | undefined, fallback = '') {
-  const match = String(value ?? '').match(/^(\d{1,2}):(\d{2})/);
-  if (!match) return fallback;
-
-  return `${match[1].padStart(2, '0')}:${match[2]}`;
-}
 
 function getHoursBetween(startTime: string | null | undefined, endTime: string | null | undefined) {
   const start = parseTimeToMinutes(startTime);
@@ -546,17 +510,7 @@ function createInitialBuilderForm(): ScheduleBuilderForm {
   };
 }
 
-function getStatusLabel(status: Schedule['status']) {
-  if (status === 'cancelled') return 'Folga';
-  if (status === 'completed') return 'Concluído';
-  return 'Escalado';
-}
 
-function getStatusTone(status: Schedule['status']) {
-  if (status === 'cancelled') return 'warning' as const;
-  if (status === 'completed') return 'success' as const;
-  return 'info' as const;
-}
 
 function getSchedulePriority(status: Schedule['status']) {
   if (status === 'scheduled') return 3;
@@ -605,31 +559,10 @@ function getBestWorkHour(entries: WorkHours[]) {
   }, undefined);
 }
 
-function getScheduleDisplayLabel(entry: Schedule | undefined) {
-  const manualStatus = parseManualAttendanceNote(entry?.notes).attendance_status;
-  if (manualStatus) return getAttendanceStatusLabel(manualStatus);
-  if (!entry) return 'Sem escala';
 
-  return getStatusLabel(entry.status);
-}
-
-function getScheduleDisplayTone(entry: Schedule | undefined) {
-  const manualStatus = parseManualAttendanceNote(entry?.notes).attendance_status;
-  if (manualStatus === 'worked') return 'success' as const;
-  if (manualStatus === 'missed') return 'danger' as const;
-  if (manualStatus === 'day_off' || manualStatus === 'justified' || manualStatus === 'cancelled_service') return 'warning' as const;
-  if (!entry) return 'neutral' as const;
-
-  return getStatusTone(entry.status);
-}
 
 function getSchedulePlannedTimes(entry: Schedule | undefined, fallbackStartTime = scheduleRules.defaultStartTime, fallbackEndTime = scheduleRules.defaultEndTime) {
-  const manual = parseManualAttendanceNote(entry?.notes);
-
-  return {
-    startTime: normalizeTimeInput(manual.planned_start_time || entry?.start_time, fallbackStartTime),
-    endTime: normalizeTimeInput(manual.planned_end_time || entry?.end_time, fallbackEndTime),
-  };
+  return plannedTimesOf(entry, fallbackStartTime, fallbackEndTime);
 }
 
 function getSchedulePlannedHoursForDraft(entry: Schedule | undefined, startTime: string, endTime: string) {
@@ -657,29 +590,9 @@ function getSchedulePlannedHoursForBank(entry: Schedule | undefined) {
 }
 
 function getScheduleTimeLabel(entry: Schedule) {
-  const manualStatus = parseManualAttendanceNote(entry.notes).attendance_status;
-
-  if (attendanceHasHours(manualStatus)) {
-    const plannedTimes = getSchedulePlannedTimes(entry);
-    return `${formatTimeRange(entry.start_time, entry.end_time)} (prev. ${formatTimeRange(plannedTimes.startTime, plannedTimes.endTime)})`;
-  }
-
-  if (manualStatus) {
-    const plannedTimes = getSchedulePlannedTimes(entry);
-    return formatTimeRange(plannedTimes.startTime, plannedTimes.endTime);
-  }
-
-  if (entry.status === 'cancelled') return entry.notes || 'Dia de folga';
-
-  return formatTimeRange(entry.start_time, entry.end_time);
+  return timeLabelOf(entry, scheduleRules.defaultStartTime, scheduleRules.defaultEndTime);
 }
 
-function getScheduleObservation(entry: Schedule) {
-  const manual = parseManualAttendanceNote(entry.notes);
-  if (manual.attendance_status) return manual.observation || '-';
-
-  return entry.notes || '-';
-}
 
 /**
  * Shared by the live (period-filtered) hour-bank view and the "export all periods" action, which
@@ -1326,7 +1239,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
   const [saveMessage, setSaveMessage] = useState('');
-  const [query, setQuery] = useState('');
   const [isFormDialogOpen, setIsFormDialogOpen] = useState(false);
   const [isCalendarDialogOpen, setIsCalendarDialogOpen] = useState(false);
   const [isAttendanceDialogOpen, setIsAttendanceDialogOpen] = useState(false);
@@ -1793,12 +1705,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setMonthlyAttendanceDrafts(nextDrafts);
   }, [attendanceMonth, isAttendanceDialogOpen, sortedTechnicians, visibleSchedule, visibleWorkHours, workHoursByTechnicianDate]);
 
-  const filteredSchedule = useMemo(() => {
-    return visibleSchedule.filter((item) => {
-      const haystack = normalizeText(`${item.technician_name || item.technician_id} ${item.notes || ''} ${item.status} ${normalizeDateKey(item.date)}`);
-      return !query || haystack.includes(normalizeText(query));
-    });
-  }, [query, visibleSchedule]);
   const calendarWeeks = useMemo(() => getMonthWeeks(calendarYear, calendarMonth), [calendarMonth, calendarYear]);
   const displayedCalendarWeeks = calendarWeek === 'all' ? calendarWeeks : [calendarWeeks[Number(calendarWeek)] ?? calendarWeeks[0]].filter(Boolean);
   const calendarYears = useMemo(() => {
@@ -5241,49 +5147,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
         </DataPanel>
       </div>
 
-      <div className="mt-5">
-        <DataPanel
-          title="Registros da escala"
-          description={`${formatCount(filteredSchedule.length, 'registro da escala gravado', 'registros da escala gravados')}.`}
-          action={
-            <div className="flex min-h-10 items-center gap-2 rounded-md border border-border bg-background px-3">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar por técnico, data, status ou observação" className="w-72 bg-transparent text-sm outline-none" />
-            </div>
-          }
-        >
-          {filteredSchedule.length ? (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                    <th className="py-3 pr-4 font-medium">Data</th>
-                    <th className="py-3 pr-4 font-medium">Técnico</th>
-                    <th className="py-3 pr-4 font-medium">Horário</th>
-                    <th className="py-3 pr-4 font-medium">Status</th>
-                    <th className="py-3 font-medium">Obs.</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredSchedule.slice(0, 120).map((item) => (
-                    <tr key={item.id} className="border-b border-border last:border-0">
-                      <td className="py-3 pr-4">{formatDate(item.date)}</td>
-                      <td className="py-3 pr-4">{item.technician_name || item.technician_id}</td>
-                      <td className="py-3 pr-4">{getScheduleTimeLabel(item)}</td>
-                      <td className="py-3 pr-4">
-                        <StatusBadge tone={getScheduleDisplayTone(item)}>{getScheduleDisplayLabel(item)}</StatusBadge>
-                      </td>
-                      <td className="py-3 text-muted-foreground">{getScheduleObservation(item)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyState icon={CalendarDays} title="Sem escala gravada" description="Ainda não há uma grade salva para exibir. Monte a escala para um mês ou ano e os registros vão aparecer aqui." />
-          )}
-        </DataPanel>
-      </div>
     </AppShell>
   );
 }
