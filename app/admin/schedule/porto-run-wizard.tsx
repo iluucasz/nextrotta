@@ -5,11 +5,13 @@ import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, PlayCircle, Users, 
 import { Button } from '@/components/ui/button';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { brasiliaDateKey, formatDate } from '@/lib/formatters';
 import {
   actionSummaryLabel,
   jobDetailActionLabel,
   formatDetailExtra,
   pollJobLog,
+  statusLabel,
   type PortoJobResult,
 } from '@/lib/porto-ui-helpers';
 
@@ -37,9 +39,9 @@ type PortoConfigSummary = {
 
 const inputClassName = 'min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring';
 
+// Brasília calendar day, whatever the zone of the computer.
 function todayKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return brasiliaDateKey();
 }
 
 function addDaysToKey(dateKey: string, days: number) {
@@ -49,8 +51,7 @@ function addDaysToKey(dateKey: string, days: number) {
 }
 
 function monthStartKey() {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  return `${todayKey().slice(0, 7)}-01`;
 }
 
 function periodEstimate(mode: PeriodMode) {
@@ -65,9 +66,9 @@ function periodEstimate(mode: PeriodMode) {
 }
 
 function periodLabel(mode: PeriodMode, day: string) {
-  if (mode === 'month') return `${monthStartKey()} a ${todayKey()} (mês atual até hoje)`;
-  if (mode === 'week') return `${addDaysToKey(todayKey(), -6)} a ${todayKey()} (últimos 7 dias)`;
-  return day;
+  if (mode === 'month') return `${formatDate(monthStartKey())} a ${formatDate(todayKey())} (mês atual até hoje)`;
+  if (mode === 'week') return `${formatDate(addDaysToKey(todayKey(), -6))} a ${formatDate(todayKey())} (últimos 7 dias)`;
+  return day ? formatDate(day) : 'escolha a data';
 }
 
 function periodRange(mode: PeriodMode, day: string): { start: string; end: string } | null {
@@ -90,7 +91,7 @@ function JobResultView({ result }: { result: PortoJobResult }) {
       >
         {result.status === 'error' ? <XCircle className="mt-0.5 h-4 w-4 shrink-0" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />}
         <span>
-          {result.status}
+          {statusLabel(result.status)}
           {result.error ? ` — ${result.error}` : ''}
         </span>
       </div>
@@ -233,7 +234,7 @@ export function PortoRunWizard() {
     });
     if (!response.ok) {
       const data = await response.json().catch(() => ({}));
-      throw new Error(data.error || `Falha ao salvar match para o técnico ${technician.name}.`);
+      throw new Error(data.error || `Não foi possível salvar a correspondência do técnico ${technician.name}.`);
     }
   }
 
@@ -246,7 +247,7 @@ export function PortoRunWizard() {
       const duplicateId = selectedIds.find((id, index) => selectedIds.indexOf(id) !== index);
       if (duplicateId) {
         const duplicateTechnician = matchTechnicians.find((technician) => technician.id === duplicateId);
-        throw new Error(`"${duplicateTechnician?.name ?? 'Um técnico'}" foi selecionado para mais de um QRA do Porto — corrija antes de salvar.`);
+        throw new Error(`"${duplicateTechnician?.name ?? 'Um técnico'}" foi escolhido para mais de um QRA do Porto. Corrija antes de salvar.`);
       }
 
       let savedCount = 0;
@@ -270,9 +271,9 @@ export function PortoRunWizard() {
         savedCount++;
       }
 
-      setMatchSaveMessage(savedCount ? `${savedCount} match(es) salvo(s) com sucesso.` : 'Nenhuma mudança para salvar.');
+      setMatchSaveMessage(savedCount ? `${savedCount === 1 ? '1 correspondência salva' : `${savedCount} correspondências salvas`} com sucesso.` : 'Nenhuma mudança para salvar.');
     } catch (error) {
-      setMatchError(error instanceof Error ? error.message : 'Falha ao salvar matches.');
+      setMatchError(error instanceof Error ? error.message : 'Não foi possível salvar as correspondências.');
     } finally {
       setIsSavingMatches(false);
     }
@@ -293,7 +294,7 @@ export function PortoRunWizard() {
       try {
         data = JSON.parse(rawText);
       } catch {
-        setResult({ status: 'error', error: `Resposta inválida da Vercel (status ${response.status}).` });
+        setResult({ status: 'error', error: `O servidor respondeu algo inesperado (código ${response.status}). Tente de novo em instantes.` });
         return;
       }
 
@@ -433,7 +434,7 @@ export function PortoRunWizard() {
                   <div className="flex items-center justify-between">
                     <Button type="button" variant="outline" onClick={handleSaveMatches} disabled={isSavingMatches}>
                       {isSavingMatches ? <Loader2 className="h-4 w-4 animate-spin" /> : <Users className="h-4 w-4" />}
-                      Salvar matches
+                      Salvar correspondências
                     </Button>
                     <Button type="button" onClick={() => setStep('period')}>
                       Continuar
@@ -492,14 +493,14 @@ export function PortoRunWizard() {
           {step === 'schedule' ? (
             <div className="flex flex-col gap-4">
               <p className="text-sm text-muted-foreground">
-                Vai buscar a escala do mês atual no Porto e gravar em <span className="font-medium text-foreground">/admin/schedule</span>.
+                Vai buscar a escala do mês atual no Porto e gravar na <span className="font-medium text-foreground">Escala</span>.
                 Pode levar alguns minutos.
               </p>
 
               {scheduleRunning ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin" />
-                  <p>Rodando... você pode fechar essa janela e conferir depois em Config. Porto ou direto em /admin/schedule.</p>
+                  <p>Rodando... você pode fechar essa janela e conferir depois em Config. Porto ou direto na Escala.</p>
                 </div>
               ) : scheduleResult ? (
                 <JobResultView result={scheduleResult} />
@@ -522,13 +523,13 @@ export function PortoRunWizard() {
             <div className="flex flex-col gap-4">
               <p className="text-sm text-muted-foreground">
                 Vai buscar apontamentos no período <span className="font-medium text-foreground">{periodLabel(periodMode, periodDay)}</span> e
-                gravar em <span className="font-medium text-foreground">/admin/schedule</span>. {periodEstimate(periodMode)}
+                gravar na <span className="font-medium text-foreground">Escala</span>. {periodEstimate(periodMode)}
               </p>
 
               {hoursRunning ? (
                 <div className="flex flex-col items-center gap-3 py-8 text-sm text-muted-foreground">
                   <Loader2 className="h-6 w-6 animate-spin" />
-                  <p>Rodando... você pode fechar essa janela e conferir depois em Config. Porto ou direto em /admin/schedule.</p>
+                  <p>Rodando... você pode fechar essa janela e conferir depois em Config. Porto ou direto na Escala.</p>
                 </div>
               ) : hoursResult ? (
                 <JobResultView result={hoursResult} />

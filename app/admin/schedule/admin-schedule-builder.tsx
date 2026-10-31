@@ -25,7 +25,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { compactName, formatDate, formatHours, formatTime, formatTimeRange, normalizeText } from '@/lib/formatters';
+import { brasiliaDateKey, compactName, formatDate, formatHours, formatTime, formatTimeRange, normalizeText } from '@/lib/formatters';
 import { applyBrazilianDateText, readSpreadsheet } from '@/lib/spreadsheet-import';
 import { PortoRunWizard } from './porto-run-wizard';
 import {
@@ -400,10 +400,6 @@ function createDateInputValue(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
-function createMonthInputValue(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-}
-
 function getYearFromDateKey(dateKey: string, fallbackYear: number) {
   const year = Number(dateKey.slice(0, 4));
   return Number.isInteger(year) ? year : fallbackYear;
@@ -508,13 +504,13 @@ function getAttendanceStatusFromSchedule(entry?: Schedule): AttendanceStatus {
 }
 
 function createInitialBuilderForm(): ScheduleBuilderForm {
-  const now = new Date();
+  const today = brasiliaDateKey();
 
   return {
     period_mode: 'month',
-    year: now.getFullYear(),
-    month: now.getMonth() + 1,
-    date: createDateInputValue(now),
+    year: Number(today.slice(0, 4)),
+    month: Number(today.slice(5, 7)),
+    date: today,
     technician_scope: 'all',
     technician_ids: [],
     weekday_start_time: scheduleRules.defaultStartTime,
@@ -739,17 +735,17 @@ function buildHourBankDetailRows(scheduleRows: Schedule[], workHoursRows: WorkHo
 function buildHourBankExportRows(rows: HourBankDetailRow[]) {
   return rows.map((row) => ({
     Data: formatDate(row.date),
-    Situacao: row.status_label,
-    Tecnico: row.technician_name,
+    'Situação': row.status_label,
+    'Técnico': row.technician_name,
     Escala: row.schedule_status ? getStatusLabel(row.schedule_status) : 'Sem escala',
-    Previsto_inicio: formatTime(row.planned_start_time),
-    Previsto_fim: formatTime(row.planned_end_time),
+    'Previsto início': formatTime(row.planned_start_time),
+    'Previsto fim': formatTime(row.planned_end_time),
     Entrada: row.actual_start_time ? formatTime(row.actual_start_time) : '-',
-    Saida: row.actual_end_time ? formatTime(row.actual_end_time) : '-',
-    Horas_previstas: row.planned_hours,
-    Horas_realizadas: row.worked_hours,
+    'Saída': row.actual_end_time ? formatTime(row.actual_end_time) : '-',
+    'Horas previstas': row.planned_hours,
+    'Horas realizadas': row.worked_hours,
     Saldo: row.balance,
-    Observação: row.observation,
+    'Observação': row.observation,
   }));
 }
 
@@ -776,8 +772,8 @@ function getYearMonthParts(monthKey: string) {
   const [year, month] = monthKey.split('-').map(Number);
 
   return {
-    year: Number.isInteger(year) ? year : new Date().getFullYear(),
-    month: Number.isInteger(month) ? month : new Date().getMonth() + 1,
+    year: Number.isInteger(year) ? year : Number(brasiliaDateKey().slice(0, 4)),
+    month: Number.isInteger(month) ? month : Number(brasiliaDateKey().slice(5, 7)),
   };
 }
 
@@ -805,17 +801,11 @@ function getMonthWeeks(year: number, monthIndex: number) {
   return Array.from({ length: cells.length / 7 }, (_, index) => cells.slice(index * 7, index * 7 + 7));
 }
 
+/** Today and the next days as Brasília calendar days (after 21:00 UTC is already tomorrow, but Brasília is not). */
 function getNextDateKeys(dayCount: number) {
-  const start = new Date();
-  const result: string[] = [];
+  const [year, month, day] = brasiliaDateKey().split('-').map(Number);
 
-  for (let index = 0; index < dayCount; index += 1) {
-    const date = new Date(start);
-    date.setDate(start.getDate() + index);
-    result.push(date.toISOString().slice(0, 10));
-  }
-
-  return result;
+  return Array.from({ length: dayCount }, (_, index) => new Date(Date.UTC(year, month - 1, day + index)).toISOString().slice(0, 10));
 }
 
 function toggleStringValue(values: string[], nextValue: string) {
@@ -1342,8 +1332,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [isAttendanceDialogOpen, setIsAttendanceDialogOpen] = useState(false);
   const [isHourBankDetailDialogOpen, setIsHourBankDetailDialogOpen] = useState(false);
   const [attendanceMode, setAttendanceMode] = useState<AttendanceMode>('day');
-  const [attendanceDate, setAttendanceDate] = useState(() => createDateInputValue(new Date()));
-  const [attendanceMonth, setAttendanceMonth] = useState(() => createMonthInputValue(new Date()));
+  const [attendanceDate, setAttendanceDate] = useState(() => brasiliaDateKey());
+  const [attendanceMonth, setAttendanceMonth] = useState(() => brasiliaDateKey().slice(0, 7));
   const [attendanceDrafts, setAttendanceDrafts] = useState<AttendanceDraft[]>([]);
   const [monthlyAttendanceDrafts, setMonthlyAttendanceDrafts] = useState<AttendanceDraft[]>([]);
   const [attendanceImportFileName, setAttendanceImportFileName] = useState('');
@@ -1356,13 +1346,13 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [attendanceError, setAttendanceError] = useState('');
   const [attendanceMessage, setAttendanceMessage] = useState('');
   const [isAttendanceSubmitting, setIsAttendanceSubmitting] = useState(false);
-  const [calendarMonth, setCalendarMonth] = useState(() => new Date().getMonth());
-  const [calendarYear, setCalendarYear] = useState(() => new Date().getFullYear());
+  const [calendarMonth, setCalendarMonth] = useState(() => Number(brasiliaDateKey().slice(5, 7)) - 1);
+  const [calendarYear, setCalendarYear] = useState(() => Number(brasiliaDateKey().slice(0, 4)));
   const [calendarWeek, setCalendarWeek] = useState('all');
   const [hourBankPeriodMode, setHourBankPeriodMode] = useState<HourBankPeriodMode>('month');
-  const [hourBankDate, setHourBankDate] = useState(() => createDateInputValue(new Date()));
-  const [hourBankMonth, setHourBankMonth] = useState(() => createMonthInputValue(new Date()));
-  const [hourBankYear, setHourBankYear] = useState(() => new Date().getFullYear());
+  const [hourBankDate, setHourBankDate] = useState(() => brasiliaDateKey());
+  const [hourBankMonth, setHourBankMonth] = useState(() => brasiliaDateKey().slice(0, 7));
+  const [hourBankYear, setHourBankYear] = useState(() => Number(brasiliaDateKey().slice(0, 4)));
   const [hourBankDetailTechnicianId, setHourBankDetailTechnicianId] = useState('all');
   const [builderDialog, setBuilderDialog] = useState<ScheduleBuilderDialog>(null);
   const [activeDayRuleKey, setActiveDayRuleKey] = useState<ScheduleDayRuleKey | null>(null);
@@ -1811,7 +1801,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const calendarWeeks = useMemo(() => getMonthWeeks(calendarYear, calendarMonth), [calendarMonth, calendarYear]);
   const displayedCalendarWeeks = calendarWeek === 'all' ? calendarWeeks : [calendarWeeks[Number(calendarWeek)] ?? calendarWeeks[0]].filter(Boolean);
   const calendarYears = useMemo(() => {
-    const currentYear = new Date().getFullYear();
+    const currentYear = Number(brasiliaDateKey().slice(0, 4));
     return Array.from(new Set([currentYear, currentYear + 1, ...visibleSchedule.map((item) => Number(normalizeDateKey(item.date).slice(0, 4)))]))
       .filter((year) => Number.isFinite(year))
       .sort((left, right) => left - right);
@@ -1830,7 +1820,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       return getScheduleRange('year', hourBankYear);
     }
 
-    const year = Number(hourBankDate.slice(0, 4)) || new Date().getFullYear();
+    const year = Number(hourBankDate.slice(0, 4)) || Number(brasiliaDateKey().slice(0, 4));
     return getScheduleRange(hourBankPeriodMode, year, undefined, hourBankDate);
   }, [hourBankDate, hourBankMonth, hourBankPeriodMode, hourBankYear]);
   const hourBankPeriodLabel = useMemo(
@@ -1959,6 +1949,9 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   function resetForm() {
     setFormData(createInitialBuilderForm());
     setFormError('');
+    setExceptionDraft(createExceptionDraft());
+    setExceptionError('');
+    setSelectedPreviewDate(null);
   }
 
   function handleFormDialogChange(open: boolean) {
@@ -1977,10 +1970,10 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setAttendanceMessage('');
 
     if (open) {
-      const now = new Date();
+      const today = brasiliaDateKey();
       setAttendanceMode('day');
-      setAttendanceDate(createDateInputValue(now));
-      setAttendanceMonth(createMonthInputValue(now));
+      setAttendanceDate(today);
+      setAttendanceMonth(today.slice(0, 7));
       setAttendanceImportFileName('');
       setAttendanceImportRows([]);
       setAttendanceImportErrors([]);
@@ -2157,7 +2150,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           details: [
             `Funcionário lido: "${importedName}".`,
             `Data lida: "${errorValues.date}".`,
-            'Ja existe outra linha valida para o mesmo tecnico e data nesta importacao.',
+            'Já existe outra linha válida para o mesmo técnico e data nesta importação.',
           ],
           suggestion: getImportErrorSuggestion(['duplicado']),
           values: errorValues,
@@ -2228,7 +2221,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
         return;
       }
 
-      setAttendanceMessage(`${formatCount(parsed.rows.length, 'apontamento valido', 'apontamentos validos')} carregado(s) da planilha.`);
+      setAttendanceMessage(`Planilha lida: ${formatCount(parsed.rows.length, 'apontamento válido', 'apontamentos válidos')}.`);
       setAttendanceLunchPromptCount(parsed.rows.filter(importRowMissingLunchBreak).length);
     } catch (error) {
       setAttendanceError(error instanceof Error ? error.message : 'Não foi possível ler a planilha. Use XLSX, XLS ou CSV.');
@@ -2287,7 +2280,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
     if (attendanceMode === 'spreadsheet') {
       if (!attendanceImportRows.length) {
-        setAttendanceError('Carregue uma planilha com apontamentos validos antes de salvar.');
+        setAttendanceError('Carregue uma planilha com apontamentos válidos antes de salvar.');
         return;
       }
 
@@ -2996,16 +2989,16 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   function buildScheduleExportRows() {
     return hourBankDetailRows.map((row) => ({
       Data: formatDate(row.date),
-      Tecnico: row.technician_name,
-      Situacao: row.status_label,
-      Entrada_prevista: formatTime(row.planned_start_time),
-      Saida_prevista: formatTime(row.planned_end_time),
-      Entrada_real: row.actual_start_time ? formatTime(row.actual_start_time) : '-',
-      Saida_real: row.actual_end_time ? formatTime(row.actual_end_time) : '-',
-      Horas_previstas: row.planned_hours,
-      Horas_realizadas: row.worked_hours,
+      'Técnico': row.technician_name,
+      'Situação': row.status_label,
+      'Entrada prevista': formatTime(row.planned_start_time),
+      'Saída prevista': formatTime(row.planned_end_time),
+      'Entrada real': row.actual_start_time ? formatTime(row.actual_start_time) : '-',
+      'Saída real': row.actual_end_time ? formatTime(row.actual_end_time) : '-',
+      'Horas previstas': row.planned_hours,
+      'Horas realizadas': row.worked_hours,
       Saldo: row.balance,
-      Observação: row.observation,
+      'Observação': row.observation,
     }));
   }
 
@@ -3035,11 +3028,11 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
   function handleExportSpreadsheet() {
     const bankRows = hourBankRows.map((row) => ({
-      Tecnico: row.technician_name,
+      'Técnico': row.technician_name,
       Previsto: row.planned_hours,
       Realizado: row.worked_hours,
       Saldo: row.balance,
-      Dias_trabalhados: row.worked_days,
+      'Dias trabalhados': row.worked_days,
       Folgas: row.day_off_days,
       Faltas: row.missed_days,
       Justificativas: row.justified_days,
@@ -3102,7 +3095,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     XLSX.utils.book_append_sheet(workbook, techniciansSheet, 'Técnicos ativos');
     XLSX.utils.book_append_sheet(workbook, instructionsSheet, 'Instruções');
     XLSX.writeFile(workbook, 'modelo-importacao-horas.xlsx');
-    setSaveMessage('Modelo XLSX de importacao de horas baixado.');
+    setSaveMessage('Modelo XLSX de importação de horas baixado.');
   }
 
   function handleDownloadAttendanceImportErrors() {
@@ -3116,14 +3109,14 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       Linha: item.row_number || '-',
       Motivo: item.message,
       Detalhes: item.details.join(' | '),
-      Sugestao: item.suggestion,
+      'Sugestão': item.suggestion,
       Data: item.values.date,
-      Funcionário: item.values.employee,
-      Hora_Inicio: item.values.start_time,
-      Hora_Final: item.values.end_time,
-      Horas_Trabalhadas: item.values.hours_worked,
-      Semana_do_Ano: item.values.week_number,
-      Mes: item.values.month,
+      'Funcionário': item.values.employee,
+      'Hora início': item.values.start_time,
+      'Hora final': item.values.end_time,
+      'Horas trabalhadas': item.values.hours_worked,
+      'Semana do ano': item.values.week_number,
+      'Mês': item.values.month,
       Ano: item.values.year,
     }));
     const worksheet = XLSX.utils.json_to_sheet(rows);
@@ -3175,16 +3168,16 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     const scheduleRowsHtml = scheduleRows.map((row) => `
       <tr>
         <td>${escapeHtml(row.Data)}</td>
-        <td>${escapeHtml(row.Tecnico)}</td>
-        <td>${escapeHtml(row.Situacao)}</td>
-          <td>${escapeHtml(row.Entrada_prevista)}</td>
-          <td>${escapeHtml(row.Saida_prevista)}</td>
-          <td>${escapeHtml(row.Entrada_real)}</td>
-          <td>${escapeHtml(row.Saida_real)}</td>
-          <td>${escapeHtml(formatHours(row.Horas_previstas))}</td>
-          <td>${escapeHtml(formatHours(row.Horas_realizadas))}</td>
+        <td>${escapeHtml(row['Técnico'])}</td>
+        <td>${escapeHtml(row['Situação'])}</td>
+          <td>${escapeHtml(row['Entrada prevista'])}</td>
+          <td>${escapeHtml(row['Saída prevista'])}</td>
+          <td>${escapeHtml(row['Entrada real'])}</td>
+          <td>${escapeHtml(row['Saída real'])}</td>
+          <td>${escapeHtml(formatHours(row['Horas previstas']))}</td>
+          <td>${escapeHtml(formatHours(row['Horas realizadas']))}</td>
         <td>${escapeHtml(formatHours(row.Saldo))}</td>
-        <td>${escapeHtml(row.Observação)}</td>
+        <td>${escapeHtml(row['Observação'])}</td>
       </tr>
     `).join('');
     const html = `
@@ -3214,17 +3207,17 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             <div class="card"><div class="label">Previsto</div><div class="value">${escapeHtml(formatHours(hourBankTotals.planned))}</div></div>
             <div class="card"><div class="label">Realizado</div><div class="value">${escapeHtml(formatHours(hourBankTotals.worked))}</div></div>
             <div class="card"><div class="label">Saldo</div><div class="value">${escapeHtml(formatHours(hourBankTotals.balance))}</div></div>
-            <div class="card"><div class="label">Pendencias</div><div class="value">${escapeHtml(hourBankTotals.pending)}</div></div>
+            <div class="card"><div class="label">Pendências</div><div class="value">${escapeHtml(hourBankTotals.pending)}</div></div>
           </div>
           <h2>Banco de horas por técnico</h2>
           <table>
-            <thead><tr><th>Tecnico</th><th>Previsto</th><th>Realizado</th><th>Saldo</th><th>Dias</th><th>Folgas</th><th>Faltas</th><th>Pendentes</th></tr></thead>
-            <tbody>${bankRowsHtml || '<tr><td colspan="8">Sem dados no periodo.</td></tr>'}</tbody>
+            <thead><tr><th>Técnico</th><th>Previsto</th><th>Realizado</th><th>Saldo</th><th>Dias</th><th>Folgas</th><th>Faltas</th><th>Pendentes</th></tr></thead>
+            <tbody>${bankRowsHtml || '<tr><td colspan="8">Sem dados no período.</td></tr>'}</tbody>
           </table>
           <h2>Escala e apontamentos</h2>
           <table>
-            <thead><tr><th>Data</th><th>Tecnico</th><th>Situacao</th><th>Entrada prev.</th><th>Saida prev.</th><th>Entrada real</th><th>Saida real</th><th>Horas prev.</th><th>Horas real.</th><th>Saldo</th><th>Obs.</th></tr></thead>
-            <tbody>${scheduleRowsHtml || '<tr><td colspan="11">Sem dados no periodo.</td></tr>'}</tbody>
+            <thead><tr><th>Data</th><th>Técnico</th><th>Situação</th><th>Entrada prev.</th><th>Saída prev.</th><th>Entrada real</th><th>Saída real</th><th>Horas prev.</th><th>Horas real.</th><th>Saldo</th><th>Obs.</th></tr></thead>
+            <tbody>${scheduleRowsHtml || '<tr><td colspan="11">Sem dados no período.</td></tr>'}</tbody>
           </table>
           <script>
             window.onload = () => {
@@ -3274,7 +3267,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     return <LoadingShell role="admin" />;
   }
 
-  const todayKey = createDateInputValue(new Date());
+  const todayKey = brasiliaDateKey();
   const todayEntries = scheduleByDate.get(todayKey) ?? [];
   const workingToday = sortedTechnicians.filter((technician) => {
     const entry = getBestScheduleEntry(todayEntries.filter((item) => item.technician_id === technician.id));
@@ -3313,7 +3306,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     ? attendanceImportFirstDate === attendanceImportLastDate
       ? formatDate(attendanceImportFirstDate)
       : `${formatDate(attendanceImportFirstDate)} a ${formatDate(attendanceImportLastDate)}`
-    : 'Sem periodo';
+    : 'Sem período';
   const visibleAttendanceImportErrors = showAllAttendanceImportErrors ? attendanceImportErrors : attendanceImportErrors.slice(0, 8);
   const hiddenAttendanceImportErrorCount = Math.max(0, attendanceImportErrors.length - visibleAttendanceImportErrors.length);
 
@@ -3936,7 +3929,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       <PageHeader
         eyebrow="Planejamento"
         title="Montagem da escala"
-        description="Monte a escala diária, semanal, mensal ou anual com regras por dia, horários específicos, revezamentos, recorrências fixas, folgas gerais e ajustes individuais por técnico."
+        description="Monte a escala diária, semanal, mensal ou anual com regras por dia, horários específicos, equipes que se alternam, folgas e ajustes de cada técnico."
       >
         <div className="flex flex-wrap items-center gap-2">
           <Button type="button" variant="outline" onClick={() => handleAttendanceDialogChange(true)}>
@@ -4021,14 +4014,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   </button>
                 ))}
               </div>
-              <label className="hidden">
-                <span className="mb-1 block">Filtro</span>
-                <select value={hourBankPeriodMode} onChange={(event) => setHourBankPeriodMode(event.target.value as HourBankPeriodMode)} className="min-h-9 rounded-md border border-input bg-background px-2 text-sm text-foreground outline-none">
-                  <option value="day">Diário</option>
-                  <option value="week">Semanal</option>
-                  <option value="month">Mensal</option>
-                </select>
-              </label>
 
               {hourBankPeriodMode === 'month' ? (
                 <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
@@ -4038,7 +4023,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               ) : hourBankPeriodMode === 'year' ? (
                 <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
                   <span className="sr-only">Ano</span>
-                  <input type="number" value={hourBankYear} onChange={(event) => setHourBankYear(Number(event.target.value) || new Date().getFullYear())} className="h-9 w-20 bg-transparent text-sm text-foreground outline-none" />
+                  <input type="number" value={hourBankYear} onChange={(event) => setHourBankYear(Number(event.target.value) || Number(brasiliaDateKey().slice(0, 4)))} className="h-9 w-20 bg-transparent text-sm text-foreground outline-none" />
                 </label>
               ) : (
                 <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
@@ -4049,13 +4034,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </div>
           }
         >
-          <div className="hidden">
-            <span className="rounded-md bg-secondary px-3 py-2">Período: {formatDate(hourBankRange.startDate)} a {formatDate(hourBankRange.endDate)}</span>
-            <span className="rounded-md bg-secondary px-3 py-2">Previsto: {formatHours(hourBankTotals.planned)}</span>
-            <span className="rounded-md bg-secondary px-3 py-2">Realizado: {formatHours(hourBankTotals.worked)}</span>
-            <span className="rounded-md bg-secondary px-3 py-2">Saldo: {formatHours(hourBankTotals.balance)}</span>
-            <span className="rounded-md bg-secondary px-3 py-2">Pendentes: {hourBankTotals.pending}</span>
-          </div>
 
           <div className="grid overflow-hidden rounded-md border border-border md:grid-cols-5">
             <div className="border-b border-border bg-secondary/30 px-3 py-3 md:border-b-0 md:border-r">
@@ -4101,7 +4079,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                       <th className="px-3 py-2 font-medium">Técnico</th>
                       <th className="px-3 py-2 font-medium">Horas</th>
                       <th className="px-3 py-2 font-medium">Saldo</th>
-                      <th className="px-3 py-2 font-medium">Ocorr.</th>
+                      <th className="px-3 py-2 font-medium">Ocorrências</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -4109,7 +4087,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                       <tr key={row.technician_id} className="border-b border-border last:border-0">
                         <td className="px-3 py-3">
                           <p className="font-medium text-foreground">{row.technician_name}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{row.worked_days} dia(s) trabalhado(s)</p>
+                          <p className="mt-0.5 text-xs text-muted-foreground">{formatCount(row.worked_days, 'dia trabalhado', 'dias trabalhados')}</p>
                         </td>
                         <td className="px-3 py-3 tabular-nums">
                           <p className="font-medium text-foreground">{formatHours(row.worked_hours)}</p>
@@ -4121,11 +4099,11 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                           </StatusBadge>
                         </td>
                         <td className="px-3 py-3 text-xs text-muted-foreground">
-                          <span>{row.day_off_days} folga</span>
+                          <span>{formatCount(row.day_off_days, 'folga', 'folgas')}</span>
                           <span className="mx-1">·</span>
-                          <span>{row.missed_days} falta</span>
+                          <span>{formatCount(row.missed_days, 'falta', 'faltas')}</span>
                           <span className="mx-1">·</span>
-                          <span>{row.pending_days} pend.</span>
+                          <span>{formatCount(row.pending_days, 'pendente', 'pendentes')}</span>
                         </td>
                       </tr>
                     )) : (
@@ -4138,132 +4116,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               </div>
             </section>
 
-            <section className="hidden">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-foreground">Extrato do período</h3>
-                <span className="text-xs text-muted-foreground">{formatCount(hourBankDetailRows.length, 'linha', 'linhas')}</span>
-              </div>
-
-              <div className="overflow-x-auto rounded-md border border-border">
-                <table className="w-full min-w-[940px] text-sm">
-                  <thead className="bg-secondary/40">
-                    <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                      <th className="px-3 py-2 font-medium">Data</th>
-                      <th className="px-3 py-2 font-medium">Técnico</th>
-                      <th className="px-3 py-2 font-medium">Situação</th>
-                      <th className="px-3 py-2 font-medium">Previsto</th>
-                      <th className="px-3 py-2 font-medium">Real</th>
-                      <th className="px-3 py-2 font-medium">Horas</th>
-                      <th className="px-3 py-2 font-medium">Saldo</th>
-                      <th className="px-3 py-2 font-medium">Obs.</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hourBankDetailRows.length ? hourBankDetailRows.map((row) => (
-                      <tr key={row.key} className="border-b border-border last:border-0">
-                        <td className="px-3 py-3 whitespace-nowrap">{formatDate(row.date)}</td>
-                        <td className="px-3 py-3 font-medium text-foreground">{row.technician_name}</td>
-                        <td className="px-3 py-3">{row.status_label}</td>
-                        <td className="px-3 py-3 whitespace-nowrap">{formatTimeRange(row.planned_start_time, row.planned_end_time)}</td>
-                        <td className="px-3 py-3 whitespace-nowrap">{row.actual_start_time ? formatTimeRange(row.actual_start_time, row.actual_end_time) : '-'}</td>
-                        <td className="px-3 py-3 whitespace-nowrap">{formatHours(row.worked_hours)} / {formatHours(row.planned_hours)}</td>
-                        <td className="px-3 py-3">
-                          <StatusBadge tone={row.balance < 0 ? 'danger' : row.balance > 0 ? 'success' : 'neutral'}>
-                            {formatHours(row.balance)}
-                          </StatusBadge>
-                        </td>
-                        <td className="px-3 py-3 max-w-56 truncate text-muted-foreground" title={row.observation}>{row.observation}</td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan={8} className="px-3 py-8 text-center text-muted-foreground">Nenhum apontamento ou escala no período selecionado.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
           </div>
 
-          <div className="hidden">
-            <table className="w-full min-w-[920px] text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                  <th className="py-3 pr-4 font-medium">Técnico</th>
-                  <th className="py-3 pr-4 font-medium">Previsto</th>
-                  <th className="py-3 pr-4 font-medium">Realizado</th>
-                  <th className="py-3 pr-4 font-medium">Saldo</th>
-                  <th className="py-3 pr-4 font-medium">Dias</th>
-                  <th className="py-3 pr-4 font-medium">Folgas</th>
-                  <th className="py-3 pr-4 font-medium">Faltas</th>
-                  <th className="py-3 pr-4 font-medium">Justif.</th>
-                  <th className="py-3 font-medium">Pend.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hourBankRows.map((row) => (
-                  <tr key={row.technician_id} className="border-b border-border last:border-0">
-                    <td className="py-3 pr-4 font-medium text-foreground">{row.technician_name}</td>
-                    <td className="py-3 pr-4">{formatHours(row.planned_hours)}</td>
-                    <td className="py-3 pr-4">{formatHours(row.worked_hours)}</td>
-                    <td className="py-3 pr-4">
-                      <StatusBadge tone={row.balance < 0 ? 'danger' : row.balance > 0 ? 'success' : 'neutral'}>
-                        {formatHours(row.balance)}
-                      </StatusBadge>
-                    </td>
-                    <td className="py-3 pr-4">{row.worked_days}</td>
-                    <td className="py-3 pr-4">{row.day_off_days}</td>
-                    <td className="py-3 pr-4">{row.missed_days}</td>
-                    <td className="py-3 pr-4">{row.justified_days}</td>
-                    <td className="py-3">{row.pending_days}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="hidden">
-            <table className="w-full min-w-[1180px] text-sm">
-              <thead className="bg-secondary/50">
-                <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                  <th className="px-3 py-3 font-medium">Data</th>
-                  <th className="px-3 py-3 font-medium">Técnico</th>
-                  <th className="px-3 py-3 font-medium">Situação</th>
-                  <th className="px-3 py-3 font-medium">Entrada prevista</th>
-                  <th className="px-3 py-3 font-medium">Saída prevista</th>
-                  <th className="px-3 py-3 font-medium">Entrada real</th>
-                  <th className="px-3 py-3 font-medium">Saída real</th>
-                  <th className="px-3 py-3 font-medium">Horas</th>
-                  <th className="px-3 py-3 font-medium">Saldo</th>
-                  <th className="px-3 py-3 font-medium">Obs.</th>
-                </tr>
-              </thead>
-              <tbody>
-                {hourBankDetailRows.length ? hourBankDetailRows.map((row) => (
-                  <tr key={row.key} className="border-b border-border last:border-0">
-                    <td className="px-3 py-3">{formatDate(row.date)}</td>
-                    <td className="px-3 py-3 font-medium text-foreground">{row.technician_name}</td>
-                    <td className="px-3 py-3">{row.status_label}</td>
-                    <td className="px-3 py-3">{formatTime(row.planned_start_time)}</td>
-                    <td className="px-3 py-3">{formatTime(row.planned_end_time)}</td>
-                    <td className="px-3 py-3">{row.actual_start_time ? formatTime(row.actual_start_time) : '-'}</td>
-                    <td className="px-3 py-3">{row.actual_end_time ? formatTime(row.actual_end_time) : '-'}</td>
-                    <td className="px-3 py-3">{formatHours(row.worked_hours)} / {formatHours(row.planned_hours)}</td>
-                    <td className="px-3 py-3">
-                      <StatusBadge tone={row.balance < 0 ? 'danger' : row.balance > 0 ? 'success' : 'neutral'}>
-                        {formatHours(row.balance)}
-                      </StatusBadge>
-                    </td>
-                    <td className="px-3 py-3 text-muted-foreground">{row.observation}</td>
-                  </tr>
-                )) : (
-                  <tr>
-                    <td colSpan={10} className="px-3 py-8 text-center text-muted-foreground">Nenhum apontamento ou escala no período selecionado.</td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
         </DataPanel>
       </div>
 
@@ -4300,7 +4154,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                 ) : hourBankPeriodMode === 'year' ? (
                   <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
                     <span className="sr-only">Ano</span>
-                    <input type="number" value={hourBankYear} onChange={(event) => setHourBankYear(Number(event.target.value) || new Date().getFullYear())} className="h-9 w-20 bg-transparent text-sm text-foreground outline-none" />
+                    <input type="number" value={hourBankYear} onChange={(event) => setHourBankYear(Number(event.target.value) || Number(brasiliaDateKey().slice(0, 4)))} className="h-9 w-20 bg-transparent text-sm text-foreground outline-none" />
                   </label>
                 ) : (
                   <>
@@ -4309,7 +4163,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                       <input type="date" value={hourBankDate} onChange={(event) => setHourBankDate(event.target.value)} className="h-9 bg-transparent text-sm text-foreground outline-none" />
                     </label>
                     {hourBankPeriodMode === 'day' ? (
-                      <Button type="button" variant="outline" onClick={() => setHourBankDate(createDateInputValue(new Date()))}>
+                      <Button type="button" variant="outline" onClick={() => setHourBankDate(brasiliaDateKey())}>
                         Hoje
                       </Button>
                     ) : null}
@@ -4479,7 +4333,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                       <label className="text-sm">
                         <span className="mb-1.5 block font-medium">Ano</span>
                         <select value={formData.year} onChange={(event) => setFormData((current) => ({ ...current, year: Number(event.target.value) }))} className={inputClassName}>
-                          {Array.from({ length: 6 }, (_, index) => new Date().getFullYear() - 1 + index).map((year) => (
+                          {Array.from({ length: 6 }, (_, index) => Number(brasiliaDateKey().slice(0, 4)) - 1 + index).map((year) => (
                             <option key={year} value={year}>{year}</option>
                           ))}
                         </select>
@@ -4526,376 +4380,6 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   <BuilderActionCard eyebrow="Exceções" title="Folgas e ajustes" value={formatCount(formData.general_days_off.length + formData.recurring_rules.length + formData.overrides.length, 'exceção', 'exceções')} onClick={() => setBuilderDialog('exceptions')} />
                 </div>
               </section>
-
-              <div className="hidden">
-                <div className="space-y-4">
-                  <section className="rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
-                    <div className="mb-4 space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Período</p>
-                      <h3 className="text-base font-semibold text-foreground">Competência da escala</h3>
-                    </div>
-
-                    <div className="grid gap-4 md:grid-cols-3">
-                      <label className="text-sm">
-                        <span className="mb-1.5 block font-medium">Modo</span>
-                        <select value={formData.period_mode} onChange={(event) => setFormData((current) => ({ ...current, period_mode: event.target.value as SchedulePeriodMode }))} className={inputClassName}>
-                          <option value="day">Diário</option>
-                          <option value="week">Semanal</option>
-                          <option value="month">Mensal</option>
-                          <option value="year">Anual</option>
-                        </select>
-                      </label>
-
-                      {formData.period_mode === 'month' ? (
-                        <label className="text-sm">
-                          <span className="mb-1.5 block font-medium">Mês</span>
-                          <select value={formData.month} onChange={(event) => setFormData((current) => ({ ...current, month: Number(event.target.value) }))} className={inputClassName}>
-                            {monthNames.map((month, index) => (
-                              <option key={month} value={index + 1}>
-                                {month}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      ) : null}
-
-                      <label className="text-sm">
-                        <span className="mb-1.5 block font-medium">Ano</span>
-                        <select value={formData.year} onChange={(event) => setFormData((current) => ({ ...current, year: Number(event.target.value) }))} className={inputClassName}>
-                          {Array.from({ length: 6 }, (_, index) => new Date().getFullYear() - 1 + index).map((year) => (
-                            <option key={year} value={year}>
-                              {year}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-
-                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
-                      {formatDate(range.startDate)} até {formatDate(range.endDate)}
-                    </div>
-                  </section>
-
-                  <section className="rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
-                    <div className="mb-4 space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Escopo</p>
-                      <h3 className="text-base font-semibold text-foreground">Quem entra na escala</h3>
-                    </div>
-
-                    <div className="grid gap-4">
-                      <label className="text-sm md:max-w-sm">
-                        <span className="mb-1.5 block font-medium">Aplicar em</span>
-                        <select value={formData.technician_scope} onChange={(event) => setFormData((current) => ({ ...current, technician_scope: event.target.value as 'all' | 'selected' }))} className={inputClassName}>
-                          <option value="all">Todos os técnicos ativos</option>
-                          <option value="selected">Apenas técnicos selecionados</option>
-                        </select>
-                      </label>
-
-                      {formData.technician_scope === 'selected' ? (
-                        <div className="space-y-2">
-                          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Selecione os técnicos</p>
-                          <TechnicianChecklist technicians={sortedTechnicians} value={formData.technician_ids} onToggle={toggleTechnicianSelection} emptyLabel="Não há técnicos ativos reais para selecionar." />
-                        </div>
-                      ) : (
-                        <div className="rounded-lg border border-border bg-secondary/40 px-3 py-2 text-sm text-muted-foreground">
-                          Todos os técnicos ativos serão incluídos.
-                        </div>
-                      )}
-                    </div>
-                  </section>
-                </div>
-
-                <div className="space-y-4">
-                  <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                    <div className="flex flex-wrap items-center gap-2 text-sm text-emerald-950">
-                      <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2 font-semibold">{formatDate(generationPreview.startDate)} até {formatDate(generationPreview.endDate)}</span>
-                      <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(generationPreview.technicianCount, 'técnico', 'técnicos')}</span>
-                      <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(generationPreview.totalRows, 'linha prevista', 'linhas previstas')}</span>
-                      <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formData.recurring_rules.length + formData.rotation_groups.length + formData.general_days_off.length + formData.overrides.length} ajustes</span>
-                    </div>
-                    <p className="mt-3 text-xs text-emerald-900">Regras semanais vêm primeiro; exceções pontuais ajustam o resultado.</p>
-                  </section>
-
-                  <details className="rounded-lg border border-border/70 bg-card/70 shadow-sm">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-                      <span>
-                        <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Recorrências</span>
-                        <span className="text-sm font-semibold text-foreground">Regras fixas por técnico</span>
-                      </span>
-                      <StatusBadge tone="neutral">{formData.recurring_rules.length}</StatusBadge>
-                    </summary>
-
-                    <div className="border-t border-border/70 p-4">
-                      <div className="mb-3 flex justify-end">
-                        <Button type="button" variant="outline" onClick={addRecurringRule}>
-                          <Plus className="h-4 w-4" />
-                          Adicionar
-                        </Button>
-                      </div>
-
-                      <div className="space-y-3">
-                      {formData.recurring_rules.length ? (
-                        formData.recurring_rules.map((rule) => (
-                          <div key={rule.id} className="rounded-2xl border border-border/70 bg-background p-4">
-                            <div className="mb-3 flex items-start justify-between gap-3">
-                              <div>
-                                <p className="text-sm font-semibold text-foreground">{sortedTechnicians.find((technician) => technician.id === rule.technician_id)?.name || 'Regra recorrente'}</p>
-                                <p className="text-xs text-muted-foreground">{formatDayKeyList(rule.day_keys)}</p>
-                              </div>
-                              <StatusBadge tone={getStatusTone(rule.status)}>{getStatusLabel(rule.status)}</StatusBadge>
-                            </div>
-
-                            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                              <label className="text-sm xl:col-span-2">
-                                <span className="mb-1.5 block font-medium">Técnico</span>
-                                <select value={rule.technician_id} onChange={(event) => updateRecurringRule(rule.id, 'technician_id', event.target.value)} className={inputClassName}>
-                                  <option value="">Selecione</option>
-                                  {sortedTechnicians.map((technician) => (
-                                    <option key={technician.id} value={technician.id}>
-                                      {technician.name}
-                                    </option>
-                                  ))}
-                                </select>
-                              </label>
-
-                              <div className="flex items-end xl:justify-end">
-                                <Button type="button" variant="outline" onClick={() => removeRecurringRule(rule.id)}>
-                                  <Trash2 className="h-4 w-4" />
-                                  Remover
-                                </Button>
-                              </div>
-
-                              <label className="text-sm">
-                                <span className="mb-1.5 block font-medium">Tipo</span>
-                                <select value={rule.status} onChange={(event) => updateRecurringRule(rule.id, 'status', event.target.value)} className={inputClassName}>
-                                  <option value="cancelled">Folga recorrente</option>
-                                  <option value="scheduled">Turno recorrente</option>
-                                  <option value="completed">Turno recorrente concluído</option>
-                                </select>
-                              </label>
-
-                              {rule.status !== 'cancelled' ? (
-                                <>
-                                  <label className="text-sm">
-                                    <span className="mb-1.5 block font-medium">Entrada</span>
-                                    <input type="time" value={rule.start_time || ''} onChange={(event) => updateRecurringRule(rule.id, 'start_time', event.target.value)} className={inputClassName} />
-                                  </label>
-
-                                  <label className="text-sm">
-                                    <span className="mb-1.5 block font-medium">Saída</span>
-                                    <input type="time" value={rule.end_time || ''} onChange={(event) => updateRecurringRule(rule.id, 'end_time', event.target.value)} className={inputClassName} />
-                                  </label>
-                                </>
-                              ) : (
-                                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:col-span-2">
-                                  Use esta regra para tirar um técnico sempre dos mesmos dias da semana.
-                                </div>
-                              )}
-
-                              <label className="text-sm md:col-span-2 xl:col-span-3">
-                                <span className="mb-1.5 block font-medium">Observação</span>
-                                <input value={rule.notes || ''} onChange={(event) => updateRecurringRule(rule.id, 'notes', event.target.value)} placeholder="Ex.: folga fixa, plantão de fechamento, turno reduzido" className={inputClassName} />
-                              </label>
-
-                              <div className="md:col-span-2 xl:col-span-3">
-                                <p className="mb-1.5 text-sm font-medium text-foreground">Dias da semana</p>
-                                <DayKeyChecklist value={rule.day_keys} onToggle={(dayKey) => toggleRecurringRuleDay(rule.id, dayKey)} />
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhuma regra fixa adicionada.</p>
-                      )}
-                      </div>
-                    </div>
-                  </details>
-
-                  <details className="rounded-lg border border-border/70 bg-card/70 shadow-sm">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-                      <span>
-                        <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Revezamento</span>
-                        <span className="text-sm font-semibold text-foreground">Regras de revezamento</span>
-                      </span>
-                      <StatusBadge tone="neutral">{formData.rotation_groups.length}</StatusBadge>
-                    </summary>
-
-                    <div className="border-t border-border/70 p-4">
-                      <div className="mb-3 flex justify-end">
-                        <Button type="button" variant="outline" onClick={addRotationGroup}>
-                          <Plus className="h-4 w-4" />
-                          Adicionar
-                        </Button>
-                      </div>
-
-                      <div className="space-y-3">
-                      {formData.rotation_groups.length ? (
-                        formData.rotation_groups.map((group, index) => (
-                          <div key={group.id} className="rounded-2xl border border-border/70 bg-background p-4">
-                            <div className="mb-3 flex items-center justify-between gap-3">
-                              <p className="text-sm font-semibold text-foreground">Alternância {index + 1}</p>
-                              <Button type="button" variant="outline" onClick={() => removeRotationGroup(group.id)}>
-                                <Trash2 className="h-4 w-4" />
-                                Remover
-                              </Button>
-                            </div>
-
-                            <div className="grid gap-3">
-                              <div>
-                                <p className="mb-1.5 text-sm font-medium text-foreground">Dias</p>
-                                <DayKeyChecklist value={group.day_keys} onToggle={(dayKey) => toggleRotationGroupDay(group.id, dayKey)} />
-                              </div>
-
-                              <div>
-                                <p className="mb-1.5 text-sm font-medium text-foreground">Técnicos</p>
-                                <TechnicianChecklist technicians={ruleTechnicians} value={group.technician_ids} onToggle={(technicianId) => toggleRotationGroupTechnician(group.id, technicianId)} emptyLabel="Selecione primeiro o escopo da escala para configurar as equipes." />
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhuma alternância criada.</p>
-                      )}
-                      </div>
-                    </div>
-                  </details>
-                </div>
-              </div>
-
-              <div className="hidden">
-                <details className="rounded-lg border border-border/70 bg-card/70 shadow-sm">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-                    <span>
-                      <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Folga geral</span>
-                      <span className="text-sm font-semibold text-foreground">Datas sem expediente</span>
-                    </span>
-                    <StatusBadge tone="neutral">{formData.general_days_off.length}</StatusBadge>
-                  </summary>
-
-                  <div className="border-t border-border/70 p-4">
-                    <div className="mb-3 flex justify-end">
-                      <Button type="button" variant="outline" onClick={addGeneralDayOff}>
-                        <Plus className="h-4 w-4" />
-                        Adicionar
-                      </Button>
-                    </div>
-
-                    <div className="space-y-3">
-                    {formData.general_days_off.length ? (
-                      formData.general_days_off.map((item) => (
-                        <div key={item.id} className="grid gap-3 rounded-lg border border-border/70 bg-background p-4 md:grid-cols-[0.9fr_1.3fr_auto]">
-                          <label className="text-sm">
-                            <span className="mb-1.5 block font-medium">Data</span>
-                            <input type="date" value={item.date} min={generationPreview.startDate} max={generationPreview.endDate} onChange={(event) => updateGeneralDayOff(item.id, 'date', event.target.value)} className={inputClassName} />
-                          </label>
-
-                          <label className="text-sm">
-                            <span className="mb-1.5 block font-medium">Observação</span>
-                            <input value={item.notes} onChange={(event) => updateGeneralDayOff(item.id, 'notes', event.target.value)} placeholder="Ex.: feriado, confraternização, recesso" className={inputClassName} />
-                          </label>
-
-                          <div className="flex items-end">
-                            <Button type="button" variant="outline" onClick={() => removeGeneralDayOff(item.id)}>
-                              <Trash2 className="h-4 w-4" />
-                              Remover
-                            </Button>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhuma folga geral adicional.</p>
-                    )}
-                    </div>
-                  </div>
-                </details>
-
-                <details className="rounded-lg border border-border/70 bg-card/70 shadow-sm">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
-                    <span>
-                      <span className="block text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Ajuste individual</span>
-                      <span className="text-sm font-semibold text-foreground">Folga ou turno por técnico</span>
-                    </span>
-                    <StatusBadge tone="neutral">{formData.overrides.length}</StatusBadge>
-                  </summary>
-
-                  <div className="border-t border-border/70 p-4">
-                    <div className="mb-3 flex justify-end">
-                      <Button type="button" variant="outline" onClick={addOverride}>
-                        <Plus className="h-4 w-4" />
-                        Adicionar
-                      </Button>
-                    </div>
-
-                    <div className="space-y-3">
-                    {formData.overrides.length ? (
-                      formData.overrides.map((item) => (
-                        <div key={item.id} className="rounded-lg border border-border/70 bg-background p-4">
-                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                            <label className="text-sm xl:col-span-3">
-                              <span className="mb-1.5 block font-medium">Técnico</span>
-                              <select value={item.technician_id} onChange={(event) => updateOverride(item.id, 'technician_id', event.target.value)} className={inputClassName}>
-                                <option value="">Selecione</option>
-                                {sortedTechnicians.map((technician) => (
-                                  <option key={technician.id} value={technician.id}>
-                                    {technician.name}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
-
-                            <label className="text-sm">
-                              <span className="mb-1.5 block font-medium">Data</span>
-                              <input type="date" value={item.date} min={generationPreview.startDate} max={generationPreview.endDate} onChange={(event) => updateOverride(item.id, 'date', event.target.value)} className={inputClassName} />
-                            </label>
-
-                            <label className="text-sm">
-                              <span className="mb-1.5 block font-medium">Tipo</span>
-                              <select value={item.status} onChange={(event) => updateOverride(item.id, 'status', event.target.value)} className={inputClassName}>
-                                <option value="cancelled">Folga individual</option>
-                                <option value="scheduled">Turno individual</option>
-                                <option value="completed">Turno concluído</option>
-                              </select>
-                            </label>
-
-                            <div className="flex items-end xl:justify-end">
-                              <Button type="button" variant="outline" onClick={() => removeOverride(item.id)}>
-                                <Trash2 className="h-4 w-4" />
-                                Remover
-                              </Button>
-                            </div>
-
-                            {item.status !== 'cancelled' ? (
-                              <>
-                                <label className="text-sm">
-                                  <span className="mb-1.5 block font-medium">Entrada</span>
-                                  <input type="time" value={item.start_time} onChange={(event) => updateOverride(item.id, 'start_time', event.target.value)} className={inputClassName} />
-                                </label>
-
-                                <label className="text-sm">
-                                  <span className="mb-1.5 block font-medium">Saída</span>
-                                  <input type="time" value={item.end_time} onChange={(event) => updateOverride(item.id, 'end_time', event.target.value)} className={inputClassName} />
-                                </label>
-                              </>
-                            ) : (
-                              <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 md:col-span-2">
-                                Esta folga individual será gravada como cancelamento do dia.
-                              </div>
-                            )}
-
-                            <label className="text-sm md:col-span-2 xl:col-span-3">
-                              <span className="mb-1.5 block font-medium">Observação</span>
-                              <input value={item.notes} onChange={(event) => updateOverride(item.id, 'notes', event.target.value)} placeholder="Ex.: plantão especial, folga compensatória" className={inputClassName} />
-                            </label>
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhum ajuste individual.</p>
-                    )}
-                    </div>
-                  </div>
-                </details>
-              </div>
 
               <section className="mt-4 rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
                 <div className="mb-4 space-y-1">
@@ -5404,7 +4888,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                           </div>
                         ))}
                       </div>
-                      {hiddenAttendanceImportErrorCount ? <p className="mt-2 text-xs">Exibindo 8 primeiros erros. Ainda há {hiddenAttendanceImportErrorCount} linha(s) ocultas.</p> : null}
+                      {hiddenAttendanceImportErrorCount ? <p className="mt-2 text-xs">Exibindo 8 primeiros erros. Ainda há {formatCount(hiddenAttendanceImportErrorCount, 'linha oculta', 'linhas ocultas')}.</p> : null}
                     </div>
                   ) : null}
 

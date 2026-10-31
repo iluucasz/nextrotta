@@ -6,7 +6,8 @@ import { notifyJustified } from '@/lib/whatsapp/notifications';
 import { applyWorkHourEntries, attendanceHasHours, getActiveTechnicianIds, getIsoWeekNumber, type AttendanceStatus, type WorkHourEntry } from '@/lib/work-hours-service';
 
 function isValidTime(value: unknown) {
-  return typeof value === 'string' && /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value);
+  // A real clock time: "99:99" would pass a loose pattern and fail the whole request at the database.
+  return typeof value === 'string' && /^([01]?\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$/.test(value);
 }
 
 function normalizeTime(value: unknown) {
