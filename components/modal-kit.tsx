@@ -1,6 +1,7 @@
 'use client';
 
 import type { ReactNode } from 'react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 
 /**
@@ -15,16 +16,39 @@ export const MODAL_DESCRIPTION_CLASS = 'max-w-2xl text-sm leading-6 text-muted-f
 export const MODAL_BODY_CLASS = 'min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-8';
 export const MODAL_FOOTER_CLASS = 'items-center gap-3 border-t border-border bg-card px-6 py-4 sm:px-8';
 
+/** The little "?" next to a label: the explanation only opens when the person clicks it, so the dialog stays quiet. */
+export function HelpDot({ text, label }: { text: string; label: string }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={`O que é: ${label}`}
+          className="inline-flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border border-border bg-background text-[11px] font-semibold leading-none text-muted-foreground outline-none transition hover:border-primary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:border-primary data-[state=open]:text-foreground"
+        >
+          ?
+        </button>
+      </PopoverTrigger>
+      <PopoverContent side="top" align="start" className="w-72 whitespace-pre-line px-3.5 py-3 text-[13px] leading-relaxed text-foreground">
+        {text}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 /** A titled part of a dialog: a heading and its content, no box around it. */
 export function ModalSection({
   title,
   description,
+  help,
   action,
   children,
   className,
 }: {
   title?: string;
   description?: string;
+  /** An explanation that opens from a "?" next to the title instead of sitting on the page. */
+  help?: string;
   action?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -34,7 +58,12 @@ export function ModalSection({
       {title || action ? (
         <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
-            {title ? <h3 className="text-base font-semibold text-foreground">{title}</h3> : null}
+            {title ? (
+              <h3 className="flex items-center gap-2 text-base font-semibold text-foreground">
+                {title}
+                {help ? <HelpDot text={help} label={title} /> : null}
+              </h3>
+            ) : null}
             {description ? <p className="mt-0.5 text-sm text-muted-foreground">{description}</p> : null}
           </div>
           {action}

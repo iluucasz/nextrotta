@@ -10,6 +10,7 @@ import {
   MODAL_FOOTER_CLASS,
   MODAL_HEADER_CLASS,
   MODAL_TITLE_CLASS,
+  HelpDot,
   ModalNotice,
   ModalSection,
   SummaryBand,
@@ -331,13 +332,20 @@ function AmountRow({
   return (
     <div className="flex items-start justify-between gap-4 py-2.5">
       <div className="min-w-0 pt-2">
-        <label htmlFor={id} className="block text-sm text-foreground">
-          {label}
-        </label>
-        {hint ? <p id={`${id}-hint`} className="mt-0.5 whitespace-pre-line text-xs leading-snug text-muted-foreground">{hint}</p> : null}
+        <div className="flex items-center gap-2">
+          <label htmlFor={id} className="text-sm text-foreground">
+            {label}
+          </label>
+          {hint || adjusted ? (
+            <HelpDot
+              label={label}
+              text={[hint, adjusted && calculated !== null ? `O sistema calcula ${formatAmount(unit, calculated)}.` : null].filter(Boolean).join('\n')}
+            />
+          ) : null}
+        </div>
         {adjusted && onRestore ? (
           <p className="mt-0.5 text-xs leading-snug text-amber-700">
-            Ajustado. O sistema calcula {formatAmount(unit, calculated)}.{' '}
+            Ajustado ·{' '}
             <button type="button" onClick={onRestore} className="font-medium underline underline-offset-2 hover:text-amber-900">
               Restaurar
             </button>
@@ -359,7 +367,6 @@ function AmountRow({
             inputMode="decimal"
             autoComplete="off"
             readOnly={frozen}
-            aria-describedby={hint ? `${id}-hint` : undefined}
             value={editing ? text : numberFormat.format(value)}
             onFocus={(event) => {
               if (frozen) return;
@@ -1334,7 +1341,6 @@ Só informativo: não entra no valor em conta.`
                       <div className="flex items-center justify-between gap-4 rounded-xl bg-primary px-5 py-4 text-primary-foreground">
                         <div>
                           <p className="text-base font-semibold">Valor em conta</p>
-                          <p className="text-xs opacity-75">Ganhos menos descontos</p>
                         </div>
                         <p className="text-2xl font-semibold tabular-nums">{money(draft.net_total)}</p>
                       </div>
@@ -1349,7 +1355,7 @@ Só informativo: não entra no valor em conta.`
                         <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-1">
                           <AmountRow
                             label="Valor em conta final"
-                            hint="Use só para combinar um valor diferente da soma."
+                            hint="Use só para combinar um valor diferente da soma de ganhos menos descontos."
                             allowNegative
                             {...lineProps('net_total')}
                           />
@@ -1375,9 +1381,9 @@ Só informativo: não entra no valor em conta.`
 
                     <ModalSection
                       title="Cartões"
-                      description={
+                      help={
                         commissionMode === 'excess'
-                          ? 'Pagos no cartão. Contam como fixo: a comissão só começa depois deles.'
+                          ? 'Pagos no cartão, fora do valor em conta. Contam como fixo: a comissão só começa depois deles.'
                           : 'Pagos no cartão, fora do valor em conta.'
                       }
                     >
