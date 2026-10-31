@@ -7,7 +7,6 @@ import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
 import { EmptyState } from '@/components/empty-state';
 import { LoadingShell } from '@/components/page-skeleton';
-import { MetricCard } from '@/components/metric-card';
 import { PageHeader } from '@/components/page-header';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
@@ -39,6 +38,7 @@ import {
   normalizeTimeInput,
   parseManualAttendanceNote,
 } from '@/lib/schedule-display';
+import { HourBankNumbers, HourBankRows, TodayStrip, WeekOverview, type TodayTechnician, type WeekCell, type WeekRow } from './schedule-overview';
 import {
   buildPersistedSchedule,
   createDateKey,
@@ -3180,14 +3180,35 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
   const todayKey = brasiliaDateKey();
   const todayEntries = scheduleByDate.get(todayKey) ?? [];
-  const workingToday = sortedTechnicians.filter((technician) => {
+  const todayTechnicians: TodayTechnician[] = sortedTechnicians.map((technician) => {
     const entry = getBestScheduleEntry(todayEntries.filter((item) => item.technician_id === technician.id));
-    return entry && entry.status !== 'cancelled';
-  }).length;
-  const dayOffToday = sortedTechnicians.filter((technician) => {
-    const entry = getBestScheduleEntry(todayEntries.filter((item) => item.technician_id === technician.id));
-    return entry?.status === 'cancelled';
-  }).length;
+    return { id: technician.id, name: technician.name, kind: !entry ? 'none' : entry.status === 'cancelled' ? 'off' : 'work' };
+  });
+  const todayLabel = new Intl.DateTimeFormat('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC' }).format(new Date(`${todayKey}T12:00:00Z`));
+  const weekRows: WeekRow[] = sortedTechnicians.map((technician) => {
+    const entriesByDate = new Map<string, Schedule[]>();
+    visibleSchedule
+      .filter((item) => item.technician_id === technician.id)
+      .forEach((item) => {
+        const dateKey = normalizeDateKey(item.date);
+        entriesByDate.set(dateKey, [...(entriesByDate.get(dateKey) ?? []), item]);
+      });
+
+    const cells: WeekCell[] = weekDates.map((date) => {
+      const entry = getBestScheduleEntry(entriesByDate.get(date) ?? []);
+      if (!entry) return { date, kind: 'none', title: 'Sem escala', caption: 'Não gravado' };
+
+      const manual = parseManualAttendanceNote(entry.notes).attendance_status;
+      if (manual === 'missed') return { date, kind: 'missed', title: 'Falta', caption: getScheduleDisplayLabel(entry) };
+      if (manual === 'day_off' || manual === 'justified') return { date, kind: 'off', title: manual === 'justified' ? 'Justificado' : 'Folga', caption: getScheduleDisplayLabel(entry) };
+      if (!manual && entry.status === 'cancelled') return { date, kind: 'off', title: 'Folga', caption: 'Dia livre' };
+
+      const done = manual === 'worked' || manual === 'cancelled_service' || entry.status === 'completed';
+      return { date, kind: done ? 'done' : 'work', title: formatTimeRange(entry.start_time, entry.end_time), caption: getScheduleDisplayLabel(entry) };
+    });
+
+    return { id: technician.id, name: technician.name, cells };
+  });
   const coveredTechnicians = new Set(visibleSchedule.map((item) => item.technician_id)).size;
   const range = getScheduleRange(formData.period_mode, formData.year, formData.month, formData.date);
   const scopeSummary = formData.technician_scope === 'all'
@@ -3898,12 +3919,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       {dataError ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{dataError}</div> : null}
       {saveMessage ? <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{saveMessage}</div> : null}
 
-      <div className="grid gap-3 md:grid-cols-4">
-        <MetricCard title="Trabalham hoje" value={workingToday} hint="Com escala real salva para hoje" icon={CalendarDays} />
-        <MetricCard title="Folgas hoje" value={dayOffToday} hint="Cancelamentos reais para hoje" icon={CalendarDays} tone="warning" />
-        <MetricCard title="Linhas salvas" value={visibleSchedule.length} hint="Linhas da escala gravadas" icon={Clock3} tone="success" />
-        <MetricCard title="Técnicos cobertos" value={coveredTechnicians} hint="Com escala gravada em algum período" icon={Users} />
-      </div>
+      <TodayStrip dateLabel={todayLabel} technicians={todayTechnicians} linesSaved={visibleSchedule.length} coveredTechnicians={coveredTechnicians} />
 
       <div className="mt-5">
         <DataPanel
@@ -3911,13 +3927,13 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           description={`Previsto, realizado e saldo em ${hourBankPeriodLabel}.`}
           action={
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex h-11 items-center rounded-md border border-border bg-background p-1">
+              <div className="flex h-10 items-center rounded-lg bg-secondary/70 p-1">
                 {hourBankPeriodOptions.map((option) => (
                   <button
                     key={option.value}
                     type="button"
                     onClick={() => setHourBankPeriodMode(option.value)}
-                    className={`h-8 rounded px-3 text-sm font-medium transition ${hourBankPeriodMode === option.value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
+                    className={`h-8 rounded-md px-3.5 text-sm font-medium transition ${hourBankPeriodMode === option.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
                   >
                     {option.label}
                   </button>
@@ -3925,17 +3941,17 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               </div>
 
               {hourBankPeriodMode === 'month' ? (
-                <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
+                <label className="flex h-10 items-center rounded-lg border border-input bg-background px-3">
                   <span className="sr-only">Mês</span>
                   <input type="month" value={hourBankMonth} onChange={(event) => setHourBankMonth(event.target.value)} className="h-9 bg-transparent text-sm text-foreground outline-none" />
                 </label>
               ) : hourBankPeriodMode === 'year' ? (
-                <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
+                <label className="flex h-10 items-center rounded-lg border border-input bg-background px-3">
                   <span className="sr-only">Ano</span>
                   <input type="number" value={hourBankYear} onChange={(event) => setHourBankYear(Number(event.target.value) || Number(brasiliaDateKey().slice(0, 4)))} className="h-9 w-20 bg-transparent text-sm text-foreground outline-none" />
                 </label>
               ) : (
-                <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
+                <label className="flex h-10 items-center rounded-lg border border-input bg-background px-3">
                   <span className="sr-only">{hourBankPeriodMode === 'day' ? 'Data' : 'Semana de referência'}</span>
                   <input type="date" value={hourBankDate} onChange={(event) => setHourBankDate(event.target.value)} className="h-9 bg-transparent text-sm text-foreground outline-none" />
                 </label>
@@ -3944,89 +3960,17 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           }
         >
 
-          <div className="grid overflow-hidden rounded-md border border-border md:grid-cols-5">
-            <div className="border-b border-border bg-secondary/30 px-3 py-3 md:border-b-0 md:border-r">
-              <p className="text-xs font-medium uppercase text-muted-foreground">Período</p>
-              <p className="mt-1 text-sm font-semibold text-foreground">{formatDate(hourBankRange.startDate)} a {formatDate(hourBankRange.endDate)}</p>
-            </div>
-            <div className="border-b border-border px-3 py-3 md:border-b-0 md:border-r">
-              <p className="text-xs font-medium uppercase text-muted-foreground">Previsto</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{formatHours(hourBankTotals.planned)}</p>
-            </div>
-            <div className="border-b border-border px-3 py-3 md:border-b-0 md:border-r">
-              <p className="text-xs font-medium uppercase text-muted-foreground">Realizado</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{formatHours(hourBankTotals.worked)}</p>
-            </div>
-            <div className="border-b border-border px-3 py-3 md:border-b-0 md:border-r">
-              <p className="text-xs font-medium uppercase text-muted-foreground">Saldo</p>
-              <p className={`mt-1 text-lg font-semibold tabular-nums ${hourBankTotals.balance < 0 ? 'text-rose-700' : hourBankTotals.balance > 0 ? 'text-emerald-700' : 'text-foreground'}`}>{formatHours(hourBankTotals.balance)}</p>
-            </div>
-            <div className="px-3 py-3">
-              <p className="text-xs font-medium uppercase text-muted-foreground">Pendências</p>
-              <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{hourBankTotals.pending}</p>
-            </div>
-          </div>
+          <HourBankNumbers planned={hourBankTotals.planned} worked={hourBankTotals.worked} balance={hourBankTotals.balance} pending={hourBankTotals.pending} />
 
-          <div className="mt-3 flex justify-end">
+          <div className="mb-3 mt-7 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-foreground">Resumo por técnico</h3>
             <Button type="button" variant="outline" onClick={() => setIsHourBankDetailDialogOpen(true)}>
               <Clock3 className="h-4 w-4" />
               Ver banco de horas detalhado
             </Button>
           </div>
 
-          <div className="mt-4">
-            <section className="min-w-0">
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-foreground">Resumo por técnico</h3>
-                <span className="text-xs text-muted-foreground">{formatCount(hourBankVisibleRows.length, 'técnico', 'técnicos')}</span>
-              </div>
-
-              <div className="overflow-hidden rounded-md border border-border">
-                <table className="w-full text-sm">
-                  <thead className="bg-secondary/40">
-                    <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                      <th className="px-3 py-2 font-medium">Técnico</th>
-                      <th className="px-3 py-2 font-medium">Horas</th>
-                      <th className="px-3 py-2 font-medium">Saldo</th>
-                      <th className="px-3 py-2 font-medium">Ocorrências</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {hourBankVisibleRows.length ? hourBankVisibleRows.map((row) => (
-                      <tr key={row.technician_id} className="border-b border-border last:border-0">
-                        <td className="px-3 py-3">
-                          <p className="font-medium text-foreground">{row.technician_name}</p>
-                          <p className="mt-0.5 text-xs text-muted-foreground">{formatCount(row.worked_days, 'dia trabalhado', 'dias trabalhados')}</p>
-                        </td>
-                        <td className="px-3 py-3 tabular-nums">
-                          <p className="font-medium text-foreground">{formatHours(row.worked_hours)}</p>
-                          <p className="text-xs text-muted-foreground">de {formatHours(row.planned_hours)}</p>
-                        </td>
-                        <td className="px-3 py-3">
-                          <StatusBadge tone={row.balance < 0 ? 'danger' : row.balance > 0 ? 'success' : 'neutral'}>
-                            {formatHours(row.balance)}
-                          </StatusBadge>
-                        </td>
-                        <td className="px-3 py-3 text-xs text-muted-foreground">
-                          <span>{formatCount(row.day_off_days, 'folga', 'folgas')}</span>
-                          <span className="mx-1">·</span>
-                          <span>{formatCount(row.missed_days, 'falta', 'faltas')}</span>
-                          <span className="mx-1">·</span>
-                          <span>{formatCount(row.pending_days, 'pendente', 'pendentes')}</span>
-                        </td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan={4} className="px-3 py-8 text-center text-muted-foreground">Sem técnicos com movimento no período.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-          </div>
-
+          <HourBankRows rows={hourBankVisibleRows} />
         </DataPanel>
       </div>
 
@@ -5086,61 +5030,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </Button>
           }
         >
-          {sortedTechnicians.length ? (
-            <div className="overflow-x-auto">
-              <div className="min-w-225">
-                <div className="grid grid-cols-[220px_repeat(7,1fr)] border-b border-border text-xs font-medium text-muted-foreground">
-                  <div className="py-2 pr-3">Técnico</div>
-                  {weekDates.map((date) => (
-                    <div key={date} className="py-2 pr-3">
-                      <p className="font-semibold text-foreground">{formatDate(date)}</p>
-                      <p className="text-[11px] uppercase tracking-[0.12em] text-muted-foreground">{getDayLabelFromKey(getDayKeyFromDateKey(date))}</p>
-                    </div>
-                  ))}
-                </div>
-
-                {sortedTechnicians.map((technician) => {
-                  const entriesByDate = new Map<string, Schedule[]>();
-
-                  visibleSchedule
-                    .filter((item) => item.technician_id === technician.id)
-                    .forEach((item) => {
-                      const dateKey = normalizeDateKey(item.date);
-                      entriesByDate.set(dateKey, [...(entriesByDate.get(dateKey) ?? []), item]);
-                    });
-
-                  return (
-                    <div key={technician.id} className="grid grid-cols-[220px_repeat(7,1fr)] border-b border-border last:border-0">
-                      <div className="py-3 pr-3 text-sm font-medium">{technician.name}</div>
-                      {weekDates.map((date) => {
-                        const entry = getBestScheduleEntry(entriesByDate.get(date) ?? []);
-
-                        return (
-                          <div key={date} className="py-2 pr-3">
-                            <div className="min-h-20 rounded-md border border-border bg-background p-2 text-xs">
-                              {entry ? (
-                                <>
-                                  <StatusBadge tone={getScheduleDisplayTone(entry)}>{getScheduleDisplayLabel(entry)}</StatusBadge>
-                                  <p className="mt-2 font-medium">{getScheduleTimeLabel(entry)}</p>
-                                </>
-                              ) : (
-                                <>
-                                  <StatusBadge tone="neutral">Sem escala</StatusBadge>
-                                  <p className="mt-2 font-medium text-muted-foreground">Não gravado</p>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : (
-            <EmptyState icon={Users} title="Nenhum técnico ativo" description="Não há técnicos ativos reais para montar a escala." />
-          )}
+          <WeekOverview dates={weekDates} today={todayKey} rows={weekRows} />
         </DataPanel>
       </div>
 
