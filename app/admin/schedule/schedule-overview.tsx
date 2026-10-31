@@ -114,8 +114,15 @@ export interface HourBankSummaryRow {
   pending_days: number;
 }
 
+/** One decimal, like the screen shows it: -0,01h reads as 0,0h, never "-0,0h". */
+function oneDecimal(value: number) {
+  const rounded = Math.round(value * 10) / 10;
+  return rounded === 0 ? 0 : rounded;
+}
+
 function signedHours(value: number) {
-  return `${value > 0 ? '+' : ''}${formatHours(value)}`;
+  const rounded = oneDecimal(value);
+  return `${rounded > 0 ? '+' : ''}${formatHours(rounded)}`;
 }
 
 function plural(value: number, singular: string, pluralForm: string) {
@@ -127,7 +134,7 @@ export function HourBankNumbers({ planned, worked, balance, pending, action }: {
   const items = [
     { label: 'Previsto', value: formatHours(planned), tone: 'text-foreground' },
     { label: 'Realizado', value: formatHours(worked), tone: 'text-foreground' },
-    { label: 'Saldo', value: signedHours(balance), tone: balance < 0 ? 'text-rose-600' : balance > 0 ? 'text-emerald-600' : 'text-foreground' },
+    { label: 'Saldo', value: signedHours(balance), tone: oneDecimal(balance) < 0 ? 'text-rose-600' : oneDecimal(balance) > 0 ? 'text-emerald-600' : 'text-foreground' },
     { label: 'Pendências', value: String(pending), tone: 'text-foreground' },
   ];
 
@@ -186,7 +193,7 @@ export function HourBankRows({ rows }: { rows: HourBankSummaryRow[] }) {
                     <div className={`h-full rounded-full ${row.worked_hours >= row.planned_hours && row.planned_hours > 0 ? 'bg-emerald-500' : 'bg-primary'}`} style={{ width: `${progress}%` }} />
                   </div>
                 </td>
-                <td className={`py-3.5 pr-4 text-right font-semibold tabular-nums ${row.balance < 0 ? 'text-rose-600' : row.balance > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                <td className={`py-3.5 pr-4 text-right font-semibold tabular-nums ${oneDecimal(row.balance) < 0 ? 'text-rose-600' : oneDecimal(row.balance) > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
                   {signedHours(row.balance)}
                 </td>
                 <td className="py-3.5 pl-4">

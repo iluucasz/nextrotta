@@ -1256,6 +1256,26 @@ const WEEK_PRESETS: Array<{ value: WeekPreset; label: string; workingDays: Sched
   { value: 'every-day', label: 'Todos os dias', workingDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'] },
 ];
 
+/** One decimal, like the screen shows it: a balance of -0,01h reads as 0,0h, never "-0,0h". */
+function oneDecimal(value: number) {
+  const rounded = Math.round(value * 10) / 10;
+  return rounded === 0 ? 0 : rounded;
+}
+
+function signedHoursLabel(value: number) {
+  const rounded = oneDecimal(value);
+  return `${rounded > 0 ? '+' : ''}${formatHours(rounded)}`;
+}
+
+/** Colour of a day's situation in the detailed hour bank, from the label it shows. */
+function detailStatusTone(label: string) {
+  if (label === 'Trabalhou' || label === 'Concluído') return 'success' as const;
+  if (label === 'Faltou') return 'danger' as const;
+  if (label === 'Folga' || label === 'Folgou' || label === 'Justificou' || label === 'Serviço cancelado') return 'warning' as const;
+  if (label === 'Escalado') return 'info' as const;
+  return 'neutral' as const;
+}
+
 const ATTENDANCE_OPTIONS: Array<{ value: AttendanceStatus; label: string }> = [
   { value: 'not_marked', label: 'Não lançar' },
   { value: 'worked', label: 'Trabalhou' },
@@ -1356,8 +1376,8 @@ function AttendanceTable({
                 <td className="py-3 text-right">
                   {isAttendanceSelected(draft) ? (
                     <>
-                      <p className={`font-semibold tabular-nums ${balance < 0 ? 'text-rose-600' : balance > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
-                        {balance > 0 ? '+' : ''}{formatHours(balance)}
+                      <p className={`font-semibold tabular-nums ${oneDecimal(balance) < 0 ? 'text-rose-600' : oneDecimal(balance) > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                        {signedHoursLabel(balance)}
                       </p>
                       <p className="mt-0.5 text-[13px] text-muted-foreground">{getAttendanceResultLabel(draft, getAttendanceWorkedHours(draft))}</p>
                     </>
@@ -4123,18 +4143,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           description={`Previsto, realizado e saldo em ${hourBankPeriodLabel}.`}
           action={
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex h-10 items-center rounded-lg bg-secondary/70 p-1">
-                {hourBankPeriodOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => setHourBankPeriodMode(option.value)}
-                    className={`h-8 rounded-md px-3.5 text-sm font-medium transition ${hourBankPeriodMode === option.value ? 'bg-card text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
-                  >
-                    {option.label}
-                  </button>
-                ))}
-              </div>
+              <SegmentedControl label="Período do banco de horas" value={hourBankPeriodMode} onChange={setHourBankPeriodMode} options={hourBankPeriodOptions} />
 
               {hourBankPeriodMode === 'month' ? (
                 <label className="flex h-10 items-center rounded-lg border border-input bg-background px-3">
@@ -4179,46 +4188,43 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       </div>
 
       <Dialog open={isHourBankDetailDialogOpen} onOpenChange={setIsHourBankDetailDialogOpen}>
-        <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-7xl">
+        <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-6xl">
           <div className="flex max-h-[90vh] min-h-0 flex-col">
             <DialogHeader className={MODAL_HEADER_CLASS}>
               <DialogTitle className={MODAL_TITLE_CLASS}>Banco de horas detalhado</DialogTitle>
               <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
-                Somente visualização — situação, escala prevista, entrada e saída reais e saldo por técnico e dia.
+                Somente leitura: o que estava previsto, o que foi realizado e o saldo de cada técnico, dia a dia.
               </DialogDescription>
             </DialogHeader>
 
-            <div className={MODAL_BODY_CLASS}>
-              <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-border/70 bg-card/70 p-4">
-                <div className="flex h-11 items-center rounded-md border border-border bg-background p-1">
-                  {hourBankPeriodOptions.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      onClick={() => setHourBankPeriodMode(option.value)}
-                      className={`h-8 rounded px-3 text-sm font-medium transition ${hourBankPeriodMode === option.value ? 'bg-primary text-primary-foreground shadow-sm' : 'text-muted-foreground hover:bg-secondary hover:text-foreground'}`}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
+            <div className={`${MODAL_BODY_CLASS} space-y-5`}>
+              <div className="flex flex-wrap items-center gap-3">
+                <SegmentedControl
+                  label="Período do banco de horas"
+                  value={hourBankPeriodMode}
+                  onChange={setHourBankPeriodMode}
+                  options={hourBankPeriodOptions}
+                />
 
                 {hourBankPeriodMode === 'month' ? (
-                  <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
-                    <span className="sr-only">Mês</span>
-                    <input type="month" value={hourBankMonth} onChange={(event) => setHourBankMonth(event.target.value)} className="h-9 bg-transparent text-sm text-foreground outline-none" />
-                  </label>
+                  <input type="month" value={hourBankMonth} onChange={(event) => setHourBankMonth(event.target.value)} className={toolbarFieldClass} aria-label="Mês" />
                 ) : hourBankPeriodMode === 'year' ? (
-                  <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
-                    <span className="sr-only">Ano</span>
-                    <input type="number" value={hourBankYear} onChange={(event) => setHourBankYear(Number(event.target.value) || Number(brasiliaDateKey().slice(0, 4)))} className="h-9 w-20 bg-transparent text-sm text-foreground outline-none" />
-                  </label>
+                  <input
+                    type="number"
+                    value={hourBankYear}
+                    onChange={(event) => setHourBankYear(Number(event.target.value) || Number(brasiliaDateKey().slice(0, 4)))}
+                    className={`${toolbarFieldClass} w-28`}
+                    aria-label="Ano"
+                  />
                 ) : (
                   <>
-                    <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
-                      <span className="sr-only">{hourBankPeriodMode === 'day' ? 'Data' : 'Semana de referência'}</span>
-                      <input type="date" value={hourBankDate} onChange={(event) => setHourBankDate(event.target.value)} className="h-9 bg-transparent text-sm text-foreground outline-none" />
-                    </label>
+                    <input
+                      type="date"
+                      value={hourBankDate}
+                      onChange={(event) => setHourBankDate(event.target.value)}
+                      className={toolbarFieldClass}
+                      aria-label={hourBankPeriodMode === 'day' ? 'Data' : 'Semana de referência'}
+                    />
                     {hourBankPeriodMode === 'day' ? (
                       <Button type="button" variant="outline" onClick={() => setHourBankDate(brasiliaDateKey())}>
                         Hoje
@@ -4227,28 +4233,27 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   </>
                 )}
 
-                <label className="flex h-11 items-center rounded-md border border-input bg-background px-3">
-                  <span className="sr-only">Técnico</span>
-                  <select
-                    value={hourBankDetailTechnicianId}
-                    onChange={(event) => setHourBankDetailTechnicianId(event.target.value)}
-                    className="h-9 min-w-40 bg-transparent text-sm text-foreground outline-none"
-                  >
-                    <option value="all">Todos os técnicos</option>
-                    {sortedTechnicians.map((technician) => (
-                      <option key={technician.id} value={technician.id}>{technician.name}</option>
-                    ))}
-                  </select>
-                </label>
+                <select
+                  value={hourBankDetailTechnicianId}
+                  onChange={(event) => setHourBankDetailTechnicianId(event.target.value)}
+                  className={`${toolbarFieldClass} w-56`}
+                  aria-label="Técnico"
+                >
+                  <option value="all">Todos os técnicos</option>
+                  {sortedTechnicians.map((technician) => (
+                    <option key={technician.id} value={technician.id}>{technician.name}</option>
+                  ))}
+                </select>
 
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button type="button" className="bg-emerald-600 text-white hover:bg-emerald-700">
+                    <Button type="button" variant="outline" className="sm:ml-auto">
                       <Download className="h-4 w-4" />
                       Exportar
+                      <ChevronDown className="h-4 w-4 text-muted-foreground" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="start">
+                  <DropdownMenuContent align="end">
                     <DropdownMenuItem onSelect={() => handleExportHourBankDetail('period')}>
                       Período selecionado ({hourBankPeriodLabel})
                     </DropdownMenuItem>
@@ -4257,70 +4262,56 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
-
-                <span className="ml-auto text-sm text-muted-foreground">{hourBankPeriodLabel}</span>
               </div>
 
-              <div className="mb-4 grid gap-3 md:grid-cols-4">
-                <div className="rounded-md border border-border bg-secondary/30 px-3 py-3">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Período</p>
-                  <p className="mt-1 text-sm font-semibold text-foreground">{formatDate(hourBankRange.startDate)} a {formatDate(hourBankRange.endDate)}</p>
-                </div>
-                <div className="rounded-md border border-border px-3 py-3">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Previsto</p>
-                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{formatHours(hourBankDetailFilteredTotals.planned)}</p>
-                </div>
-                <div className="rounded-md border border-border px-3 py-3">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Realizado</p>
-                  <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">{formatHours(hourBankDetailFilteredTotals.worked)}</p>
-                </div>
-                <div className="rounded-md border border-border px-3 py-3">
-                  <p className="text-xs font-medium uppercase text-muted-foreground">Saldo</p>
-                  <p className={`mt-1 text-lg font-semibold tabular-nums ${hourBankDetailFilteredTotals.balance < 0 ? 'text-rose-700' : hourBankDetailFilteredTotals.balance > 0 ? 'text-emerald-700' : 'text-foreground'}`}>{formatHours(hourBankDetailFilteredTotals.balance)}</p>
-                </div>
-              </div>
+              <SummaryBand
+                items={[
+                  { label: 'Período', value: `${formatDate(hourBankRange.startDate)} a ${formatDate(hourBankRange.endDate)}` },
+                  { label: 'Previsto', value: formatHours(hourBankDetailFilteredTotals.planned) },
+                  { label: 'Realizado', value: formatHours(hourBankDetailFilteredTotals.worked) },
+                  {
+                    label: 'Saldo',
+                    value: signedHoursLabel(hourBankDetailFilteredTotals.balance),
+                    tone: oneDecimal(hourBankDetailFilteredTotals.balance) < 0 ? 'bad' : oneDecimal(hourBankDetailFilteredTotals.balance) > 0 ? 'good' : 'default',
+                  },
+                ]}
+              />
 
-              <div className="overflow-x-auto rounded-lg border border-border/70 bg-background">
-                <table className="w-full min-w-[1160px] text-sm">
-                  <thead className="bg-transparent text-left text-[13px] font-normal text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-3">Data</th>
-                      <th className="px-3 py-3">Situação</th>
-                      <th className="px-3 py-3">Técnico</th>
-                      <th className="px-3 py-3">Escala</th>
-                      <th className="px-3 py-3">Previsto</th>
-                      <th className="px-3 py-3">Entrada</th>
-                      <th className="px-3 py-3">Saída</th>
-                      <th className="px-3 py-3">Observação</th>
-                      <th className="px-3 py-3">Saldo</th>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[920px] text-sm">
+                  <thead className="bg-transparent">
+                    <tr className="text-left text-[13px] text-muted-foreground">
+                      <th className="pb-2 pr-4 font-normal">Data</th>
+                      <th className="pb-2 pr-4 font-normal">Técnico</th>
+                      <th className="pb-2 pr-4 font-normal">Situação</th>
+                      <th className="pb-2 pr-4 font-normal">Previsto</th>
+                      <th className="pb-2 pr-4 font-normal">Realizado</th>
+                      <th className="pb-2 pr-4 font-normal">Observação</th>
+                      <th className="pb-2 text-right font-normal">Saldo</th>
                     </tr>
                   </thead>
                   <tbody>
                     {hourBankDetailRowsFiltered.length ? hourBankDetailRowsFiltered.map((row) => (
-                      <tr key={row.key} className="border-t border-border/70">
-                        <td className="px-3 py-3 whitespace-nowrap">{formatDate(row.date)}</td>
-                        <td className="px-3 py-3 whitespace-nowrap">{row.status_label}</td>
-                        <td className="px-3 py-3 font-medium text-foreground">{row.technician_name}</td>
-                        <td className="px-3 py-3">
-                          <StatusBadge tone={row.schedule_status === 'cancelled' ? 'warning' : row.schedule_status === 'completed' ? 'success' : row.schedule_status === 'scheduled' ? 'info' : 'neutral'}>
-                            {row.schedule_status ? getStatusLabel(row.schedule_status) : 'Sem escala'}
-                          </StatusBadge>
+                      <tr key={row.key} className="border-t border-border">
+                        <td className="whitespace-nowrap py-3 pr-4 text-muted-foreground">{formatDate(row.date)}</td>
+                        <td className="py-3 pr-4 font-medium text-foreground">{row.technician_name}</td>
+                        <td className="py-3 pr-4">
+                          <StatusBadge tone={detailStatusTone(row.status_label)}>{row.status_label}</StatusBadge>
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap text-muted-foreground">
-                          {row.planned_hours > 0 ? `${formatTimeRange(row.planned_start_time, row.planned_end_time)} • ${formatHours(row.planned_hours)}` : 'Sem expediente previsto'}
+                        <td className="whitespace-nowrap py-3 pr-4 tabular-nums text-muted-foreground">
+                          {row.planned_hours > 0 ? `${formatTimeRange(row.planned_start_time, row.planned_end_time)} · ${formatHours(row.planned_hours)}` : '-'}
                         </td>
-                        <td className="px-3 py-3 whitespace-nowrap">{row.actual_start_time ? formatTime(row.actual_start_time) : '-'}</td>
-                        <td className="px-3 py-3 whitespace-nowrap">{row.actual_end_time ? formatTime(row.actual_end_time) : '-'}</td>
-                        <td className="px-3 py-3 max-w-64 truncate text-muted-foreground" title={row.observation}>{row.observation}</td>
-                        <td className="px-3 py-3">
-                          <StatusBadge tone={row.balance < 0 ? 'danger' : row.balance > 0 ? 'success' : 'neutral'}>
-                            {formatHours(row.balance)}
-                          </StatusBadge>
+                        <td className="whitespace-nowrap py-3 pr-4 tabular-nums">
+                          {row.actual_start_time && row.actual_end_time ? `${formatTime(row.actual_start_time)} às ${formatTime(row.actual_end_time)}` : '-'}
+                        </td>
+                        <td className="max-w-64 truncate py-3 pr-4 text-muted-foreground" title={row.observation}>{row.observation}</td>
+                        <td className={`py-3 text-right font-semibold tabular-nums ${oneDecimal(row.balance) < 0 ? 'text-rose-600' : oneDecimal(row.balance) > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                          {signedHoursLabel(row.balance)}
                         </td>
                       </tr>
                     )) : (
                       <tr>
-                        <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Nenhum apontamento ou escala no período selecionado.</td>
+                        <td colSpan={7} className="px-3 py-10 text-center text-muted-foreground">Nenhum apontamento ou escala no período selecionado.</td>
                       </tr>
                     )}
                   </tbody>
