@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     if (!auth) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
     const [rows, entitlements, maintenance, access] = await Promise.all([
-      sql`SELECT status FROM organizations WHERE id = ${auth.organizationId}`,
+      sql`SELECT status, name FROM organizations WHERE id = ${auth.organizationId}`,
       getEntitlements(auth.organizationId),
       getMaintenanceNotice(),
       getAccessById(auth.organizationId),
@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       status,
+      organizationName: rows[0]?.name ? String(rows[0].name) : null,
       readOnly: status === 'suspended' || status === 'canceled',
       pastDue: status === 'past_due',
       plan: entitlements.planKey ? { key: entitlements.planKey, name: entitlements.planName } : null,

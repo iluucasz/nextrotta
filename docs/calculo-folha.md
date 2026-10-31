@@ -49,3 +49,7 @@ Descontos, adiantamentos, horas extras e prêmios podem alterar o valor final em
 - Valor que o admin mudou fica marcado ("Ajustado. O sistema calcula R$ X. Restaurar"). Bruto, comissão e valor em conta ficam travados até apertar "Ajustar". Uma comissão ajustada à mão não é sobrescrita quando outro campo muda; um ajuste manual do valor em conta é mantido como diferença.
 - Campos aceitam "1.234,56" ou "1234,5", não aceitam negativo (só banco de horas e valor em conta final) e limitam o valor máximo; Enter confirma sem enviar nada.
 - O banco de horas é só informativo: não entra no valor em conta.
+
+## PDF da folha
+
+"Baixar PDF" (folha fechada) gera um PDF de verdade e baixa direto, sem janela de impressão: `lib/payroll-pdf.ts` (jsPDF, carregado só na hora do clique). É a via do técnico: cabeçalho com o nome da empresa e o mês, valor em conta em destaque, ganhos, descontos, cartões (só os que existem), produção e banco de horas. Não mostra folha total nem lucro da empresa. Arquivo: `Folha - <nome> - AAAA-MM.pdf`.

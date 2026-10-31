@@ -115,15 +115,6 @@ function roundMoney(value: number | string | null | undefined) {
   return Math.round((numericValue + Number.EPSILON) * 100) / 100;
 }
 
-function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
-}
-
 const numberFormat = new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** 8,5 · 220 · 1,5 — no forced decimals. */
@@ -413,6 +404,7 @@ export default function PayrollPage() {
   const [discounts, setDiscounts] = useState<Discount[]>([]);
   const [query, setQuery] = useState('');
   const [openingTechnicianId, setOpeningTechnicianId] = useState('');
+  const [pdfRowId, setPdfRowId] = useState('');
   const [competenceMonth, setCompetenceMonth] = useState(brasiliaDateKey().slice(0, 7));
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [hasLoaded, setHasLoaded] = useState(false);
@@ -693,92 +685,63 @@ export default function PayrollPage() {
     }
   }
 
-  function openPayrollPdf(row: PayrollRow) {
-    if (!row.payrollItem || typeof window === 'undefined') {
-      return;
+  /** Builds the folha's PDF and downloads it at once (no print window). */
+  async function downloadPayrollFile(row: PayrollRow) {
+    const item = row.payrollItem;
+    if (!item || pdfRowId) return;
+
+    setPdfRowId(row.technician.id);
+    try {
+      let organizationName: string | null = null;
+      try {
+        const response = await fetch('/api/organization/status', { cache: 'no-store' });
+        if (response.ok) organizationName = (await response.json()).organizationName ?? null;
+      } catch {
+        // The name is only a heading: the PDF is fine without it.
+      }
+
+      const { downloadPayrollPdf } = await import('@/lib/payroll-pdf');
+      await downloadPayrollPdf({
+        organizationName,
+        technicianName: row.technician.name,
+        technicianQra: row.technician.qra || '',
+        competenceLabel: formatCompetenceLabel(competenceMonth),
+        competenceMonth,
+        closedAt: item.updated_at || null,
+        netTotal: roundMoney(item.net_total),
+        earnings: [
+          { label: 'Salário base', value: roundMoney(item.base_salary) },
+          { label: 'Comissão', value: roundMoney(item.commission_value) },
+          { label: 'Horas extras', value: roundMoney(item.extra_hours_value) },
+          { label: 'Prêmio por produção', value: roundMoney(item.extraordinary_award_value) },
+        ],
+        deductions: [
+          { label: 'Descontos', value: roundMoney(item.discounts_total) },
+          { label: 'Adiantamentos', value: roundMoney(item.advances_total) },
+        ],
+        cards: [
+          { label: 'Vale-refeição (VR)', value: roundMoney(item.vr_deduction) },
+          { label: 'Vale-alimentação (VA)', value: roundMoney(item.va_deduction) },
+        ],
+        production: {
+          serviceCount: row.serviceCount,
+          total: roundMoney(item.total_services_value),
+          fortnights: (['Q1', 'Q2', 'unassigned'] as const)
+            .filter((key) => row.serviceFortnightSummary[key].count > 0)
+            .map((key) => ({
+              label: key === 'unassigned' ? 'Sem quinzena' : key,
+              count: row.serviceFortnightSummary[key].count,
+              value: row.serviceFortnightSummary[key].totalValue,
+            })),
+        },
+        hourBank: roundMoney(item.hour_bank_balance),
+      });
+    } catch (error) {
+      console.error('[payroll] pdf error:', error);
+      setDataError('Não foi possível gerar o PDF da folha. Tente de novo.');
+    } finally {
+      setPdfRowId('');
     }
-
-    const payrollItem = row.payrollItem;
-    const payrollTotal = roundMoney(payrollItem.net_total + payrollItem.va_deduction + payrollItem.vr_deduction);
-    const updatedAt = payrollItem.updated_at ? new Date(payrollItem.updated_at).toLocaleString('pt-BR') : '-';
-    const printWindow = window.open('', '_blank', 'width=960,height=1200');
-
-    if (!printWindow) {
-      return;
-    }
-
-    const html = `
-      <!DOCTYPE html>
-      <html lang="pt-BR">
-        <head>
-          <meta charset="utf-8" />
-          <title>Folha - ${escapeHtml(row.technician.name)} - ${escapeHtml(formatCompetenceLabel(competenceMonth))}</title>
-          <style>
-            body { font-family: Arial, sans-serif; margin: 32px; color: #0f172a; }
-            h1, p { margin: 0; }
-            .header { margin-bottom: 24px; }
-            .eyebrow { font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: #64748b; margin-bottom: 8px; }
-            .title { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
-            .subtitle { font-size: 14px; color: #475569; line-height: 1.5; }
-            .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 24px; }
-            .card { border: 1px solid #cbd5e1; border-radius: 12px; padding: 14px; }
-            .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; margin-bottom: 6px; }
-            .value { font-size: 20px; font-weight: 700; }
-            table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-            th, td { text-align: left; padding: 10px 0; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
-            th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; }
-            .footer { margin-top: 24px; font-size: 12px; color: #64748b; }
-            @media print { body { margin: 20px; } }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="eyebrow">Folha fechada</div>
-            <div class="title">${escapeHtml(row.technician.name)}</div>
-            <p class="subtitle">Competência ${escapeHtml(formatCompetenceLabel(competenceMonth))} | QRA ${escapeHtml(row.technician.qra || '-')} | Atualizado em ${escapeHtml(updatedAt)}</p>
-          </div>
-
-          <div class="grid">
-            <div class="card"><div class="label">Valor bruto</div><div class="value">${escapeHtml(formatCurrency(payrollItem.total_services_value))}</div></div>
-            <div class="card"><div class="label">Em conta</div><div class="value">${escapeHtml(formatCurrency(payrollItem.net_total))}</div></div>
-            <div class="card"><div class="label">Folha total</div><div class="value">${escapeHtml(formatCurrency(payrollTotal))}</div></div>
-            <div class="card"><div class="label">Lucro gerado</div><div class="value">${escapeHtml(formatCurrency(row.profitValue))}</div></div>
-          </div>
-
-          <table>
-            <thead>
-              <tr><th>Item</th><th>Valor</th></tr>
-            </thead>
-            <tbody>
-              <tr><td>Ordens de serviço</td><td>${escapeHtml(String(row.serviceCount))}</td></tr>
-              <tr><td>Quinzenas</td><td>${escapeHtml(formatFortnights(row.serviceFortnightSummary) || 'Sem OS')}</td></tr>
-              <tr><td>Valor por quinzena</td><td>${escapeHtml(formatFortnights(row.serviceFortnightSummary, true) || 'Sem valor')}</td></tr>
-              <tr><td>Comissão</td><td>${escapeHtml(formatCurrency(payrollItem.commission_value))}</td></tr>
-              <tr><td>Salário base</td><td>${escapeHtml(formatCurrency(payrollItem.base_salary))}</td></tr>
-              ${payrollItem.vr_deduction > 0 ? `<tr><td>Vale-refeição</td><td>${escapeHtml(formatCurrency(payrollItem.vr_deduction))}</td></tr>` : ''}
-              ${payrollItem.va_deduction > 0 ? `<tr><td>Vale-alimentação</td><td>${escapeHtml(formatCurrency(payrollItem.va_deduction))}</td></tr>` : ''}
-              <tr><td>Horas extras</td><td>${escapeHtml(formatCurrency(payrollItem.extra_hours_value))}</td></tr>
-              <tr><td>Prêmio por produção</td><td>${escapeHtml(formatCurrency(payrollItem.extraordinary_award_value ?? 0))}</td></tr>
-              <tr><td>Banco de horas</td><td>${escapeHtml(formatHours(payrollItem.hour_bank_balance))}</td></tr>
-              <tr><td>Descontos</td><td>${escapeHtml(formatCurrency(payrollItem.discounts_total))}</td></tr>
-              <tr><td>Adiantamentos</td><td>${escapeHtml(formatCurrency(payrollItem.advances_total))}</td></tr>
-            </tbody>
-          </table>
-
-          <div class="footer">Use a opção "Salvar como PDF" da impressão para guardar a folha deste técnico.</div>
-          <script>
-            window.onload = function () {
-              window.focus();
-              window.print();
-            };
-          </script>
-        </body>
-      </html>
-    `;
-
-    printWindow.document.open();
-    printWindow.document.write(html);
-    printWindow.document.close();
   }
 
   const currentCommissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
@@ -1077,13 +1040,14 @@ Só informativo: não entra no valor em conta.`
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => openPayrollPdf(row)}
-                aria-label={`Gerar PDF da folha de ${row.technician.name}`}
+                onClick={() => downloadPayrollFile(row)}
+                disabled={pdfRowId === row.technician.id}
+                aria-label={`Baixar PDF da folha de ${row.technician.name}`}
               >
                 <FileText className="h-4 w-4" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent side="top" sideOffset={6}>Gerar PDF</TooltipContent>
+            <TooltipContent side="top" sideOffset={6}>Baixar PDF</TooltipContent>
           </Tooltip>
         ) : null}
         <Button type="button" size="sm" variant={isClosedRow ? 'outline' : 'default'} onClick={() => openPayrollDialog(row)} disabled={isLoadingRow}>
@@ -1428,9 +1392,9 @@ Só informativo: não entra no valor em conta.`
             <div className="flex flex-wrap gap-2 sm:items-center">
               {isClosed ? (
                 <>
-                  <Button type="button" variant="outline" onClick={() => selectedRow && openPayrollPdf(selectedRow)} disabled={!selectedRow?.payrollItem} className="flex-1 sm:flex-none">
+                  <Button type="button" variant="outline" onClick={() => selectedRow && downloadPayrollFile(selectedRow)} disabled={!selectedRow?.payrollItem || Boolean(pdfRowId)} className="flex-1 sm:flex-none">
                     <FileText className="h-4 w-4" />
-                    Gerar PDF
+                    {pdfRowId ? 'Gerando...' : 'Baixar PDF'}
                   </Button>
                   <Button type="button" variant="outline" onClick={reopenPayroll} disabled={autoSaveState === 'saving'} className="flex-1 sm:flex-none">
                     <LockOpen className="h-4 w-4" />
