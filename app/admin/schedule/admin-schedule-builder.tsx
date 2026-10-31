@@ -29,6 +29,7 @@ import { compactName, formatDate, formatHours, formatTime, formatTimeRange, norm
 import { applyBrazilianDateText, readSpreadsheet } from '@/lib/spreadsheet-import';
 import { PortoRunWizard } from './porto-run-wizard';
 import {
+  buildPersistedSchedule,
   createDateKey,
   enumerateDateKeys,
   getScheduleGenerationPreview,
@@ -214,20 +215,41 @@ interface DayRuleEditorProps {
   label: string;
   dayLabel: string;
   rule: WeekendCoverageRule;
-  technicians: Technician[];
-  selectionLabel?: string;
   fallbackStartTime: string;
   fallbackEndTime: string;
+  showTimes: boolean;
   onModeChange: (mode: WeekendCoverageMode) => void;
   onCadenceChange: (cadence: WeekendRotationCadence) => void;
   onStartTimeChange: (value: string) => void;
   onEndTimeChange: (value: string) => void;
-  onSetTechnicians: (technicianIds: string[]) => void;
   onConfigureTechnicians: () => void;
   inputClassName: string;
 }
 
-type ScheduleBuilderDialog = 'scope' | 'groups' | 'recurring' | 'rotation' | 'general-days-off' | 'overrides' | null;
+type ScheduleBuilderDialog = 'scope' | 'groups' | 'recurring' | 'rotation' | 'general-days-off' | 'overrides' | 'exceptions' | null;
+
+/** One exception being typed in the "Folgas e ajustes" dialog; it is stored in the matching rule list when added. */
+interface ExceptionDraft {
+  who: string;
+  when: 'day' | 'weekly';
+  date: string;
+  day_keys: ScheduleDayRuleKey[];
+  what: 'off' | 'shift';
+  start_time: string;
+  end_time: string;
+  notes: string;
+}
+
+function createExceptionDraft(): ExceptionDraft {
+  return { who: 'all', when: 'day', date: '', day_keys: [], what: 'off', start_time: '', end_time: '', notes: '' };
+}
+
+/** The rules worth reusing next month (dates of holidays and one-day adjustments are not). */
+type SavedScheduleRules = Pick<
+  ScheduleBuilderForm,
+  'technician_scope' | 'technician_ids' | 'weekday_start_time' | 'weekday_end_time' | 'weekend_start_time' | 'weekend_end_time' | 'day_rules' | 'rotation_groups' | 'recurring_rules'
+>;
+const LAST_SCHEDULE_RULES_KEY = 'nextrotta-schedule-last-rules';
 
 interface BuilderActionCardProps {
   eyebrow: string;
@@ -1199,37 +1221,37 @@ function BuilderActionCard({ eyebrow, title, value, buttonLabel = 'Editar', onCl
   );
 }
 
-function DayRuleEditor({ label, dayLabel, rule, technicians, selectionLabel, fallbackStartTime, fallbackEndTime, onModeChange, onCadenceChange, onStartTimeChange, onEndTimeChange, onSetTechnicians, onConfigureTechnicians, inputClassName }: DayRuleEditorProps) {
-  const requiresSelection = rule.mode === 'selected' || rule.mode === 'rotation';
-  const isSingleTechnicianCoverage = rule.mode === 'rotation';
+function DayRuleEditor({ label, dayLabel, rule, fallbackStartTime, fallbackEndTime, showTimes, onModeChange, onCadenceChange, onStartTimeChange, onEndTimeChange, onConfigureTechnicians, inputClassName }: DayRuleEditorProps) {
   const usesCadence = rule.mode !== 'off';
-  const technicianSelectionLabel = selectionLabel || (rule.technician_ids.length
-    ? formatCount(rule.technician_ids.length, 'técnico escolhido', 'técnicos escolhidos')
-    : isSingleTechnicianCoverage
-      ? 'todo o escopo'
-      : 'escolher grupo');
+  const pickedCount = normalizeTechnicianIds(rule.technician_ids).length;
   const startTimeValue = rule.mode === 'off' ? '' : rule.start_time || fallbackStartTime;
   const endTimeValue = rule.mode === 'off' ? '' : rule.end_time || fallbackEndTime;
 
   return (
     <tr className="border-t border-border/70 align-middle">
-      <td className="min-w-32 px-3 py-3">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-semibold text-foreground">{label}</p>
-          <StatusBadge tone="neutral">{getDayRuleLabel(rule)}</StatusBadge>
-        </div>
+      <td className="min-w-28 px-3 py-3">
+        <p className="text-sm font-semibold text-foreground">{label}</p>
       </td>
 
-      <td className="min-w-44 px-3 py-3">
-        <label className="block text-sm">
-          <span className="sr-only">Cobertura de {dayLabel}</span>
-          <select value={rule.mode} onChange={(event) => onModeChange(event.target.value as WeekendCoverageMode)} className={inputClassName}>
-            <option value="off">Todos Folgam</option>
-            <option value="all">Todos trabalham</option>
-            <option value="selected">Equipe selecionada</option>
-            <option value="rotation">Técnico específico</option>
-          </select>
-        </label>
+      <td className="min-w-72 px-3 py-3">
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="block text-sm">
+            <span className="sr-only">Quem trabalha {dayLabel}</span>
+            <select value={rule.mode} onChange={(event) => onModeChange(event.target.value as WeekendCoverageMode)} className={inputClassName}>
+              <option value="all">Todos trabalham</option>
+              <option value="off">Todos folgam</option>
+              <option value="selected">Só alguns técnicos</option>
+              {rule.mode === 'rotation' ? <option value="rotation">Um técnico por vez</option> : null}
+            </select>
+          </label>
+
+          {rule.mode === 'selected' || rule.mode === 'rotation' ? (
+            <Button type="button" variant="outline" onClick={onConfigureTechnicians}>
+              <Users className="h-4 w-4" />
+              {pickedCount ? formatCount(pickedCount, 'técnico', 'técnicos') : 'Escolher quem'}
+            </Button>
+          ) : null}
+        </div>
       </td>
 
       <td className="min-w-48 px-3 py-3">
@@ -1237,49 +1259,26 @@ function DayRuleEditor({ label, dayLabel, rule, technicians, selectionLabel, fal
           <label className="block text-sm">
             <span className="sr-only">Frequência de {dayLabel}</span>
             <select value={rule.rotation_cadence ?? 'weekly'} onChange={(event) => onCadenceChange(event.target.value as WeekendRotationCadence)} className={inputClassName}>
-              <option value="weekly">Toda ocorrência deste dia</option>
-              <option value="alternating">Uma ocorrência sim, outra não</option>
+              <option value="weekly">Toda semana</option>
+              <option value="alternating">Semana sim, semana não</option>
             </select>
           </label>
         ) : (
-          <span className="text-sm text-muted-foreground">Sem frequência</span>
+          <span className="text-sm text-muted-foreground">-</span>
         )}
       </td>
 
-      <td className="min-w-44 px-3 py-3">
-        {isSingleTechnicianCoverage ? (
-          <label className="block text-sm">
-            <span className="sr-only">Técnico de {dayLabel}</span>
-            <select
-              value={rule.technician_ids[0] || 'all'}
-              onChange={(event) => onSetTechnicians(event.target.value === 'all' ? [] : [event.target.value])}
-              className={inputClassName}
-            >
-              <option value="all">Todos</option>
-              {technicians.map((technician) => (
-                <option key={technician.id} value={technician.id}>{technician.name}</option>
-              ))}
-            </select>
-          </label>
-        ) : rule.mode === 'selected' ? (
-          <Button type="button" variant="outline" onClick={onConfigureTechnicians} className="w-full justify-between">
-            <Users className="h-4 w-4" />
-            <span className="truncate">{technicianSelectionLabel}</span>
-          </Button>
-        ) : rule.mode === 'all' ? (
-          <span className="text-sm font-medium text-foreground">Todos</span>
-        ) : (
-          <span className="text-sm text-muted-foreground">Todos</span>
-        )}
-      </td>
+      {showTimes ? (
+        <>
+          <td className="min-w-32 px-3 py-3">
+            <input type="time" value={startTimeValue} disabled={rule.mode === 'off'} onChange={(event) => onStartTimeChange(event.target.value)} className={inputClassName} aria-label={`Entrada de ${dayLabel}`} />
+          </td>
 
-      <td className="min-w-32 px-3 py-3">
-        <input type="time" value={startTimeValue} disabled={rule.mode === 'off'} onChange={(event) => onStartTimeChange(event.target.value)} className={inputClassName} aria-label={`Entrada de ${dayLabel}`} />
-      </td>
-
-      <td className="min-w-32 px-3 py-3">
-        <input type="time" value={endTimeValue} disabled={rule.mode === 'off'} onChange={(event) => onEndTimeChange(event.target.value)} className={inputClassName} aria-label={`Saída de ${dayLabel}`} />
-      </td>
+          <td className="min-w-32 px-3 py-3">
+            <input type="time" value={endTimeValue} disabled={rule.mode === 'off'} onChange={(event) => onEndTimeChange(event.target.value)} className={inputClassName} aria-label={`Saída de ${dayLabel}`} />
+          </td>
+        </>
+      ) : null}
     </tr>
   );
 }
@@ -1335,6 +1334,10 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [formData, setFormData] = useState<ScheduleBuilderForm>(createInitialBuilderForm);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showDayTimes, setShowDayTimes] = useState(false);
+  const [exceptionDraft, setExceptionDraft] = useState<ExceptionDraft>(createExceptionDraft);
+  const [exceptionError, setExceptionError] = useState('');
+  const [lastRules, setLastRules] = useState<SavedScheduleRules | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -1460,6 +1463,70 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     () => getScheduleGenerationPreview(formData.period_mode, formData.year, formData.period_mode === 'month' ? formData.month : undefined, selectedTechnicianIds, formData.date),
     [formData.date, formData.month, formData.period_mode, formData.year, selectedTechnicianIds],
   );
+
+  // Month preview of the escala being built: who works each day, computed with the same planner the server uses.
+  const previewDays = useMemo(() => {
+    const { startDate, endDate } = getScheduleRange(formData.period_mode, formData.year, formData.period_mode === 'month' ? formData.month : undefined, formData.date);
+    const dateKeys = enumerateDateKeys(startDate, endDate);
+    if (!selectedTechnicianIds.length || dateKeys.length > 62) return null;
+
+    let rows: ReturnType<typeof buildPersistedSchedule> = [];
+    try {
+      rows = buildPersistedSchedule(buildSchedulePayload(), selectedTechnicianIds);
+    } catch {
+      return null;
+    }
+
+    const names = new Map(sortedTechnicians.map((technician) => [technician.id, technician.name]));
+    const byDate = new Map<string, { working: string[]; off: string[] }>();
+    rows.forEach((row) => {
+      const entry = byDate.get(row.date) ?? { working: [], off: [] };
+      const name = names.get(row.technician_id) ?? row.technician_id;
+      if (row.status === 'cancelled') entry.off.push(name);
+      else entry.working.push(name);
+      byDate.set(row.date, entry);
+    });
+
+    const exceptionDates = new Set<string>([...formData.general_days_off.map((item) => normalizeDateKey(item.date)), ...formData.overrides.map((item) => normalizeDateKey(item.date))]);
+    const exceptionWeekdays = new Set<ScheduleDayRuleKey>(formData.recurring_rules.flatMap((rule) => rule.day_keys));
+
+    return dateKeys.map((date) => ({
+      date,
+      working: byDate.get(date)?.working.length ?? 0,
+      workingNames: byDate.get(date)?.working ?? [],
+      off: byDate.get(date)?.off ?? [],
+      hasException: exceptionDates.has(date) || exceptionWeekdays.has(getDayKeyFromDateKey(date)),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData, selectedTechnicianIds, sortedTechnicians]);
+
+  // What saving will do to the days already in the database for the chosen period.
+  const replaceInfo = useMemo(() => {
+    const { startDate, endDate } = getScheduleRange(formData.period_mode, formData.year, formData.period_mode === 'month' ? formData.month : undefined, formData.date);
+    const ids = new Set(selectedTechnicianIds);
+    let kept = 0;
+    let replaced = 0;
+
+    schedule.forEach((item) => {
+      const dateKey = normalizeDateKey(item.date);
+      if (dateKey < startDate || dateKey > endDate || !ids.has(item.technician_id)) return;
+      if (item.status === 'completed' || parseManualAttendanceNote(item.notes).attendance_status) kept += 1;
+      else replaced += 1;
+    });
+
+    return { kept, replaced };
+  }, [formData.date, formData.month, formData.period_mode, formData.year, schedule, selectedTechnicianIds]);
+
+  useEffect(() => {
+    if (!isFormDialogOpen) return;
+
+    try {
+      const raw = window.localStorage.getItem(LAST_SCHEDULE_RULES_KEY);
+      setLastRules(raw ? (JSON.parse(raw) as SavedScheduleRules) : null);
+    } catch {
+      setLastRules(null);
+    }
+  }, [isFormDialogOpen]);
 
   function getEffectiveDayRules() {
     const nextRules: Record<ScheduleDayRuleKey, WeekendCoverageRule> = {
@@ -2642,6 +2709,92 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     }));
   }
 
+  function saveLastRules() {
+    const rules: SavedScheduleRules = {
+      technician_scope: formData.technician_scope,
+      technician_ids: formData.technician_ids,
+      weekday_start_time: formData.weekday_start_time,
+      weekday_end_time: formData.weekday_end_time,
+      weekend_start_time: formData.weekend_start_time,
+      weekend_end_time: formData.weekend_end_time,
+      day_rules: formData.day_rules,
+      rotation_groups: formData.rotation_groups,
+      recurring_rules: formData.recurring_rules,
+    };
+
+    try {
+      window.localStorage.setItem(LAST_SCHEDULE_RULES_KEY, JSON.stringify(rules));
+    } catch {
+      // Private mode or blocked storage: the shortcut just won't be offered next time.
+    }
+  }
+
+  function applyLastRules() {
+    if (!lastRules) return;
+
+    setFormData((current) => ({
+      ...current,
+      ...lastRules,
+      groups: [],
+      day_rule_group_ids: { monday: '', tuesday: '', wednesday: '', thursday: '', friday: '', saturday: '', sunday: '' },
+      general_days_off: [],
+      overrides: [],
+    }));
+  }
+
+  function addException() {
+    const draft = exceptionDraft;
+    setExceptionError('');
+
+    if (draft.who !== 'all' && !selectedTechnicianIds.includes(draft.who)) {
+      setExceptionError('Escolha o técnico.');
+      return;
+    }
+
+    if (draft.when === 'day') {
+      if (!draft.date) {
+        setExceptionError('Escolha a data.');
+        return;
+      }
+      if (draft.date < generationPreview.startDate || draft.date > generationPreview.endDate) {
+        setExceptionError('A data precisa estar dentro do período da escala.');
+        return;
+      }
+    } else if (!draft.day_keys.length) {
+      setExceptionError('Marque ao menos um dia da semana.');
+      return;
+    }
+
+    if (draft.what === 'shift' && (!draft.start_time || !draft.end_time || draft.start_time >= draft.end_time)) {
+      setExceptionError('Informe a entrada e a saída do turno, com a entrada antes da saída.');
+      return;
+    }
+
+    const status: Schedule['status'] = draft.what === 'off' ? 'cancelled' : 'scheduled';
+    const startTime = draft.what === 'shift' ? draft.start_time : '';
+    const endTime = draft.what === 'shift' ? draft.end_time : '';
+
+    setFormData((current) => {
+      if (draft.who === 'all') {
+        return { ...current, general_days_off: [...current.general_days_off, { id: createId(), date: draft.date, notes: draft.notes }] };
+      }
+
+      if (draft.when === 'day') {
+        return {
+          ...current,
+          overrides: [...current.overrides, { id: createId(), technician_id: draft.who, date: draft.date, status, start_time: startTime, end_time: endTime, notes: draft.notes }],
+        };
+      }
+
+      return {
+        ...current,
+        recurring_rules: [...current.recurring_rules, { id: createId(), technician_id: draft.who, day_keys: draft.day_keys, status, start_time: startTime, end_time: endTime, notes: draft.notes }],
+      };
+    });
+
+    setExceptionDraft((current) => ({ ...current, date: '', day_keys: [], notes: '' }));
+  }
+
   function validateForm() {
     if (!selectedTechnicianIds.length) {
       return 'Selecione ao menos um técnico para montar a escala.';
@@ -2680,48 +2833,44 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
         return `O horário configurado para ${dayLabel} está inválido.`;
       }
 
-      if (rule.mode === 'selected' && !formData.day_rule_group_ids[key]) {
-        return `Selecione um grupo para ${dayLabel}.`;
-      }
-
-      if (rule.mode === 'selected' && !rule.technician_ids.length) {
-        return `O grupo escolhido para ${dayLabel} não tem técnicos dentro do escopo atual.`;
+      if (rule.mode === 'selected' && !rule.technician_ids.some((technicianId) => selectedTechnicianIds.includes(technicianId))) {
+        return `Escolha quem trabalha ${dayLabel}.`;
       }
     }
 
     for (const group of formData.rotation_groups) {
       if (!group.day_keys.length) {
-        return 'Cada regra de revezamento precisa de ao menos um dia selecionado.';
+        return 'Cada alternância de equipes precisa de ao menos um dia selecionado.';
       }
 
       const availableRotationTechnicianIds = ruleTechnicians.map((technician) => technician.id);
       const { firstTeam, nextTeam } = getRotationTeams(group.technician_ids, availableRotationTechnicianIds);
 
       if (!firstTeam.length) {
-        return 'Marque ao menos um técnico para trabalhar na primeira ocorrência do revezamento.';
+        return 'Marque ao menos um técnico para trabalhar na primeira semana da alternância.';
       }
 
       if (!nextTeam.length) {
-        return 'Deixe ao menos um técnico desmarcado para trabalhar na próxima ocorrência do revezamento.';
+        return 'Deixe ao menos um técnico desmarcado para trabalhar na semana seguinte da alternância.';
       }
     }
 
     for (const recurringRule of formData.recurring_rules) {
       if (!recurringRule.technician_id) {
-        return 'Cada regra recorrente precisa de um técnico selecionado.';
+        return 'Cada exceção semanal precisa de um técnico selecionado.';
       }
 
       if (!recurringRule.day_keys.length) {
-        return 'Cada regra recorrente precisa de ao menos um dia selecionado.';
+        return 'Cada exceção semanal precisa de ao menos um dia da semana.';
       }
 
       if (recurringRule.status !== 'cancelled') {
         if (!recurringRule.start_time || !recurringRule.end_time) {
-          return 'Turnos recorrentes precisam de horário de entrada e saída.';
+          return 'Um turno precisa de horário de entrada e saída.';
         }
 
         if (recurringRule.start_time >= recurringRule.end_time) {
-          return 'Os horários das regras recorrentes precisam ter entrada antes da saída.';
+          return 'No turno, a entrada precisa ser antes da saída.';
         }
       }
     }
@@ -2773,6 +2922,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       setWorkHours(refreshed.workHours);
       setDataError(refreshed.error);
       setSaveMessage(data?.summary ? buildSuccessMessage(data.summary) : 'Escala salva com sucesso.');
+      saveLastRules();
       handleFormDialogChange(false);
     } catch (error) {
       setFormError(error instanceof Error ? error.message : 'Não foi possível salvar a escala.');
@@ -3078,6 +3228,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     ? 'Todos os técnicos ativos'
     : formatCount(selectedTechnicianIds.length, 'técnico selecionado', 'técnicos selecionados');
   const optionalAdjustmentsCount = formData.recurring_rules.length + formData.rotation_groups.length + formData.general_days_off.length + formData.overrides.length;
+  const dayTimesInUse = dayRuleDefinitions.some(({ key }) => formData.day_rules[key].start_time || formData.day_rules[key].end_time);
+  const dayTimesActive = showDayTimes || dayTimesInUse;
   const activeDayDefinition = activeDayRuleKey ? getDayDefinition(activeDayRuleKey) : undefined;
   const activeDayRule = activeDayRuleKey ? formData.day_rules[activeDayRuleKey] : undefined;
   const activeDayGroupId = activeDayRuleKey ? formData.day_rule_group_ids[activeDayRuleKey] : '';
@@ -3104,6 +3256,190 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const hiddenAttendanceImportErrorCount = Math.max(0, attendanceImportErrors.length - visibleAttendanceImportErrors.length);
 
   function renderBuilderDialogContent() {
+    if (builderDialog === 'exceptions') {
+      const forAll = exceptionDraft.who === 'all';
+      const techniciansInScope = sortedTechnicians.filter((technician) => selectedTechnicianIds.includes(technician.id));
+      const nameOf = (technicianId: string) => sortedTechnicians.find((technician) => technician.id === technicianId)?.name || 'Técnico';
+      const shiftLabel = (status: Schedule['status'], start: string | undefined, end: string | undefined) =>
+        status === 'cancelled' ? 'Folga' : `Turno${start && end ? ` ${start} às ${end}` : ''}`;
+      const items = [
+        ...formData.general_days_off.map((item) => ({
+          id: item.id,
+          who: 'Todos',
+          when: item.date ? formatDate(item.date) : 'Sem data',
+          what: 'Folga',
+          notes: item.notes,
+          remove: () => removeGeneralDayOff(item.id),
+        })),
+        ...formData.recurring_rules.map((item) => ({
+          id: item.id,
+          who: nameOf(item.technician_id),
+          when: `Toda semana: ${formatDayKeyList(item.day_keys)}`,
+          what: shiftLabel(item.status, item.start_time, item.end_time),
+          notes: item.notes ?? '',
+          remove: () => removeRecurringRule(item.id),
+        })),
+        ...formData.overrides.map((item) => ({
+          id: item.id,
+          who: nameOf(item.technician_id),
+          when: item.date ? formatDate(item.date) : 'Sem data',
+          what: shiftLabel(item.status, item.start_time, item.end_time),
+          notes: item.notes,
+          remove: () => removeOverride(item.id),
+        })),
+      ];
+
+      return (
+        <div className="flex max-h-[88vh] min-h-0 flex-col">
+          <DialogHeader className="border-b border-border/70 px-5 py-4">
+            <DialogTitle>Folgas e ajustes</DialogTitle>
+            <DialogDescription>Exceções à semana padrão: feriados, a folga fixa de um técnico, ou um turno ou folga de um dia só.</DialogDescription>
+          </DialogHeader>
+
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+            <section className="rounded-lg border border-border/70 bg-background p-4">
+              <p className="mb-3 text-sm font-semibold text-foreground">Nova exceção</p>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium">Para quem</span>
+                  <select
+                    value={exceptionDraft.who}
+                    onChange={(event) => {
+                      const who = event.target.value;
+                      setExceptionDraft((current) => ({ ...current, who, ...(who === 'all' ? { when: 'day' as const, what: 'off' as const } : {}) }));
+                    }}
+                    className={inputClassName}
+                  >
+                    <option value="all">Todos os técnicos</option>
+                    {techniciansInScope.map((technician) => (
+                      <option key={technician.id} value={technician.id}>{technician.name}</option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium">Quando</span>
+                  <select
+                    value={exceptionDraft.when}
+                    disabled={forAll}
+                    onChange={(event) => setExceptionDraft((current) => ({ ...current, when: event.target.value as ExceptionDraft['when'] }))}
+                    className={inputClassName}
+                  >
+                    <option value="day">Em um dia</option>
+                    <option value="weekly">Toda semana, em certos dias</option>
+                  </select>
+                </label>
+
+                {exceptionDraft.when === 'day' ? (
+                  <label className="text-sm">
+                    <span className="mb-1.5 block font-medium">Data</span>
+                    <input
+                      type="date"
+                      value={exceptionDraft.date}
+                      min={generationPreview.startDate}
+                      max={generationPreview.endDate}
+                      onChange={(event) => setExceptionDraft((current) => ({ ...current, date: event.target.value }))}
+                      className={inputClassName}
+                    />
+                  </label>
+                ) : (
+                  <div className="md:col-span-2">
+                    <p className="mb-1.5 text-sm font-medium text-foreground">Dias da semana</p>
+                    <DayKeyChecklist
+                      value={exceptionDraft.day_keys}
+                      onToggle={(dayKey) =>
+                        setExceptionDraft((current) => ({
+                          ...current,
+                          day_keys: current.day_keys.includes(dayKey) ? current.day_keys.filter((key) => key !== dayKey) : [...current.day_keys, dayKey],
+                        }))
+                      }
+                    />
+                  </div>
+                )}
+
+                <label className="text-sm">
+                  <span className="mb-1.5 block font-medium">O que acontece</span>
+                  <select
+                    value={exceptionDraft.what}
+                    disabled={forAll}
+                    onChange={(event) => setExceptionDraft((current) => ({ ...current, what: event.target.value as ExceptionDraft['what'] }))}
+                    className={inputClassName}
+                  >
+                    <option value="off">Folga</option>
+                    <option value="shift">Turno com horário próprio</option>
+                  </select>
+                </label>
+
+                {exceptionDraft.what === 'shift' ? (
+                  <>
+                    <label className="text-sm">
+                      <span className="mb-1.5 block font-medium">Entrada</span>
+                      <input type="time" value={exceptionDraft.start_time} onChange={(event) => setExceptionDraft((current) => ({ ...current, start_time: event.target.value }))} className={inputClassName} />
+                    </label>
+                    <label className="text-sm">
+                      <span className="mb-1.5 block font-medium">Saída</span>
+                      <input type="time" value={exceptionDraft.end_time} onChange={(event) => setExceptionDraft((current) => ({ ...current, end_time: event.target.value }))} className={inputClassName} />
+                    </label>
+                  </>
+                ) : null}
+
+                <label className="text-sm md:col-span-2">
+                  <span className="mb-1.5 block font-medium">Observação</span>
+                  <input
+                    value={exceptionDraft.notes}
+                    onChange={(event) => setExceptionDraft((current) => ({ ...current, notes: event.target.value }))}
+                    placeholder="Ex.: feriado, aula na faculdade, consulta médica"
+                    className={inputClassName}
+                  />
+                </label>
+              </div>
+
+              {forAll ? <p className="mt-3 text-xs text-muted-foreground">Para todos, use feriados e dias sem expediente. Para mudar um dia da semana inteiro, use a tabela da semana.</p> : null}
+              {exceptionError ? <p role="alert" className="mt-3 text-sm text-rose-700">{exceptionError}</p> : null}
+
+              <div className="mt-3 flex justify-end">
+                <Button type="button" onClick={addException}>
+                  <Plus className="h-4 w-4" />
+                  Adicionar exceção
+                </Button>
+              </div>
+            </section>
+
+            <section>
+              <p className="mb-2 text-sm font-semibold text-foreground">Exceções desta escala ({items.length})</p>
+              {items.length ? (
+                <div className="space-y-2">
+                  {items.map((item) => (
+                    <div key={item.id} className="flex items-start justify-between gap-3 rounded-lg border border-border/70 bg-background px-3 py-2">
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-foreground">{item.who} · {item.when}</p>
+                        <p className="text-xs text-muted-foreground">{item.what}{item.notes ? ` · ${item.notes}` : ''}</p>
+                      </div>
+                      <Button type="button" variant="outline" size="sm" onClick={item.remove}>
+                        <Trash2 className="h-4 w-4" />
+                        Remover
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhuma exceção.</p>
+              )}
+            </section>
+
+            <p className="rounded-lg bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+              Se duas regras caem no mesmo dia, vale a mais específica, nesta ordem: a semana padrão, depois a folga de todos, depois a regra fixa de um técnico, e por último o dia específico de um técnico.
+            </p>
+          </div>
+
+          <DialogFooter className="border-t border-border/70 px-5 py-4">
+            <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
+          </DialogFooter>
+        </div>
+      );
+    }
+
     if (builderDialog === 'scope') {
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
@@ -3286,8 +3622,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
           <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Revezamentos</DialogTitle>
-            <DialogDescription>Selecione os dias e os técnicos do revezamento.</DialogDescription>
+            <DialogTitle>Equipes que se alternam</DialogTitle>
+            <DialogDescription>Duas equipes se alternam no mesmo dia da semana: uma trabalha numa semana, e a outra na seguinte.</DialogDescription>
           </DialogHeader>
 
           <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
@@ -3314,7 +3650,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   return (
                     <div key={group.id} className="rounded-lg border border-border/70 bg-background p-4">
                       <div className="mb-3 flex items-center justify-between gap-3">
-                        <p className="text-sm font-semibold text-foreground">Revezamento {index + 1}</p>
+                        <p className="text-sm font-semibold text-foreground">Alternância {index + 1}</p>
                         <Button type="button" variant="outline" onClick={() => removeRotationGroup(group.id)}>
                           <Trash2 className="h-4 w-4" />
                           Remover
@@ -3328,19 +3664,19 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                         </div>
 
                         <div>
-                          <p className="mb-1.5 text-sm font-medium text-foreground">Técnicos do revezamento</p>
-                          <p className="mb-2 text-xs text-muted-foreground">Marque quem trabalha na primeira ocorrência. Na próxima, entram os que ficaram desmarcados.</p>
+                          <p className="mb-1.5 text-sm font-medium text-foreground">Quem trabalha na primeira semana</p>
+                          <p className="mb-2 text-xs text-muted-foreground">Marque a primeira equipe. Na semana seguinte, trabalha a outra equipe: quem ficou desmarcado.</p>
                           {firstTeamTechnicians.length ? (
                             <div className="mb-3 space-y-2">
                               <div className="flex flex-wrap items-center gap-2">
-                                <span className="text-xs font-medium text-muted-foreground">Primeira ocorrência:</span>
+                                <span className="text-xs font-medium text-muted-foreground">Primeira semana:</span>
                                 {firstTeamTechnicians.map((technician) => (
                                   <StatusBadge key={technician.id} tone="success">{technician.name}</StatusBadge>
                                 ))}
                               </div>
                               {nextTeamTechnicians.length ? (
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-xs font-medium text-muted-foreground">Próxima ocorrência:</span>
+                                  <span className="text-xs font-medium text-muted-foreground">Semana seguinte:</span>
                                   {nextTeamTechnicians.map((technician) => (
                                     <StatusBadge key={technician.id} tone="neutral">{technician.name}</StatusBadge>
                                   ))}
@@ -3348,12 +3684,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                               ) : null}
                             </div>
                           ) : null}
-                          <TechnicianChecklist technicians={ruleTechnicians} value={group.technician_ids} onToggle={(technicianId) => toggleRotationGroupTechnician(group.id, technicianId)} emptyLabel="Selecione primeiro o escopo da escala para configurar o revezamento." />
+                          <TechnicianChecklist technicians={ruleTechnicians} value={group.technician_ids} onToggle={(technicianId) => toggleRotationGroupTechnician(group.id, technicianId)} emptyLabel="Selecione primeiro o escopo da escala para configurar as equipes." />
                         </div>
 
                         <div className="rounded-lg border border-border/70 bg-card/60">
                           <div className="border-b border-border/70 px-3 py-2">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Próximas ocorrências</p>
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-muted-foreground">Como ficam as próximas semanas</p>
                           </div>
 
                           {previewRows.length ? (
@@ -3372,7 +3708,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                           ) : null}
                           {previewRows.length ? null : (
                             <p className="px-3 py-4 text-sm text-muted-foreground">
-                              Marque ao menos 1 técnico, deixe ao menos 1 desmarcado e escolha 1 dia para ver o revezamento.
+                              Marque ao menos 1 técnico, deixe ao menos 1 desmarcado e escolha 1 dia para ver como ficam as semanas.
                             </p>
                           )}
                         </div>
@@ -3382,7 +3718,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                 })
               ) : (
                 <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
-                  Nenhum revezamento criado.
+                  Nenhuma alternância criada.
                 </p>
               )}
             </div>
@@ -4094,6 +4430,16 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
                     {formatDate(range.startDate)} até {formatDate(range.endDate)}
                   </div>
+
+                  {lastRules ? (
+                    <div className="mt-3">
+                      <Button type="button" variant="outline" size="sm" onClick={applyLastRules}>
+                        <CalendarDays className="h-4 w-4" />
+                        Usar as regras da última escala salva
+                      </Button>
+                      <p className="mt-1 text-xs text-muted-foreground">Traz horários, semana, equipes que se alternam e folgas fixas. Feriados e ajustes de um dia não são copiados.</p>
+                    </div>
+                  ) : null}
                 </section>
 
                 <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
@@ -4110,17 +4456,14 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                 <div className="mb-3 flex items-center justify-between gap-3">
                   <div>
                     <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Configurações</p>
-                    <h3 className="text-base font-semibold text-foreground">Escopo e ajustes</h3>
+                    <h3 className="text-base font-semibold text-foreground">Equipe e exceções</h3>
                   </div>
                 </div>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-                  <BuilderActionCard eyebrow="Escopo" title="Quem entra" value={scopeSummary} onClick={() => setBuilderDialog('scope')} />
-                  <BuilderActionCard eyebrow="Grupo" title="Coberturas" value={formatCount(formData.groups.length, 'grupo', 'grupos')} onClick={() => setBuilderDialog('groups')} />
-                  <BuilderActionCard eyebrow="Recorrências" title="Regras fixas" value={formatCount(formData.recurring_rules.length, 'regra', 'regras')} onClick={() => setBuilderDialog('recurring')} />
-                  <BuilderActionCard eyebrow="Revezamento" title="Regras" value={formatCount(formData.rotation_groups.length, 'regra', 'regras')} onClick={() => setBuilderDialog('rotation')} />
-                  <BuilderActionCard eyebrow="Folga geral" title="Datas sem expediente" value={formatCount(formData.general_days_off.length, 'data', 'datas')} onClick={() => setBuilderDialog('general-days-off')} />
-                  <BuilderActionCard eyebrow="Individual" title="Exceções por técnico" value={formatCount(formData.overrides.length, 'ajuste', 'ajustes')} onClick={() => setBuilderDialog('overrides')} />
+                  <BuilderActionCard eyebrow="Equipe" title="Quem entra" value={scopeSummary} onClick={() => setBuilderDialog('scope')} />
+                  <BuilderActionCard eyebrow="Alternância" title="Equipes que se alternam" value={formatCount(formData.rotation_groups.length, 'regra', 'regras')} onClick={() => setBuilderDialog('rotation')} />
+                  <BuilderActionCard eyebrow="Exceções" title="Folgas e ajustes" value={formatCount(formData.general_days_off.length + formData.recurring_rules.length + formData.overrides.length, 'exceção', 'exceções')} onClick={() => setBuilderDialog('exceptions')} />
                 </div>
               </section>
 
@@ -4330,7 +4673,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                         formData.rotation_groups.map((group, index) => (
                           <div key={group.id} className="rounded-2xl border border-border/70 bg-background p-4">
                             <div className="mb-3 flex items-center justify-between gap-3">
-                              <p className="text-sm font-semibold text-foreground">Revezamento {index + 1}</p>
+                              <p className="text-sm font-semibold text-foreground">Alternância {index + 1}</p>
                               <Button type="button" variant="outline" onClick={() => removeRotationGroup(group.id)}>
                                 <Trash2 className="h-4 w-4" />
                                 Remover
@@ -4345,13 +4688,13 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
                               <div>
                                 <p className="mb-1.5 text-sm font-medium text-foreground">Técnicos</p>
-                                <TechnicianChecklist technicians={ruleTechnicians} value={group.technician_ids} onToggle={(technicianId) => toggleRotationGroupTechnician(group.id, technicianId)} emptyLabel="Selecione primeiro o escopo da escala para configurar o revezamento." />
+                                <TechnicianChecklist technicians={ruleTechnicians} value={group.technician_ids} onToggle={(technicianId) => toggleRotationGroupTechnician(group.id, technicianId)} emptyLabel="Selecione primeiro o escopo da escala para configurar as equipes." />
                               </div>
                             </div>
                           </div>
                         ))
                       ) : (
-                        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhum revezamento criado.</p>
+                        <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhuma alternância criada.</p>
                       )}
                       </div>
                     </div>
@@ -4497,7 +4840,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               <section className="mt-4 rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
                 <div className="mb-4 space-y-1">
                   <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Grade semanal</p>
-                  <h3 className="text-base font-semibold text-foreground">Horário padrão e regras por dia</h3>
+                  <h3 className="text-base font-semibold text-foreground">A semana: horário e quem trabalha</h3>
                 </div>
 
                 <div className="grid gap-3 xl:grid-cols-2">
@@ -4532,16 +4875,27 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   </div>
                 </div>
 
-                <div className="mt-4 overflow-x-auto rounded-lg border border-border/70 bg-background">
-                  <table className="w-full min-w-[980px] border-collapse text-sm">
+                <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                  <p className="text-sm text-muted-foreground">Para cada dia da semana, escolha quem trabalha.</p>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
+                    <input type="checkbox" checked={dayTimesActive} disabled={dayTimesInUse} onChange={(event) => setShowDayTimes(event.target.checked)} className="h-4 w-4 rounded border-border" />
+                    Horário diferente em algum dia
+                  </label>
+                </div>
+
+                <div className="mt-3 overflow-x-auto rounded-lg border border-border/70 bg-background">
+                  <table className="w-full min-w-[720px] border-collapse text-sm">
                     <thead className="bg-secondary/60 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                       <tr>
                         <th className="px-3 py-3">Dia da semana</th>
-                        <th className="px-3 py-3">Cobertura</th>
+                        <th className="px-3 py-3">Quem trabalha</th>
                         <th className="px-3 py-3">Frequência</th>
-                        <th className="px-3 py-3">Técnicos</th>
-                        <th className="px-3 py-3">Entrada</th>
-                        <th className="px-3 py-3">Saída</th>
+                        {dayTimesActive ? (
+                          <>
+                            <th className="px-3 py-3">Entrada</th>
+                            <th className="px-3 py-3">Saída</th>
+                          </>
+                        ) : null}
                       </tr>
                     </thead>
                     <tbody>
@@ -4551,15 +4905,13 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                           label={label}
                           dayLabel={dayLabel}
                           rule={formData.day_rules[key]}
-                          technicians={ruleTechnicians}
-                          selectionLabel={formData.day_rule_group_ids[key] ? formData.groups.find((group) => group.id === formData.day_rule_group_ids[key])?.name || 'Grupo sem nome' : undefined}
                           fallbackStartTime={key === 'saturday' || key === 'sunday' ? formData.weekend_start_time : formData.weekday_start_time}
                           fallbackEndTime={key === 'saturday' || key === 'sunday' ? formData.weekend_end_time : formData.weekday_end_time}
+                          showTimes={dayTimesActive}
                           onModeChange={(mode) => updateDayRuleMode(key, mode)}
                           onCadenceChange={(cadence) => updateDayRuleCadence(key, cadence)}
                           onStartTimeChange={(value) => updateDayRuleTime(key, 'start_time', value)}
                           onEndTimeChange={(value) => updateDayRuleTime(key, 'end_time', value)}
-                          onSetTechnicians={(technicianIds) => setDayRuleTechnicians(key, technicianIds)}
                           onConfigureTechnicians={() => setActiveDayRuleKey(key)}
                           inputClassName={inputClassName}
                         />
@@ -4568,9 +4920,56 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   </table>
                 </div>
               </section>
+
+              <section className="mt-4 rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
+                <div className="mb-3 space-y-1">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Prévia</p>
+                  <h3 className="text-base font-semibold text-foreground">Como a escala vai ficar</h3>
+                </div>
+
+                {previewDays ? (
+                  <>
+                    <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted-foreground">
+                      {weekdayLabels.map((label) => (
+                        <span key={label}>{label}</span>
+                      ))}
+                    </div>
+                    <div className="mt-1 grid grid-cols-7 gap-1">
+                      {Array.from({ length: (new Date(`${previewDays[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 }, (_, index) => (
+                        <div key={`blank-${index}`} />
+                      ))}
+                      {previewDays.map((day) => (
+                        <div
+                          key={day.date}
+                          title={[
+                            day.workingNames.length ? `Trabalham: ${day.workingNames.join(', ')}` : 'Ninguém trabalha',
+                            day.off.length ? `Folgam: ${day.off.join(', ')}` : '',
+                          ].filter(Boolean).join('\n')}
+                          className={`min-h-14 rounded-md border p-1.5 text-left text-xs ${day.working ? 'border-emerald-200 bg-emerald-50/60' : 'border-border bg-secondary/40'}`}
+                        >
+                          <p className="font-semibold text-foreground">
+                            {Number(day.date.slice(8, 10))}
+                            {day.hasException ? <span className="ml-1 text-amber-600" title="Tem exceção neste dia">•</span> : null}
+                          </p>
+                          <p className={day.working ? 'text-emerald-800' : 'text-muted-foreground'}>{day.working} trabalham</p>
+                          {day.off.length ? <p className="text-amber-700">{day.off.length} de folga</p> : null}
+                        </div>
+                      ))}
+                    </div>
+                    <p className="mt-2 text-xs text-muted-foreground">Passe o mouse num dia para ver quem trabalha e quem folga. O ponto marca dias com exceção.</p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground">A prévia aparece para períodos de até dois meses.</p>
+                )}
+              </section>
             </form>
 
             <DialogFooter className="border-t border-border/70 bg-background/95 px-6 py-4 sm:px-7">
+              <p className="mr-auto text-xs text-muted-foreground sm:max-w-xl">
+                {replaceInfo.replaced || replaceInfo.kept
+                  ? `Ao salvar, ${formatCount(replaceInfo.replaced, 'linha aberta', 'linhas abertas')} deste período serão substituídas e ${formatCount(replaceInfo.kept, 'linha concluída ou apontada', 'linhas concluídas ou apontadas')} ficam como estão.`
+                  : 'Ainda não há escala salva neste período: nada será substituído.'}
+              </p>
               <Button type="button" variant="outline" onClick={() => handleFormDialogChange(false)}>
                 Cancelar
               </Button>
@@ -5033,74 +5432,19 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
           <DialogContent className="max-h-[88vh] overflow-hidden p-0 sm:max-w-3xl">
             <div className="flex max-h-[88vh] min-h-0 flex-col">
               <DialogHeader className="border-b border-border/70 px-5 py-4">
-                <DialogTitle>Cobertura de {activeDayDefinition.label}</DialogTitle>
+                <DialogTitle>Quem trabalha: {activeDayDefinition.label}</DialogTitle>
                 <DialogDescription>
-                  {activeDayRule.mode === 'rotation' ? 'Escolha o técnico específico deste dia.' : 'Escolha um grupo para a equipe selecionada deste dia.'}
+                  Marque quem trabalha neste dia.
                 </DialogDescription>
               </DialogHeader>
 
               <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-                {activeDayRule.mode === 'selected' ? (
-                  <div className="space-y-3">
-                    <div className="flex justify-end">
-                      <Button type="button" variant="outline" onClick={() => {
-                        setActiveDayRuleKey(null);
-                        setBuilderDialog('groups');
-                      }}>
-                        Gerenciar grupos
-                      </Button>
-                    </div>
-
-                    {formData.groups.length ? (
-                      formData.groups.map((group) => {
-                        const participantNames = group.technician_ids
-                          .map((technicianId) => ruleTechnicians.find((technician) => technician.id === technicianId)?.name)
-                          .filter((name): name is string => Boolean(name));
-                        const isSelected = activeDayGroupId === group.id;
-
-                        return (
-                          <button
-                            key={group.id}
-                            type="button"
-                            onClick={() => applyGroupToDayRule(activeDayRuleKey, group.id)}
-                            className={`w-full rounded-lg border px-4 py-3 text-left transition ${isSelected ? 'border-emerald-300 bg-emerald-50/70' : 'border-border bg-background hover:border-emerald-200 hover:bg-secondary/40'}`}
-                          >
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-foreground">{group.name || 'Grupo sem nome'}</p>
-                                <p className="text-xs text-muted-foreground">{formatCount(participantNames.length, 'participante no escopo', 'participantes no escopo')}</p>
-                              </div>
-                              {isSelected ? <StatusBadge tone="success">Selecionado</StatusBadge> : null}
-                            </div>
-                            {participantNames.length ? (
-                              <div className="mt-2 flex flex-wrap gap-1.5">
-                                {participantNames.map((name) => (
-                                  <StatusBadge key={`${group.id}-${name}`} tone="neutral">{name}</StatusBadge>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="mt-2 text-xs text-muted-foreground">Nenhum participante deste grupo está no escopo atual.</p>
-                            )}
-                          </button>
-                        );
-                      })
-                    ) : (
-                      <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">Nenhum grupo criado. Crie um grupo para usar em equipe selecionada.</p>
-                    )}
-
-                    {activeDayGroup ? <p className="text-xs text-muted-foreground">Grupo atual: {activeDayGroup.name}</p> : null}
-                  </div>
-                ) : (
-                  <TechnicianChecklist
+                                  <TechnicianChecklist
                     technicians={ruleTechnicians}
                     value={activeDayRule.technician_ids}
                     onToggle={(technicianId) => toggleDayRuleTechnician(activeDayRuleKey, technicianId)}
                     emptyLabel={`Selecione primeiro o escopo da escala para escolher quem cobre ${activeDayDefinition.dayLabel}.`}
                   />
-                )}
-                {activeDayRule.mode === 'rotation' ? (
-                  <p className="mt-3 text-xs text-muted-foreground">Sem marcação, a cobertura usa todos os técnicos do escopo.</p>
-                ) : null}
               </div>
 
               <DialogFooter className="border-t border-border/70 px-5 py-4">
