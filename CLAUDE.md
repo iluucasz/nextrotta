@@ -170,6 +170,7 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/prompts/` — prompts de trabalho já executados ou para reaproveitar em outros projetos (configurações, assistente, WhatsApp na produção, venda de peças).
 - `docs/notificacoes.md` — sino de notificações: avisos da empresa (cobrança, chamados, Porto, créditos, escala) e avisos gerais do NextRotta; como criar um novo.
 - `docs/dashboard-gerencial.md` — critérios financeiros do dashboard gerencial.
+- `docs/faturamento.md` — relatório de Faturamento (mesmo visual e critérios do dashboard, sem despesas gerais).
 - `docs/calculo-folha.md` — exemplo do cálculo da folha.
 
 ## Convenções

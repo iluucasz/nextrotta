@@ -56,17 +56,17 @@ import {
 import { formatCurrency, formatHours, formatNumber, formatPercent, normalizeText } from '@/lib/formatters';
 import './management-dashboard.css';
 import { CHART_COLORS as COLORS } from '@/lib/chart-theme';
-
-const axis = { tickLine: false, axisLine: false, tick: { fill: '#8a8b9b', fontSize: 14 }, minTickGap: 24 };
-const tooltipStyle = {
-  border: '1px solid #eeedf4',
-  borderRadius: 12,
-  boxShadow: '0 8px 30px #25233d12',
-  fontSize: 16,
-  color: '#252337',
-};
-const compactCurrency = (value: number) =>
-  value.toLocaleString('pt-BR', { notation: 'compact', style: 'currency', currency: 'BRL', maximumFractionDigits: 0 });
+import {
+  chartAxis as axis,
+  chartTooltipStyle as tooltipStyle,
+  ChartEmpty,
+  compactCurrency,
+  Delta,
+  Legend,
+  Metric,
+  Panel,
+  SelectFilter,
+} from '@/components/management-ui';
 
 class SessionExpiredError extends Error {}
 
@@ -79,125 +79,6 @@ async function fetchDashboard(url: string): Promise<ManagementData> {
     throw new Error(body?.error || 'Não foi possível carregar os indicadores.');
   }
   return response.json();
-}
-
-function SelectFilter({
-  label,
-  value,
-  onChange,
-  children,
-}: {
-  label: string;
-  value: string;
-  onChange: (value: string) => void;
-  children: ReactNode;
-}) {
-  return (
-    <label className="mg-select">
-      <span>{label}</span>
-      <div>
-        <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-          {children}
-        </select>
-        <ChevronDown size={14} aria-hidden="true" />
-      </div>
-    </label>
-  );
-}
-function Delta({ current, previous, reverse = false }: { current: number; previous: number; reverse?: boolean }) {
-  const delta = variation(current, previous);
-  if (delta === null) return <span className="mg-delta neutral">Sem base anterior</span>;
-  const positive = reverse ? delta < 0 : delta > 0;
-  const Icon = delta >= 0 ? ArrowUpRight : ArrowDownRight;
-  return (
-    <span className={`mg-delta ${delta === 0 ? 'neutral' : positive ? 'positive' : 'negative'}`}>
-      <Icon size={13} />
-      {delta > 0 ? '+' : ''}
-      {formatPercent(delta)}
-    </span>
-  );
-}
-function Metric({
-  title,
-  value,
-  hint,
-  icon: Icon,
-  current,
-  previous,
-  dark = false,
-  reverse = false,
-}: {
-  title: string;
-  value: string;
-  hint: string;
-  icon: LucideIcon;
-  current: number;
-  previous: number;
-  dark?: boolean;
-  reverse?: boolean;
-}) {
-  return (
-    <article className={`mg-metric ${dark ? 'mg-metric-dark' : ''}`}>
-      <div className="mg-metric-top">
-        <span>{title}</span>
-        <span className="mg-icon">
-          <Icon size={18} />
-        </span>
-      </div>
-      <strong>{value}</strong>
-      <div className="mg-metric-bottom">
-        <Delta current={current} previous={previous} reverse={reverse} />
-        <span>{hint}</span>
-      </div>
-    </article>
-  );
-}
-function Panel({
-  title,
-  description,
-  badge,
-  children,
-  className = '',
-}: {
-  title: string;
-  description: string;
-  badge?: ReactNode;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <section className={`mg-panel ${className}`}>
-      <header className="mg-panel-heading">
-        <div>
-          <h3>{title}</h3>
-          <p>{description}</p>
-        </div>
-        {badge}
-      </header>
-      {children}
-    </section>
-  );
-}
-function Legend({ items }: { items: { color: string; label: string }[] }) {
-  return (
-    <div className="mg-legend">
-      {items.map((item) => (
-        <span key={item.label}>
-          <i style={{ background: item.color }} />
-          {item.label}
-        </span>
-      ))}
-    </div>
-  );
-}
-function ChartEmpty({ message = 'Nenhum registro neste recorte.' }: { message?: string }) {
-  return (
-    <div className="mg-chart-empty">
-      <ChartNoAxesCombined size={26} />
-      <p>{message}</p>
-      <span>Selecione outro período ou ajuste os filtros.</span>
-    </div>
-  );
 }
 
 export function ManagementDashboard({ userName, today }: { userName: string; today: string }) {

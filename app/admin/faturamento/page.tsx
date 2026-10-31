@@ -1,810 +1,659 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
-  AlertTriangle,
-  Calculator,
+  ArrowDownLeft,
+  ArrowRight,
+  ArrowUpRight,
   CalendarDays,
-  Landmark,
+  ChartNoAxesCombined,
+  CircleHelp,
+  Clock3,
+  Download,
+  Layers3,
+  LoaderCircle,
+  RefreshCw,
   Search,
-  TrendingDown,
-  TrendingUp,
   Users,
-  WalletCards,
-  Wrench,
+  Wallet,
 } from 'lucide-react';
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  Cell,
-  ComposedChart,
-  Legend,
-  Line,
-  LineChart,
-  Pie,
-  PieChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { AppShell } from '@/components/app-shell';
-import { DataPanel } from '@/components/data-panel';
-import { EmptyState } from '@/components/empty-state';
-import { LoadingShell } from '@/components/page-skeleton';
-import { MetricCard } from '@/components/metric-card';
-import { PageHeader } from '@/components/page-header';
-import { StatusBadge } from '@/components/status-badge';
+import { ChartEmpty, Delta, Legend, Metric, Panel, chartAxis, chartTooltipStyle, compactCurrency } from '@/components/management-ui';
 import { useAppSession } from '@/hooks/use-app-session';
-import { useOrganizationSettings } from '@/hooks/use-organization-settings';
-import { formatCurrency, formatNumber, normalizeText, resolveCompetenceMonth } from '@/lib/formatters';
-import { valueOrDefault } from '@/lib/organization-settings';
+import { BILLING_MONTH_NAMES, buildBillingReport, type BillingFilters } from '@/lib/billing-report';
+import { CHART_COLORS as COLORS } from '@/lib/chart-theme';
+import { brasiliaDateKey, formatCurrency, formatNumber, formatPercent, normalizeText } from '@/lib/formatters';
 import type { Payroll, Service, Technician } from '@/lib/types';
-import { CHART_COLORS as chartColors } from '@/lib/chart-theme';
+import '../dashboard-gerencial/management-dashboard.css';
 
-const monthNames = [
-  'Janeiro',
-  'Fevereiro',
-  'Março',
-  'Abril',
-  'Maio',
-  'Junho',
-  'Julho',
-  'Agosto',
-  'Setembro',
-  'Outubro',
-  'Novembro',
-  'Dezembro',
-];
+type SortKey = 'revenue' | 'services' | 'ticket' | 'net' | 'margin';
 
-const shortMonthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-const currentDate = new Date();
-const currentYear = String(currentDate.getFullYear());
-const currentMonthNum = String(currentDate.getMonth() + 1).padStart(2, '0');
-const ALL_OPTION = 'all';
-
-type MonthSummary = {
-  monthKey: string;
-  monthLabel: string;
-  serviceRevenue: number;
-  revenue: number;
-  payrollCost: number;
-  expenses: number;
-  profit: number;
-  margin: number;
-  services: number;
-  payrolls: number;
-  employees: number;
-};
-
-type RawMonthSummary = Omit<MonthSummary, 'employees'> & {
-  employeeIds: Set<string>;
-};
-
-type TechnicianFinancialSummary = {
-  id: string;
-  name: string;
-  serviceCount: number;
-  revenue: number;
-  calculationBase: number;
-  payrollCost: number;
-  profit: number;
-  margin: number;
-};
-
-type TypeRevenueSummary = {
-  name: string;
-  revenue: number;
-  count: number;
-};
-
-function moneyValue(value: number | string | null | undefined) {
-  const numericValue = Number(value ?? 0);
-  return Number.isFinite(numericValue) ? numericValue : 0;
-}
-
-function roundCurrency(value: number | string | null | undefined) {
-  return Math.round((moneyValue(value) + Number.EPSILON) * 100) / 100;
-}
-
-function formatPercent(value: number | string | null | undefined) {
-  return `${Number(value ?? 0).toLocaleString('pt-BR', {
-    maximumFractionDigits: 1,
-  })}%`;
-}
-
-function formatCompactCurrency(value: number | string | null | undefined) {
-  return Number(value ?? 0).toLocaleString('pt-BR', {
-    style: 'currency',
-    currency: 'BRL',
-    notation: 'compact',
-    maximumFractionDigits: 1,
-  });
-}
-
-function formatChartCurrency(value: unknown) {
-  return formatCurrency(Number(value ?? 0));
-}
-
-function formatChartPercent(value: unknown) {
-  return formatPercent(Number(value ?? 0));
-}
-
-function getServiceCompetence(service: Service) {
-  return resolveCompetenceMonth(service.competence_month, service.date_performed);
-}
-
-function getPayrollCost(payroll: Payroll) {
-  return roundCurrency(moneyValue(payroll.net_total) + moneyValue(payroll.va_deduction) + moneyValue(payroll.vr_deduction));
-}
-
-function calcMargin(profit: number, revenue: number) {
-  return revenue > 0 ? roundCurrency((profit / revenue) * 100) : 0;
-}
-
-function finalizeMonthSummary(raw: RawMonthSummary): MonthSummary {
-  const revenue = roundCurrency(raw.serviceRevenue);
-  const expenses = roundCurrency(raw.payrollCost);
-  const profit = roundCurrency(revenue - expenses);
-
-  return {
-    ...raw,
-    serviceRevenue: roundCurrency(raw.serviceRevenue),
-    revenue,
-    payrollCost: roundCurrency(raw.payrollCost),
-    expenses,
-    profit,
-    margin: calcMargin(profit, revenue),
-    employees: raw.employeeIds.size,
-  };
-}
-
-function getMetricTone(value: number): 'success' | 'danger' {
-  return value >= 0 ? 'success' : 'danger';
-}
+const PAGE_SIZE = 10;
 
 export default function AdminFaturamentoPage() {
   const { user, loading } = useAppSession();
-  // Technicians without their own commission use the organization's default.
-  const { settings: organizationSettings } = useOrganizationSettings();
-  const defaultCommissionPercentage = organizationSettings.commissionPercentage;
+  const today = brasiliaDateKey();
   const [services, setServices] = useState<Service[]>([]);
   const [payroll, setPayroll] = useState<Payroll[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
-  const [isDataLoading, setIsDataLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasLoaded, setHasLoaded] = useState(false);
   const [dataError, setDataError] = useState('');
-  const [selectedYear, setSelectedYear] = useState(currentYear);
-  const [selectedMonth, setSelectedMonth] = useState(currentMonthNum);
-  const [selectedTechnicianId, setSelectedTechnicianId] = useState('all');
-  const [employeeQuery, setEmployeeQuery] = useState('');
+  const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [filters, setFilters] = useState<BillingFilters>({
+    mode: 'monthly',
+    year: Number(today.slice(0, 4)),
+    month: Number(today.slice(5, 7)),
+    technicianId: 'all',
+  });
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortKey>('revenue');
+  const [page, setPage] = useState(1);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState('');
 
-  useEffect(() => {
-    let mounted = true;
+  const update = <K extends keyof BillingFilters>(key: K, value: BillingFilters[K]) => {
+    setFilters((current) => ({ ...current, [key]: value }));
+    setPage(1);
+  };
 
-    async function loadData() {
-      if (!user) return;
+  const load = useCallback(async () => {
+    setIsLoading(true);
+    setDataError('');
 
-      setIsDataLoading(true);
-      setDataError('');
+    const [servicesResult, payrollResult, techniciansResult] = await Promise.allSettled([
+      fetch('/api/services', { cache: 'no-store' }),
+      fetch('/api/payroll', { cache: 'no-store' }),
+      fetch('/api/technicians', { cache: 'no-store' }),
+    ]);
+    const errors: string[] = [];
 
-      const [servicesResult, payrollResult, techniciansResult] = await Promise.allSettled([
-        fetch('/api/services'),
-        fetch('/api/payroll'),
-        fetch('/api/technicians'),
-      ]);
-      const errors: string[] = [];
-
-      if (servicesResult.status === 'fulfilled' && servicesResult.value.ok) {
-        const data = await servicesResult.value.json();
-        if (mounted) setServices(Array.isArray(data.services) ? data.services : []);
-      } else {
-        errors.push('serviços');
-        if (mounted) setServices([]);
+    async function read<T>(result: PromiseSettledResult<Response>, key: string, label: string): Promise<T[]> {
+      if (result.status === 'fulfilled' && result.value.ok) {
+        const data = await result.value.json();
+        return Array.isArray(data[key]) ? data[key] : [];
       }
-
-      if (payrollResult.status === 'fulfilled' && payrollResult.value.ok) {
-        const data = await payrollResult.value.json();
-        if (mounted) setPayroll(Array.isArray(data.payrolls) ? data.payrolls : []);
-      } else {
-        errors.push('folha');
-        if (mounted) setPayroll([]);
-      }
-
-      if (techniciansResult.status === 'fulfilled' && techniciansResult.value.ok) {
-        const data = await techniciansResult.value.json();
-        if (mounted) setTechnicians(Array.isArray(data.technicians) ? data.technicians : []);
-      } else {
-        errors.push('funcionários');
-        if (mounted) setTechnicians([]);
-      }
-
-      if (mounted) {
-        setDataError(errors.length ? `Não foi possível carregar dados de ${errors.join(', ')}.` : '');
-        setIsDataLoading(false);
-      }
+      errors.push(label);
+      return [];
     }
 
-    loadData();
+    setServices(await read<Service>(servicesResult, 'services', 'serviços'));
+    setPayroll(await read<Payroll>(payrollResult, 'payrolls', 'folha'));
+    setTechnicians(await read<Technician>(techniciansResult, 'technicians', 'técnicos'));
+    setDataError(errors.length ? `Não foi possível carregar os dados de ${errors.join(', ')}.` : '');
+    setUpdatedAt(new Date());
+    setIsLoading(false);
+    setHasLoaded(true);
+  }, []);
 
-    return () => {
-      mounted = false;
-    };
-  }, [user]);
+  useEffect(() => {
+    if (user) void load();
+  }, [user, load]);
 
-  const activeTechnicianIds = useMemo(
-    () => new Set(technicians.filter((technician) => technician.status === 'active').map((technician) => technician.id)),
-    [technicians],
-  );
-  const activeServices = useMemo(
-    () => services.filter((service) => activeTechnicianIds.has(service.technician_id)),
-    [activeTechnicianIds, services],
-  );
-  const activePayroll = useMemo(
-    () => payroll.filter((item) => activeTechnicianIds.has(item.technician_id)),
-    [activeTechnicianIds, payroll],
-  );
+  const years = useMemo(() => {
+    const values = new Set<number>([Number(today.slice(0, 4)), filters.year]);
+    services.forEach((service) => {
+      const competence = service.competence_month || String(service.date_performed ?? '').slice(0, 7);
+      if (/^\d{4}-\d{2}$/.test(competence)) values.add(Number(competence.slice(0, 4)));
+    });
+    payroll.forEach((item) => /^\d{4}-\d{2}$/.test(item.competence_month) && values.add(Number(item.competence_month.slice(0, 4))));
+    return [...values].sort((left, right) => right - left);
+  }, [filters.year, payroll, services, today]);
 
   const technicianOptions = useMemo(
-    () =>
-      technicians
-        .filter((technician) => technician.status === 'active')
-        .slice()
-        .sort((left, right) => left.name.localeCompare(right.name, 'pt-BR')),
+    () => technicians.filter((technician) => technician.status === 'active').sort((left, right) => left.name.localeCompare(right.name, 'pt-BR')),
     [technicians],
   );
 
-  const commissionPercentageMap = useMemo(
-    () =>
-      new Map(
-        technicians.map((technician) => [
-          technician.id,
-          valueOrDefault(technician.commission_percentage, defaultCommissionPercentage),
-        ]),
-      ),
-    [defaultCommissionPercentage, technicians],
-  );
-
+  // A technician who is no longer active leaves the filter.
   useEffect(() => {
-    if (selectedTechnicianId !== 'all' && !activeTechnicianIds.has(selectedTechnicianId)) {
-      setSelectedTechnicianId('all');
+    if (filters.technicianId !== 'all' && !technicianOptions.some((technician) => technician.id === filters.technicianId)) {
+      setFilters((current) => ({ ...current, technicianId: 'all' }));
     }
-  }, [activeTechnicianIds, selectedTechnicianId]);
+  }, [filters.technicianId, technicianOptions]);
 
-  // Escopo do dashboard: quando um técnico é escolhido, todas as métricas,
-  // gráficos e rankings passam a considerar apenas os dados dele.
-  const scopedServices = useMemo(
-    () => (selectedTechnicianId === 'all' ? activeServices : activeServices.filter((service) => service.technician_id === selectedTechnicianId)),
-    [activeServices, selectedTechnicianId],
-  );
-  const scopedPayroll = useMemo(
-    () => (selectedTechnicianId === 'all' ? activePayroll : activePayroll.filter((item) => item.technician_id === selectedTechnicianId)),
-    [activePayroll, selectedTechnicianId],
-  );
+  const report = useMemo(() => buildBillingReport({ services, payroll, technicians }, filters), [filters, payroll, services, technicians]);
+  const { current, previous } = report;
+  const partial = current.missingPayroll + current.draftPayroll > 0;
+  const periodInProgress =
+    filters.year === Number(today.slice(0, 4)) && (filters.mode === 'annual' || filters.month === Number(today.slice(5, 7)));
+  const payrollShare = current.revenue > 0 ? (current.payrollCost / current.revenue) * 100 : 0;
+  const selectedTechnician = technicianOptions.find((technician) => technician.id === filters.technicianId);
 
-  function calculateBaseFromServices(list: Service[]) {
-    return roundCurrency(
-      list.reduce(
-        (total, service) => total + moneyValue(service.value) * ((commissionPercentageMap.get(service.technician_id) ?? defaultCommissionPercentage) / 100),
-        0,
-      ),
+  const ranking = report.technicians
+    .filter((row) => normalizeText(`${row.name} ${row.qra}`).includes(normalizeText(search)))
+    .sort((left, right) => right[sort] - left[sort] || left.name.localeCompare(right.name, 'pt-BR'));
+  const pageCount = Math.max(1, Math.ceil(ranking.length / PAGE_SIZE));
+  const currentPage = Math.min(page, pageCount);
+
+  // The donut shows the six biggest types and gathers the rest, so the legend stays short.
+  const donutTypes = useMemo(() => {
+    const top = report.types.slice(0, 6);
+    const rest = report.types.slice(6);
+    return rest.length
+      ? [...top, { name: 'Outros', revenue: rest.reduce((total, type) => total + type.revenue, 0), count: rest.reduce((total, type) => total + type.count, 0) }]
+      : top;
+  }, [report.types]);
+
+  async function exportWorkbook() {
+    setExporting(true);
+    setExportError('');
+    try {
+      const XLSX = await import('xlsx');
+      const workbook = XLSX.utils.book_new();
+      const addSheet = (name: string, rows: Record<string, string | number>[]) => {
+        const sheet = XLSX.utils.json_to_sheet(rows);
+        sheet['!cols'] = Array.from({ length: 10 }, () => ({ wch: 22 }));
+        XLSX.utils.book_append_sheet(workbook, sheet, name);
+      };
+      addSheet('Resumo', [
+        {
+          Período: report.periodLabel,
+          Técnico: selectedTechnician?.name ?? 'Todos',
+          Faturamento: current.revenue,
+          'Custo da folha': current.payrollCost,
+          Resultado: current.net,
+          'Margem (%)': current.margin,
+          Serviços: current.services,
+          'Ticket médio': current.ticket,
+          'Folhas pendentes': current.missingPayroll + current.draftPayroll,
+        },
+      ]);
+      addSheet(
+        'Evolução',
+        report.trend.map((point) => ({ Mês: point.label, Faturamento: point.revenue, 'Custo da folha': point.cost, Resultado: point.net, Serviços: point.services })),
+      );
+      addSheet(
+        'Tipos de serviço',
+        report.types.map((type) => ({ Tipo: type.name, Serviços: type.count, Faturamento: type.revenue })),
+      );
+      addSheet(
+        'Técnicos',
+        report.technicians.map((row) => ({
+          Técnico: row.name,
+          QRA: row.qra,
+          Serviços: row.services,
+          Faturamento: row.revenue,
+          'Ticket médio': row.ticket,
+          'Custo da folha': row.payrollCost,
+          Resultado: row.net,
+          'Margem (%)': row.margin,
+        })),
+      );
+      XLSX.writeFile(workbook, `faturamento-${filters.year}${filters.mode === 'monthly' ? `-${String(filters.month).padStart(2, '0')}` : ''}.xlsx`);
+    } catch {
+      setExportError('Não foi possível exportar a planilha. Tente novamente.');
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  if (loading || !user || !hasLoaded) {
+    return (
+      <AppShell role="admin" userName={user?.name || user?.email}>
+        <div className="mg-dashboard">
+          <div className="mg-loading" role="status">
+            <LoaderCircle className="mg-spin" size={25} />
+            <strong>Somando o faturamento</strong>
+            <span>Serviços, folha e técnicos.</span>
+          </div>
+        </div>
+      </AppShell>
     );
   }
 
-  const yearOptions = useMemo(() => {
-    const values = new Set<string>([currentYear]);
-
-    activeServices.forEach((service) => {
-      const competence = getServiceCompetence(service);
-      if (/^\d{4}-\d{2}$/.test(competence)) values.add(competence.slice(0, 4));
-    });
-
-    activePayroll.forEach((item) => {
-      if (/^\d{4}-\d{2}$/.test(item.competence_month)) values.add(item.competence_month.slice(0, 4));
-    });
-
-    return Array.from(values).sort((left, right) => right.localeCompare(left, 'pt-BR'));
-  }, [activePayroll, activeServices]);
-
-  useEffect(() => {
-    if (selectedYear !== ALL_OPTION && !yearOptions.includes(selectedYear)) {
-      setSelectedYear(yearOptions[0] ?? currentYear);
-    }
-  }, [selectedYear, yearOptions]);
-
-  const technicianNameMap = useMemo(() => {
-    return new Map(technicians.map((technician) => [technician.id, technician.name]));
-  }, [technicians]);
-
-  const matchesYear = (competence: string) => selectedYear === ALL_OPTION || competence.slice(0, 4) === selectedYear;
-  const matchesMonth = (competence: string) => selectedMonth === ALL_OPTION || competence.slice(5, 7) === selectedMonth;
-
-  // Escopo por ano (todos os meses) — alimenta os cards anuais e o gráfico de evolução.
-  const yearScopedServices = useMemo(
-    () => scopedServices.filter((service) => matchesYear(getServiceCompetence(service))),
-    [scopedServices, selectedYear],
-  );
-  const yearScopedPayroll = useMemo(
-    () => scopedPayroll.filter((item) => matchesYear(item.competence_month)),
-    [scopedPayroll, selectedYear],
-  );
-
-  // Escopo do período (ano + mês) — alimenta os cards do período, composições e rankings.
-  const periodServices = useMemo(
-    () => yearScopedServices.filter((service) => matchesMonth(getServiceCompetence(service))),
-    [yearScopedServices, selectedMonth],
-  );
-  const periodPayroll = useMemo(
-    () => yearScopedPayroll.filter((item) => matchesMonth(item.competence_month)),
-    [yearScopedPayroll, selectedMonth],
-  );
-
-  function aggregate(servicesList: Service[], payrollList: Payroll[]) {
-    const serviceRevenue = roundCurrency(servicesList.reduce((total, service) => total + moneyValue(service.value), 0));
-    const payrollCost = roundCurrency(payrollList.reduce((total, item) => total + getPayrollCost(item), 0));
-    const profit = roundCurrency(serviceRevenue - payrollCost);
-    const employeeIds = new Set<string>();
-    servicesList.forEach((service) => service.technician_id && employeeIds.add(service.technician_id));
-    payrollList.forEach((item) => item.technician_id && employeeIds.add(item.technician_id));
-
-    return {
-      serviceRevenue,
-      revenue: serviceRevenue,
-      payrollCost,
-      expenses: payrollCost,
-      profit,
-      margin: calcMargin(profit, serviceRevenue),
-      services: servicesList.length,
-      payrolls: payrollList.length,
-      employees: employeeIds.size,
-    };
-  }
-
-  // Gráfico de evolução: 12 meses do ano selecionado (ou somados entre todos os anos).
-  const monthlyData = useMemo<MonthSummary[]>(() => {
-    const buckets = Array.from({ length: 12 }, (_, index) => ({
-      monthKey: String(index + 1).padStart(2, '0'),
-      monthLabel: shortMonthNames[index],
-      serviceRevenue: 0,
-      revenue: 0,
-      payrollCost: 0,
-      expenses: 0,
-      profit: 0,
-      margin: 0,
-      services: 0,
-      payrolls: 0,
-      employeeIds: new Set<string>(),
-    }));
-    const byMonth = new Map(buckets.map((bucket) => [bucket.monthKey, bucket]));
-
-    yearScopedServices.forEach((service) => {
-      const summary = byMonth.get(getServiceCompetence(service).slice(5, 7));
-      if (!summary) return;
-      summary.serviceRevenue += moneyValue(service.value);
-      summary.services += 1;
-      if (service.technician_id) summary.employeeIds.add(service.technician_id);
-    });
-
-    yearScopedPayroll.forEach((item) => {
-      const summary = byMonth.get(item.competence_month.slice(5, 7));
-      if (!summary) return;
-      summary.payrollCost += getPayrollCost(item);
-      summary.payrolls += 1;
-      if (item.technician_id) summary.employeeIds.add(item.technician_id);
-    });
-
-    return buckets.map(finalizeMonthSummary);
-  }, [yearScopedPayroll, yearScopedServices]);
-
-  const periodData = useMemo(() => aggregate(periodServices, periodPayroll), [periodServices, periodPayroll]);
-  const annualData = useMemo(() => aggregate(yearScopedServices, yearScopedPayroll), [yearScopedServices, yearScopedPayroll]);
-
-  const monthlyCalculationBase = useMemo(() => calculateBaseFromServices(periodServices), [periodServices, commissionPercentageMap]);
-  const annualCalculationBase = useMemo(() => calculateBaseFromServices(yearScopedServices), [yearScopedServices, commissionPercentageMap]);
-
-  const typeRevenueData = useMemo<TypeRevenueSummary[]>(() => {
-    const groups = new Map<string, TypeRevenueSummary>();
-
-    periodServices.forEach((service) => {
-      const key = service.service_type || 'Sem tipo';
-      const current = groups.get(key) ?? { name: key, revenue: 0, count: 0 };
-      current.revenue = roundCurrency(current.revenue + moneyValue(service.value));
-      current.count += 1;
-      groups.set(key, current);
-    });
-
-    return Array.from(groups.values())
-      .sort((left, right) => right.revenue - left.revenue)
-      .slice(0, 8);
-  }, [periodServices]);
-
-  const technicianRows = useMemo<TechnicianFinancialSummary[]>(() => {
-    const rows = new Map<string, TechnicianFinancialSummary>();
-
-    function getRow(id: string, fallbackName: string) {
-      const row = rows.get(id) ?? {
-        id,
-        name: technicianNameMap.get(id) || fallbackName || 'Funcionário sem nome',
-        serviceCount: 0,
-        revenue: 0,
-        calculationBase: 0,
-        payrollCost: 0,
-        profit: 0,
-        margin: 0,
-      };
-      rows.set(id, row);
-      return row;
-    }
-
-    periodServices.forEach((service) => {
-      const id = service.technician_id || normalizeText(service.technician_name || 'sem-funcionario');
-      const row = getRow(id, service.technician_name || service.technician_id);
-      const percentage = commissionPercentageMap.get(service.technician_id) ?? defaultCommissionPercentage;
-      row.serviceCount += 1;
-      row.revenue = roundCurrency(row.revenue + moneyValue(service.value));
-      row.calculationBase = roundCurrency(row.calculationBase + moneyValue(service.value) * (percentage / 100));
-    });
-
-    periodPayroll.forEach((item) => {
-      const row = getRow(item.technician_id, technicianNameMap.get(item.technician_id) || item.technician_id);
-      row.payrollCost = roundCurrency(row.payrollCost + getPayrollCost(item));
-    });
-
-    return Array.from(rows.values())
-      .map((row) => ({
-        ...row,
-        profit: roundCurrency(row.revenue - row.payrollCost),
-        margin: calcMargin(row.revenue - row.payrollCost, row.revenue),
-      }))
-      .filter((row) => {
-        const haystack = normalizeText(`${row.name} ${row.id}`);
-        return !employeeQuery || haystack.includes(normalizeText(employeeQuery));
-      })
-      .sort((left, right) => {
-        if (right.revenue !== left.revenue) return right.revenue - left.revenue;
-        return right.payrollCost - left.payrollCost;
-      });
-  }, [commissionPercentageMap, defaultCommissionPercentage, employeeQuery, periodPayroll, periodServices, technicianNameMap]);
-
-  const costComposition = useMemo(() => {
-    return [
-      { name: 'Folha', value: periodData.payrollCost },
-    ].filter((item) => item.value > 0);
-  }, [periodData.payrollCost]);
-
-  const revenueComposition = useMemo(() => {
-    return [
-      { name: 'Serviços', value: periodData.serviceRevenue },
-    ].filter((item) => item.value > 0);
-  }, [periodData.serviceRevenue]);
-
-  const payrollShare = periodData.revenue > 0 ? (periodData.payrollCost / periodData.revenue) * 100 : 0;
-  const expenseShare = periodData.revenue > 0 ? (periodData.expenses / periodData.revenue) * 100 : 0;
-  const periodAverageTicket = periodData.services > 0 ? periodData.serviceRevenue / periodData.services : 0;
-  const annualAverageTicket = annualData.services > 0 ? annualData.serviceRevenue / annualData.services : 0;
-  const hasAnyData = scopedServices.length || scopedPayroll.length;
-  const selectedTechnicianName =
-    selectedTechnicianId === 'all'
-      ? 'Todos os técnicos'
-      : technicianNameMap.get(selectedTechnicianId) || 'Técnico selecionado';
-  const monthLabel = selectedMonth === ALL_OPTION ? 'Todos os meses' : monthNames[Number(selectedMonth) - 1];
-  const yearLabel = selectedYear === ALL_OPTION ? 'Todos os anos' : `Ano ${selectedYear}`;
-  const periodLabel =
-    selectedMonth !== ALL_OPTION && selectedYear !== ALL_OPTION
-      ? `${selectedMonth}/${selectedYear} - ${monthNames[Number(selectedMonth) - 1]}`
-      : selectedMonth !== ALL_OPTION
-        ? `${monthNames[Number(selectedMonth) - 1]} (todos os anos)`
-        : selectedYear !== ALL_OPTION
-          ? `Ano ${selectedYear}`
-          : 'Todos os períodos';
-
-  if (loading || isDataLoading || !user) {
-    return <LoadingShell role="admin" />;
-  }
+  const hasData = services.length > 0 || payroll.length > 0;
 
   return (
     <AppShell role="admin" userName={user.name || user.email}>
-      <PageHeader
-        eyebrow="Dashboard gerencial"
-        title="Faturamento"
-        description="Faturamento de serviços, custo de folha e lucro por mês e por ano."
-      >
-        <div className="flex flex-wrap gap-2">
-          <StatusBadge tone="info">{monthLabel}</StatusBadge>
-          <StatusBadge tone={annualData.profit >= 0 ? 'success' : 'danger'}>{yearLabel}</StatusBadge>
-          <StatusBadge tone={selectedTechnicianId === 'all' ? 'neutral' : 'success'}>{selectedTechnicianName}</StatusBadge>
-        </div>
-      </PageHeader>
+      <div className="mg-dashboard">
+        <header className="mg-page-heading">
+          <div>
+            <div className="mg-eyebrow">
+              <span /> RELATÓRIO FINANCEIRO <span className="mg-eyebrow-divider">/</span> NEXTROTTA
+            </div>
+            <h1>
+              Faturamento<span>.</span>
+            </h1>
+            <p>Quanto os serviços faturaram, quanto custou a folha e o que sobrou.</p>
+          </div>
+          <div className="mg-header-actions">
+            <button className="mg-button mg-button-dark" onClick={exportWorkbook} disabled={exporting || !hasData}>
+              {exporting ? <LoaderCircle className="mg-spin" size={15} /> : <Download size={15} />}
+              {exporting ? 'Exportando...' : 'Exportar relatório'}
+            </button>
+          </div>
+        </header>
 
-      {dataError ? <div className="mb-4 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{dataError}</div> : null}
-
-      {/* Two full rows: period and year results on top (4), cost, ticket and base below (3). */}
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-12">
-        <div className="grid xl:col-span-3">
-          <MetricCard title="Faturamento (período)" value={formatCurrency(periodData.revenue)} hint={monthLabel} icon={TrendingUp} tone="success" />
-        </div>
-        <div className="grid xl:col-span-3">
-          <MetricCard
-            title="Lucro (período)"
-            value={formatCurrency(periodData.profit)}
-            hint={`Margem ${formatPercent(periodData.margin)}`}
-            icon={Landmark}
-            tone={getMetricTone(periodData.profit)}
-            accentText
-          />
-        </div>
-        <div className="grid xl:col-span-3">
-          <MetricCard title="Faturamento anual" value={formatCurrency(annualData.revenue)} hint={`${formatNumber(annualData.services)} OS · ${yearLabel}`} icon={CalendarDays} />
-        </div>
-        <div className="grid xl:col-span-3">
-          <MetricCard
-            title="Lucro anual"
-            value={formatCurrency(annualData.profit)}
-            hint={`Margem ${formatPercent(annualData.margin)}`}
-            icon={TrendingUp}
-            tone={getMetricTone(annualData.profit)}
-            accentText
-          />
-        </div>
-        <div className="grid xl:col-span-4">
-          <MetricCard title="Custo da folha" value={formatCurrency(periodData.payrollCost)} hint={`${formatNumber(periodData.payrolls)} fechamento(s)`} icon={WalletCards} tone="warning" />
-        </div>
-        <div className="grid xl:col-span-4">
-          <MetricCard title="Ticket médio" value={formatCurrency(periodAverageTicket)} hint={`${yearLabel}: ${formatCurrency(annualAverageTicket)}`} icon={Wrench} />
-        </div>
-        <div className="grid sm:col-span-2 xl:col-span-4">
-          <MetricCard title="Base de cálculo (período)" value={formatCurrency(monthlyCalculationBase)} hint={`${yearLabel}: ${formatCurrency(annualCalculationBase)}`} icon={Calculator} />
-        </div>
-      </div>
-
-      <div className="mt-5">
-        <DataPanel title="Período de análise" description="Filtre por técnico, ano e mês. Use &quot;Todos&quot; para ver o consolidado. Os gráficos de evolução mostram o ano inteiro; os demais painéis seguem o período escolhido.">
-          <div className="grid gap-4 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] xl:items-end">
-            <div className="grid gap-3 sm:grid-cols-3">
-            <label className="text-sm">
-              <span className="mb-1.5 block font-medium">Técnico</span>
-              <select
-                value={selectedTechnicianId}
-                onChange={(event) => setSelectedTechnicianId(event.target.value)}
-                className="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
-              >
-                <option value="all">Todos os técnicos</option>
-                {technicianOptions.map((technician) => (
-                  <option key={technician.id} value={technician.id}>
-                    {technician.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <span className="mb-1.5 block font-medium">Ano</span>
-              <select
-                value={selectedYear}
-                onChange={(event) => setSelectedYear(event.target.value)}
-                className="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
-              >
-                <option value={ALL_OPTION}>Todos os anos</option>
-                {yearOptions.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="text-sm">
-              <span className="mb-1.5 block font-medium">Mês</span>
-              <select
-                value={selectedMonth}
-                onChange={(event) => setSelectedMonth(event.target.value)}
-                className="min-h-10 w-full rounded-md border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
-              >
-                <option value={ALL_OPTION}>Todos os meses</option>
-                {monthNames.map((month, index) => (
-                  <option key={month} value={String(index + 1).padStart(2, '0')}>
+        <section className="mg-filter-bar" aria-label="Filtros do faturamento">
+          <div className="mg-period-toggle" aria-label="Visualização">
+            <button aria-pressed={filters.mode === 'monthly'} className={filters.mode === 'monthly' ? 'selected' : ''} onClick={() => update('mode', 'monthly')}>
+              Mensal
+            </button>
+            <button aria-pressed={filters.mode === 'annual'} className={filters.mode === 'annual' ? 'selected' : ''} onClick={() => update('mode', 'annual')}>
+              Anual
+            </button>
+          </div>
+          <div className="mg-period-inputs">
+            <CalendarDays size={16} />
+            {filters.mode === 'monthly' && (
+              <select aria-label="Mês" value={filters.month} onChange={(event) => update('month', Number(event.target.value))}>
+                {BILLING_MONTH_NAMES.map((month, index) => (
+                  <option key={month} value={index + 1}>
                     {month}
                   </option>
                 ))}
               </select>
-            </label>
-            </div>
-
-            <div className="grid gap-2 text-sm sm:grid-cols-3">
-              <div className="rounded-md border border-border bg-background p-3">
-                <p className="text-xs uppercase text-muted-foreground">Folha / receita</p>
-                <p className="mt-1 text-base font-semibold">{formatPercent(payrollShare)}</p>
-              </div>
-              <div className="rounded-md border border-border bg-background p-3">
-                <p className="text-xs uppercase text-muted-foreground">Custos / receita</p>
-                <p className="mt-1 text-base font-semibold">{formatPercent(expenseShare)}</p>
-              </div>
-              <div className="rounded-md border border-border bg-background p-3">
-                <p className="text-xs uppercase text-muted-foreground">Funcionários no período</p>
-                <p className="mt-1 text-base font-semibold">{formatNumber(periodData.employees)}</p>
-              </div>
-            </div>
+            )}
+            <select aria-label="Ano" value={filters.year} onChange={(event) => update('year', Number(event.target.value))}>
+              {years.map((year) => (
+                <option key={year}>{year}</option>
+              ))}
+            </select>
           </div>
-        </DataPanel>
-      </div>
-
-      {!hasAnyData ? (
-        <div className="mt-5">
-          <EmptyState icon={AlertTriangle} title="Sem dados financeiros" description="O dashboard aparece conforme houver OS e folha cadastradas." />
-        </div>
-      ) : null}
-
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.5fr_0.9fr]">
-        <DataPanel title="Evolução mensal" description={`Faturamento, custos e lucro mês a mês · ${yearLabel}.`}>
-          <div className="h-86">
-            <ResponsiveContainer width="100%" height="100%">
-              <ComposedChart data={monthlyData} margin={{ left: -10, right: 12, top: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={formatCompactCurrency} />
-                <Tooltip formatter={(value) => formatChartCurrency(value)} />
-                <Legend />
-                <Bar dataKey="revenue" name="Faturamento" fill={chartColors[0]} radius={[4, 4, 0, 0]} />
-                <Bar dataKey="expenses" name="Custos" fill={chartColors[2]} radius={[4, 4, 0, 0]} />
-                <Line type="monotone" dataKey="profit" name="Lucro" stroke={chartColors[1]} strokeWidth={3} dot={{ r: 3 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
+          <div className="mg-period-inputs">
+            <Users size={16} />
+            <select aria-label="Técnico" value={filters.technicianId} onChange={(event) => update('technicianId', event.target.value)}>
+              <option value="all">Todos os técnicos</option>
+              {technicianOptions.map((technician) => (
+                <option key={technician.id} value={technician.id}>
+                  {technician.name}
+                </option>
+              ))}
+            </select>
           </div>
-        </DataPanel>
+          <div className="mg-filter-spacer" />
+          <span className="mg-update">
+            <span className={isLoading ? 'updating' : ''} />
+            {isLoading ? 'Atualizando...' : updatedAt ? `Atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}` : ''}
+          </span>
+          <button className="mg-button mg-button-icon" aria-label="Atualizar" title="Atualizar" disabled={isLoading} onClick={() => void load()}>
+            <RefreshCw size={15} className={isLoading ? 'mg-spin' : ''} />
+          </button>
+        </section>
 
-        <DataPanel title="Composição do período" description={`Origem do faturamento e custo de folha · ${periodLabel}.`}>
-          <div className="grid gap-4">
+        {exportError && (
+          <div className="mg-notice" role="alert">
+            {exportError}
+          </div>
+        )}
+        {dataError && (
+          <div className="mg-error" role="alert">
+            <CircleHelp size={23} />
             <div>
-              <p className="mb-2 text-sm font-medium">Faturamento</p>
-              {revenueComposition.length ? (
-                <div className="h-44">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Tooltip formatter={(value) => formatChartCurrency(value)} />
-                      <Pie data={revenueComposition} dataKey="value" nameKey="name" innerRadius={42} outerRadius={70} paddingAngle={3}>
-                        {revenueComposition.map((_, index) => (
-                          <Cell key={`revenue-${index}`} fill={chartColors[index % chartColors.length]} />
-                        ))}
-                      </Pie>
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <EmptyState icon={TrendingUp} title="Sem faturamento no mês" />
-              )}
+              <strong>Alguns dados não carregaram</strong>
+              <p>{dataError}</p>
             </div>
-
-            <div>
-              <p className="mb-2 text-sm font-medium">Custos</p>
-              {costComposition.length ? (
-                <div className="h-44">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Tooltip formatter={(value) => formatChartCurrency(value)} />
-                      <Pie data={costComposition} dataKey="value" nameKey="name" innerRadius={42} outerRadius={70} paddingAngle={3}>
-                        {costComposition.map((_, index) => (
-                          <Cell key={`cost-${index}`} fill={chartColors[(index + 2) % chartColors.length]} />
-                        ))}
-                      </Pie>
-                      <Legend />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ) : (
-                <EmptyState icon={TrendingDown} title="Sem custos no mês" />
-              )}
-            </div>
+            <button className="mg-button" onClick={() => void load()}>
+              Tentar novamente
+            </button>
           </div>
-        </DataPanel>
-      </div>
+        )}
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-2">
-        <DataPanel title="Margem de lucro" description="Percentual de lucro sobre o faturamento mensal.">
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={monthlyData} margin={{ left: -18, right: 12, top: 10, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                <XAxis dataKey="monthLabel" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(value) => `${value}%`} />
-                <Tooltip formatter={(value) => formatChartPercent(value)} />
-                <Line type="monotone" dataKey="margin" name="Margem" stroke={chartColors[0]} strokeWidth={3} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        </DataPanel>
-
-        <DataPanel title="Faturamento por tipo de serviço" description={`Top tipos · ${periodLabel}.`}>
-          {typeRevenueData.length ? (
-            <div className="h-72">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={typeRevenueData} layout="vertical" margin={{ left: 18, right: 16, top: 0, bottom: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={formatCompactCurrency} />
-                  <YAxis dataKey="name" type="category" width={112} tick={{ fontSize: 11 }} />
-                  <Tooltip formatter={(value) => formatChartCurrency(value)} />
-                  <Bar dataKey="revenue" name="Faturamento" radius={[0, 4, 4, 0]}>
-                    {typeRevenueData.map((_, index) => (
-                      <Cell key={`type-${index}`} fill={chartColors[index % chartColors.length]} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+        <div aria-busy={isLoading}>
+          <section id="resultado" className="mg-section">
+            <div className="mg-section-heading">
+              <div>
+                <span className="mg-section-number">01</span>
+                <h2>Um olhar para o resultado</h2>
+              </div>
+              <span className="mg-comparison">
+                {report.periodLabel} · comparado com {report.comparisonLabel}
+                {periodInProgress ? ' · período em andamento' : ''}
+              </span>
             </div>
-          ) : (
-            <EmptyState icon={Wrench} title="Sem serviços no mês" description="Não há OS para agrupar por tipo nesta competência." />
-          )}
-        </DataPanel>
-      </div>
 
-      <div className="mt-5 grid gap-5 lg:grid-cols-[1.5fr_0.8fr]">
-        <DataPanel
-          title="Resultado por funcionário"
-          description="Faturamento gerado, base de cálculo, custo de folha e lucro bruto no período selecionado."
-          action={
-            <div className="flex min-h-10 w-full items-center gap-2 rounded-md border border-border bg-background px-3 sm:w-auto">
-              <Search className="h-4 w-4 text-muted-foreground" />
-              <input
-                value={employeeQuery}
-                onChange={(event) => setEmployeeQuery(event.target.value)}
-                placeholder="Buscar funcionário"
-                className="w-full bg-transparent text-sm outline-none sm:w-48"
+            {partial && (
+              <div className="mg-notice">
+                <CircleHelp size={16} />
+                <span>
+                  {current.missingPayroll + current.draftPayroll} competência(s) de técnico com serviços ainda sem folha fechada. O resultado está parcial: só
+                  folhas fechadas entram no custo.
+                </span>
+                <Link href="/admin/payroll">
+                  Revisar folhas <ArrowRight size={13} />
+                </Link>
+              </div>
+            )}
+
+            <div className="mg-metrics">
+              <Metric
+                title="Faturamento bruto"
+                value={formatCurrency(current.revenue)}
+                hint={`${formatNumber(current.services)} serviços no período`}
+                icon={Wallet}
+                current={current.revenue}
+                previous={previous.revenue}
+              />
+              <Metric
+                title={`Resultado${partial ? ' · parcial' : ''}`}
+                value={formatCurrency(current.net)}
+                hint={`${formatPercent(current.margin)} de margem`}
+                icon={ArrowUpRight}
+                current={current.net}
+                previous={previous.net}
+                dark
+              />
+              <Metric
+                title="Ticket médio"
+                value={formatCurrency(current.ticket)}
+                hint="Faturamento por serviço"
+                icon={Layers3}
+                current={current.ticket}
+                previous={previous.ticket}
+              />
+              <Metric
+                title="Custo da folha"
+                value={formatCurrency(current.payrollCost)}
+                hint={`${formatNumber(current.payrollCount)} folha(s) fechada(s)`}
+                icon={ArrowDownLeft}
+                current={current.payrollCost}
+                previous={previous.payrollCost}
+                reverse
               />
             </div>
-          }
-        >
-          {technicianRows.length ? (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-160 text-sm">
-                <thead>
-                  <tr className="border-b border-border text-left text-xs uppercase text-muted-foreground">
-                    <th className="py-3 pr-4 font-medium">Funcionário</th>
-                    <th className="py-3 pr-4 font-medium">OS</th>
-                    <th className="py-3 pr-4 font-medium">Faturamento</th>
-                    <th className="py-3 pr-4 font-medium">Base de cálculo</th>
-                    <th className="py-3 pr-4 font-medium">Folha</th>
-                    <th className="py-3 pr-4 font-medium">Lucro bruto</th>
-                    <th className="py-3 font-medium">Margem</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {technicianRows.slice(0, 12).map((row) => (
-                    <tr key={row.id} className="border-b border-border last:border-0">
-                      <td className="py-3 pr-4 font-medium">{row.name}</td>
-                      <td className="py-3 pr-4">{formatNumber(row.serviceCount)}</td>
-                      <td className="py-3 pr-4 text-emerald-700">{formatCurrency(row.revenue)}</td>
-                      <td className="py-3 pr-4">{formatCurrency(row.calculationBase)}</td>
-                      <td className="py-3 pr-4 text-amber-700">{formatCurrency(row.payrollCost)}</td>
-                      <td className={`py-3 pr-4 font-semibold ${row.profit >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{formatCurrency(row.profit)}</td>
-                      <td className="py-3">
-                        <StatusBadge tone={row.margin >= 0 ? 'success' : 'danger'}>{formatPercent(row.margin)}</StatusBadge>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <EmptyState icon={Users} title="Sem funcionários no recorte" description="Não há OS ou folha no período selecionado para montar o ranking." />
-          )}
-        </DataPanel>
 
-        <DataPanel title="Leitura rápida" description={`Indicadores gerenciais · ${periodLabel}.`}>
-          <div className="space-y-3 text-sm">
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-background p-3">
-              <span className="text-muted-foreground">Receita de serviços</span>
-              <strong>{formatCurrency(periodData.serviceRevenue)}</strong>
+            <div className="mg-overview-strip">
+              <div>
+                <span className="mg-strip-icon">
+                  <ChartNoAxesCombined size={19} />
+                </span>
+                <span>
+                  <small>Volume de serviços</small>
+                  <strong>
+                    {formatNumber(current.services)} <Delta current={current.services} previous={previous.services} />
+                  </strong>
+                </span>
+              </div>
+              <div>
+                <span className="mg-strip-icon">
+                  <Users size={19} />
+                </span>
+                <span>
+                  <small>Técnicos com produção</small>
+                  <strong>
+                    {current.producers}
+                    <em>de {report.activeTechnicians} ativos</em>
+                  </strong>
+                </span>
+              </div>
+              <div>
+                <span className="mg-strip-icon">
+                  <Clock3 size={19} />
+                </span>
+                <span>
+                  <small>Folha sobre o faturamento</small>
+                  <strong>
+                    {formatPercent(payrollShare)}
+                    <em>do que entrou vira custo</em>
+                  </strong>
+                </span>
+              </div>
             </div>
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-background p-3">
-              <span className="text-muted-foreground">Custo de folha</span>
-              <strong>{formatCurrency(periodData.payrollCost)}</strong>
+
+            <div className="mg-grid-finance">
+              <Panel
+                title="A evolução do seu resultado"
+                description={filters.mode === 'annual' ? 'Faturamento, custo e resultado ao longo do ano.' : 'Últimos 12 meses, encerrando no mês selecionado.'}
+                badge={<span className="mg-badge">POR COMPETÊNCIA</span>}
+              >
+                <Legend
+                  items={[
+                    { color: COLORS[0], label: 'Faturamento' },
+                    { color: COLORS[2], label: 'Custo da folha' },
+                    { color: COLORS[1], label: 'Resultado' },
+                  ]}
+                />
+                {report.trend.some((point) => point.revenue || point.cost) ? (
+                  <div className="mg-chart" role="img" aria-label="Evolução mensal do faturamento, do custo da folha e do resultado.">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <ComposedChart data={report.trend} margin={{ top: 12, right: 8, left: 0, bottom: 5 }} accessibilityLayer>
+                        <defs>
+                          <linearGradient id="fat-revenue-fill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={COLORS[0]} stopOpacity={0.17} />
+                            <stop offset="100%" stopColor={COLORS[0]} stopOpacity={0.01} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="#eeedf4" strokeDasharray="4 5" vertical={false} />
+                        <XAxis dataKey="label" {...chartAxis} dy={8} />
+                        <YAxis {...chartAxis} tickFormatter={compactCurrency} width={70} />
+                        <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => formatCurrency(Number(value))} />
+                        <ReferenceLine y={0} stroke="#cedbd2" />
+                        <Area type="monotone" dataKey="revenue" name="Faturamento" stroke={COLORS[0]} strokeWidth={2.5} fill="url(#fat-revenue-fill)" isAnimationActive={false} />
+                        <Line type="monotone" dataKey="cost" name="Custo da folha" stroke={COLORS[2]} strokeWidth={2} dot={false} isAnimationActive={false} />
+                        <Line type="monotone" dataKey="net" name="Resultado" stroke={COLORS[1]} strokeWidth={2} strokeDasharray="4 4" dot={false} isAnimationActive={false} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <ChartEmpty />
+                )}
+              </Panel>
+
+              <Panel title="De onde vem o resultado" description="Do faturamento ao valor que fica na empresa." className="mg-result-panel">
+                <div className="mg-result-list">
+                  {[
+                    { label: 'Faturamento bruto', value: current.revenue, previous: previous.revenue, color: COLORS[0] },
+                    { label: 'Custo da folha', value: -current.payrollCost, previous: previous.payrollCost, color: COLORS[2] },
+                  ].map((item, index) => (
+                    <div key={item.label}>
+                      <span>
+                        <i style={{ background: item.color }} />
+                        {item.label}
+                        <Delta current={Math.abs(item.value)} previous={item.previous} reverse={index > 0} />
+                      </span>
+                      <strong>{formatCurrency(item.value)}</strong>
+                      <div className="mg-cost-track">
+                        <i style={{ width: `${Math.min(100, current.revenue > 0 ? (Math.abs(item.value) / current.revenue) * 100 : 0)}%`, background: item.color }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <div className={`mg-result-total ${current.net < 0 ? 'negative' : ''}`}>
+                  <span>
+                    Resultado {partial ? 'parcial' : 'do período'}
+                    <small>Faturamento menos o custo da folha</small>
+                  </span>
+                  <strong>{formatCurrency(current.net)}</strong>
+                </div>
+                <p className="mg-card-footnote">
+                  O custo da folha soma o líquido, os adiantamentos e o VA/VR das folhas fechadas. Despesas gerais não entram aqui: elas estão no Dashboard
+                  Gerencial.
+                </p>
+              </Panel>
             </div>
-            <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-background p-3">
-              <span className="text-muted-foreground">OS lançadas</span>
-              <strong>{formatNumber(periodData.services)}</strong>
+
+            <div className="mg-grid-two">
+              <Panel
+                title="Ritmo da operação"
+                description="Quantidade de serviços realizados mês a mês."
+                badge={<span className="mg-badge">VOLUME DE SERVIÇOS</span>}
+              >
+                {report.trend.some((point) => point.services) ? (
+                  <div className="mg-chart mg-chart-short" role="img" aria-label="Quantidade de serviços por mês">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={report.trend} margin={{ top: 15, right: 8, left: -20, bottom: 5 }} accessibilityLayer>
+                        <CartesianGrid vertical={false} stroke="#eeedf4" strokeDasharray="4 5" />
+                        <XAxis dataKey="label" {...chartAxis} dy={8} />
+                        <YAxis {...chartAxis} allowDecimals={false} />
+                        <Tooltip cursor={{ fill: '#f5f3ff' }} contentStyle={chartTooltipStyle} formatter={(value) => formatNumber(Number(value))} />
+                        <Bar dataKey="services" name="Serviços" radius={[5, 5, 0, 0]} maxBarSize={28} isAnimationActive={false}>
+                          {report.trend.map((point, index) => (
+                            <Cell key={point.key} fill={filters.mode === 'annual' || index === 11 ? COLORS[0] : '#bddbc9'} />
+                          ))}
+                        </Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                ) : (
+                  <ChartEmpty />
+                )}
+              </Panel>
+
+              <Panel title="O que movimenta a empresa" description="Participação dos tipos de serviço no faturamento.">
+                {donutTypes.length ? (
+                  <div className="mg-mix">
+                    <div className="mg-donut" role="img" aria-label="Distribuição do faturamento por tipo de serviço">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie data={donutTypes.filter((type) => type.revenue > 0)} dataKey="revenue" nameKey="name" innerRadius="70%" outerRadius="93%" paddingAngle={3} stroke="none" isAnimationActive={false}>
+                            {donutTypes
+                              .filter((type) => type.revenue > 0)
+                              .map((type, index) => (
+                                <Cell key={type.name} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                          </Pie>
+                          <Tooltip contentStyle={chartTooltipStyle} formatter={(value) => formatCurrency(Number(value))} />
+                        </PieChart>
+                      </ResponsiveContainer>
+                      <div className="mg-donut-label">
+                        <strong>{report.types.length}</strong>
+                        <span>tipos de serviço</span>
+                      </div>
+                    </div>
+                    <div className="mg-mix-legend">
+                      {donutTypes.map((type, index) => (
+                        <div key={type.name}>
+                          <i style={{ background: COLORS[index % COLORS.length] }} />
+                          <span title={type.name}>
+                            {type.name}
+                            <small>{formatNumber(type.count)} serviços</small>
+                          </span>
+                          <strong>
+                            {formatPercent(current.revenue ? (type.revenue / current.revenue) * 100 : 0)}
+                            <small>{formatCurrency(type.revenue)}</small>
+                          </strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <ChartEmpty />
+                )}
+              </Panel>
             </div>
-          </div>
-        </DataPanel>
+          </section>
+
+          {filters.technicianId === 'all' && (
+            <section id="tecnicos" className="mg-section">
+              <div className="mg-section-heading">
+                <div>
+                  <span className="mg-section-number">02</span>
+                  <h2>Quem faz a operação acontecer</h2>
+                </div>
+                <span className="mg-comparison">Faturamento, custo e resultado por técnico</span>
+              </div>
+              <Panel
+                title="Resultado por técnico"
+                description="Produção, ticket e o que sobrou depois da folha de cada um."
+                badge={<span className="mg-badge">{report.technicians.length} TÉCNICOS</span>}
+              >
+                <div className="mg-table-toolbar">
+                  <label className="mg-search">
+                    <Search size={15} />
+                    <input
+                      placeholder="Buscar nome ou QRA"
+                      aria-label="Buscar técnico"
+                      value={search}
+                      onChange={(event) => {
+                        setSearch(event.target.value);
+                        setPage(1);
+                      }}
+                    />
+                  </label>
+                  <label className="mg-sort">
+                    Ordenar por
+                    <select
+                      aria-label="Ordenar técnicos"
+                      value={sort}
+                      onChange={(event) => {
+                        setSort(event.target.value as SortKey);
+                        setPage(1);
+                      }}
+                    >
+                      <option value="revenue">Maior faturamento</option>
+                      <option value="services">Mais serviços</option>
+                      <option value="ticket">Maior ticket médio</option>
+                      <option value="net">Maior resultado</option>
+                      <option value="margin">Maior margem</option>
+                    </select>
+                  </label>
+                </div>
+                <div className="mg-table-scroll">
+                  <table className="mg-table">
+                    <thead>
+                      <tr>
+                        <th>Técnico</th>
+                        <th>Serviços</th>
+                        <th>Faturamento</th>
+                        <th>Ticket médio</th>
+                        <th>Custo da folha</th>
+                        <th>Resultado</th>
+                        <th>Margem</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ranking.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE).map((row, index) => (
+                        <tr key={row.id}>
+                          <td>
+                            <div className="mg-person">
+                              <span className="mg-rank">{(currentPage - 1) * PAGE_SIZE + index + 1}</span>
+                              <span className="mg-avatar" style={{ background: `${COLORS[index % COLORS.length]}16`, color: COLORS[index % COLORS.length] }}>
+                                {row.name
+                                  .split(/\s+/)
+                                  .slice(0, 2)
+                                  .map((part) => part[0])
+                                  .join('')}
+                              </span>
+                              <span>
+                                <strong>{row.name}</strong>
+                                <small>
+                                  {row.qra || 'Sem QRA'}
+                                  {row.missingPayroll > 0 ? ' · Folha pendente' : row.draftPayroll > 0 ? ' · Rascunho' : ''}
+                                </small>
+                              </span>
+                            </div>
+                          </td>
+                          <td>{formatNumber(row.services)}</td>
+                          <td className="mg-cell-strong">{formatCurrency(row.revenue)}</td>
+                          <td>{formatCurrency(row.ticket)}</td>
+                          <td>{row.payrollCost ? formatCurrency(row.payrollCost) : '—'}</td>
+                          <td className={row.net < 0 ? 'mg-negative' : 'mg-positive'}>
+                            {formatCurrency(row.net)}
+                            {row.missingPayroll + row.draftPayroll > 0 && <small className="mg-partial-label">Parcial</small>}
+                          </td>
+                          <td>
+                            <span className={`mg-margin ${row.margin < 0 ? 'negative' : ''}`}>{formatPercent(row.margin)}</span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {!ranking.length && <ChartEmpty message="Nenhum técnico encontrado neste recorte." />}
+                </div>
+                <footer className="mg-table-footer">
+                  <span>
+                    {ranking.length ? `${(currentPage - 1) * PAGE_SIZE + 1}–${Math.min(currentPage * PAGE_SIZE, ranking.length)} de ${ranking.length}` : '0'} técnicos
+                  </span>
+                  <div>
+                    <button className="mg-button" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}>
+                      Anterior
+                    </button>
+                    <span>
+                      {currentPage} / {pageCount}
+                    </span>
+                    <button className="mg-button" disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)}>
+                      Próxima
+                    </button>
+                  </div>
+                </footer>
+                <p className="mg-card-footnote">Técnico com serviços e sem folha fechada aparece como parcial: o custo dele ainda não entrou na conta.</p>
+              </Panel>
+            </section>
+          )}
+        </div>
       </div>
     </AppShell>
   );
