@@ -170,7 +170,11 @@ function readSeen() {
   }
 }
 
-function NewsButton({ compact }: { compact: boolean }) {
+/** The quiet look of the top bar: no border, a soft tint on hover, so the account stays the strongest thing there. */
+const QUIET_BUTTON_CLASS =
+  'h-10 gap-2 rounded-lg px-3.5 text-[15px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground';
+
+function NewsButton({ compact, quiet }: { compact: boolean; quiet: boolean }) {
   const [posts, setPosts] = useState<NewsPost[] | null>(null);
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(false);
@@ -203,17 +207,17 @@ function NewsButton({ compact }: { compact: boolean }) {
     <>
       <Button
         type="button"
-        variant="outline"
+        variant={quiet ? 'ghost' : 'outline'}
         size="sm"
         onClick={show}
-        className="relative"
+        className={quiet ? `relative ${QUIET_BUTTON_CLASS}` : 'relative'}
         title="Novidades"
       >
         <Megaphone className="h-4 w-4" />
         {!compact && <span>Novidades</span>}
         {unread && (
           <span
-            className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-emerald-500"
+            className={`absolute h-2.5 w-2.5 rounded-full bg-emerald-500 ring-2 ring-card ${quiet ? 'right-2.5 top-2' : '-right-1 -top-1'}`}
             aria-label="Há novidades"
           />
         )}
@@ -306,12 +310,20 @@ function RecentTickets({ basePath, version }: { basePath: string; version: numbe
   );
 }
 
-function ReportButton({ compact, basePath }: { compact: boolean; basePath: string }) {
+function ReportButton({ compact, basePath, quiet }: { compact: boolean; basePath: string; quiet: boolean }) {
   const [open, setOpen] = useState(false);
   const [version, setVersion] = useState(0);
   return (
     <>
-      <Button type="button" variant="outline" size="sm" onClick={() => setOpen(true)} title="Suporte" aria-label="Suporte">
+      <Button
+        type="button"
+        variant={quiet ? 'ghost' : 'outline'}
+        size="sm"
+        onClick={() => setOpen(true)}
+        title="Suporte"
+        aria-label="Suporte"
+        className={quiet ? QUIET_BUTTON_CLASS : undefined}
+      >
         <LifeBuoy className="h-4 w-4" />
         {!compact && <span>Suporte</span>}
       </Button>
@@ -352,16 +364,19 @@ function ReportButton({ compact, basePath }: { compact: boolean; basePath: strin
 /** News and support, in the organization system's top bar. */
 export function SupportActions({
   compact = false,
+  quiet = false,
   basePath = '/admin/suporte',
 }: {
   compact?: boolean;
+  /** Borderless buttons, for the desktop top bar. */
+  quiet?: boolean;
   /** Where the support center lives for this user: /admin/suporte or /dashboard/suporte. */
   basePath?: string;
 }): ReactNode {
   return (
-    <div className="flex items-center gap-2">
-      <NewsButton compact={compact} />
-      <ReportButton compact={compact} basePath={basePath} />
+    <div className={`flex items-center ${quiet ? 'gap-1' : 'gap-2'}`}>
+      <NewsButton compact={compact} quiet={quiet} />
+      <ReportButton compact={compact} basePath={basePath} quiet={quiet} />
     </div>
   );
 }

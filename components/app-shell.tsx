@@ -10,6 +10,12 @@ import { resetOrganizationSettingsCache } from '@/hooks/use-organization-setting
 import { TechnicianVisibilityDialog } from '@/components/technician-visibility-dialog';
 import { MaintenanceBanner, ModuleStatusBanner, SupportActions } from '@/components/organization-support';
 import { BrandLogo, BrandMark } from '@/components/brand-logo';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { AssistantWidget } from '@/components/assistant/widget';
 import {
   BookOpen,
@@ -328,6 +334,67 @@ function ProfileSummary({ role, userName }: ProfileSummaryProps) {
   );
 }
 
+/** "Lucas Santos (dono da plataforma)" → the name, and the part in parentheses as the role line. */
+function splitAccountName(value?: string) {
+  const name = (value ?? 'Usuário').trim();
+  const match = name.match(/^(.*?)\s*\(([^)]+)\)\s*$/);
+  if (!match || !match[1]) return { name, tag: '' };
+
+  const tag = match[2].trim();
+  return { name: match[1].trim(), tag: tag.charAt(0).toUpperCase() + tag.slice(1) };
+}
+
+interface AccountMenuProps {
+  role: Role;
+  userName?: string;
+  /** Preview mode: the account is shown but there is nothing to open (the banner above has the exit). */
+  readOnly: boolean;
+  isLoggingOut: boolean;
+  onLogout: () => void;
+}
+
+/** The person's account in the top bar: avatar, name and role in one piece; signing out lives in its menu. */
+function AccountMenu({ role, userName, readOnly, isLoggingOut, onLogout }: AccountMenuProps) {
+  const { name, tag } = splitAccountName(userName);
+  const roleLabel = tag || (role === 'admin' ? 'Acesso administrativo' : 'Área do colaborador');
+  const content = (
+    <>
+      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground ring-2 ring-secondary">
+        {getInitials(name) || 'U'}
+      </span>
+      <span className="min-w-0 text-left leading-tight">
+        <span className="block max-w-56 truncate text-[15px] font-semibold text-foreground">{name}</span>
+        <span className={`mt-0.5 block max-w-56 truncate text-[13px] ${tag ? 'font-medium text-primary' : 'text-muted-foreground'}`}>{roleLabel}</span>
+      </span>
+    </>
+  );
+
+  if (readOnly) {
+    return <div className="flex items-center gap-3 rounded-xl py-1.5 pl-1.5 pr-3">{content}</div>;
+  }
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="group flex items-center gap-3 rounded-xl py-1.5 pl-1.5 pr-2.5 outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring data-[state=open]:bg-secondary"
+          aria-label={`Conta de ${name}`}
+        >
+          {content}
+          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-52">
+        <DropdownMenuItem disabled={isLoggingOut} onSelect={onLogout} className="cursor-pointer gap-2.5 py-2.5 text-sm">
+          <LogOut className="h-4 w-4" />
+          {isLoggingOut ? 'Saindo...' : 'Sair da conta'}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 interface LogoutButtonProps {
   isLoggingOut: boolean;
   onLogout: () => void;
@@ -631,10 +698,14 @@ export function AppShell({ children, role, userName }: AppShellProps) {
             <p className="truncate text-sm font-semibold leading-tight">{activeLink?.label ?? (pathname.includes('/suporte') ? 'Suporte' : 'Painel')}</p>
             <p className="mt-0.5 text-xs text-muted-foreground">{role === 'admin' ? 'Painel administrativo' : 'Painel do técnico'}</p>
           </div>
-          <div className="flex items-center gap-3">
-            {previewMode ? null : <SupportActions basePath={role === 'admin' ? '/admin/suporte' : '/dashboard/suporte'} />}
-            <ProfileSummary role={role} userName={userName} />
-            {previewMode ? null : <LogoutButton isLoggingOut={isLoggingOut} onLogout={handleLogout} />}
+          <div className="flex items-center gap-1.5">
+            {previewMode ? null : (
+              <>
+                <SupportActions quiet basePath={role === 'admin' ? '/admin/suporte' : '/dashboard/suporte'} />
+                <span className="mx-2.5 h-8 w-px bg-border" aria-hidden="true" />
+              </>
+            )}
+            <AccountMenu role={role} userName={userName} readOnly={previewMode} isLoggingOut={isLoggingOut} onLogout={handleLogout} />
           </div>
         </header>
         <div className="app-content">
