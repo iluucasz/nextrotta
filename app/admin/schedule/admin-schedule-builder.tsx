@@ -38,6 +38,17 @@ import {
   normalizeTimeInput,
   parseManualAttendanceNote,
 } from '@/lib/schedule-display';
+import {
+  ModalNotice,
+  ModalSection,
+  MODAL_BODY_CLASS,
+  MODAL_DESCRIPTION_CLASS,
+  MODAL_FOOTER_CLASS,
+  MODAL_HEADER_CLASS,
+  MODAL_TITLE_CLASS,
+  SegmentedControl,
+  SummaryBand,
+} from '@/components/modal-kit';
 import { HourBankNumbers, HourBankRows, TodayStrip, WeekOverview, type TodayTechnician, type WeekCell, type WeekRow } from './schedule-overview';
 import {
   buildPersistedSchedule,
@@ -1112,11 +1123,10 @@ function DayKeyChecklist({ value, onToggle }: DayKeyChecklistProps) {
 
 function BuilderActionCard({ eyebrow, title, value, buttonLabel = 'Editar', onClick }: BuilderActionCardProps) {
   return (
-    <section className="rounded-lg border border-border/70 bg-background p-3">
+    <section className="rounded-xl border border-border bg-card p-4" aria-label={eyebrow}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">{eyebrow}</p>
-          <h4 className="mt-1 text-sm font-semibold text-foreground">{title}</h4>
+          <h4 className="text-sm font-semibold text-foreground">{title}</h4>
           <p className="mt-1 truncate text-sm text-muted-foreground">{value}</p>
         </div>
         <Button type="button" variant="outline" size="sm" onClick={onClick}>
@@ -1227,6 +1237,124 @@ export function AdminScheduleBuilderPage() {
   const { settings, loading } = useOrganizationSettings();
   if (loading) return <LoadingShell role="admin" />;
   return <AdminScheduleBuilderContent organizationSettings={settings} />;
+}
+
+const ATTENDANCE_OPTIONS: Array<{ value: AttendanceStatus; label: string }> = [
+  { value: 'not_marked', label: 'Não lançar' },
+  { value: 'worked', label: 'Trabalhou' },
+  { value: 'day_off', label: 'Folgou' },
+  { value: 'missed', label: 'Faltou' },
+  { value: 'justified', label: 'Justificou' },
+  { value: 'cancelled_service', label: 'Serviço cancelado' },
+];
+
+const toolbarFieldClass = 'min-h-10 w-44 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring';
+const attendanceFieldClass = 'min-h-9 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring';
+
+/** One row per technician (and day, in the month view): what happened, the real times and the resulting balance. */
+function AttendanceTable({
+  drafts,
+  showDate,
+  emptyText,
+  onChange,
+}: {
+  drafts: AttendanceDraft[];
+  showDate: boolean;
+  emptyText: string;
+  onChange: (key: string, changes: Partial<AttendanceDraft>) => void;
+}) {
+  if (!drafts.length) {
+    return <p className="rounded-xl border border-dashed border-border px-4 py-10 text-center text-sm text-muted-foreground">{emptyText}</p>;
+  }
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[900px] text-sm">
+        <thead className="bg-transparent">
+          <tr className="text-left text-[13px] text-muted-foreground">
+            {showDate ? <th className="pb-2 pr-4 font-normal">Data</th> : null}
+            <th className="pb-2 pr-4 font-normal">Técnico</th>
+            <th className="pb-2 pr-4 font-normal">Situação</th>
+            <th className="pb-2 pr-4 font-normal">Entrada</th>
+            <th className="pb-2 pr-4 font-normal">Saída</th>
+            <th className="pb-2 pr-4 font-normal">Observação</th>
+            <th className="pb-2 text-right font-normal">Saldo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {drafts.map((draft) => {
+            const withHours = attendanceHasHours(draft.attendance_status);
+            const balance = getAttendanceBalance(draft);
+            const planned = draft.planned_hours > 0 ? ` · ${formatTimeRange(draft.planned_start_time, draft.planned_end_time)} · ${formatHours(draft.planned_hours)}` : '';
+
+            return (
+              <tr key={draft.key} className="border-t border-border">
+                {showDate ? <td className="whitespace-nowrap py-3 pr-4 text-muted-foreground">{formatDate(draft.date)}</td> : null}
+                <td className="py-3 pr-4">
+                  <p className="font-medium text-foreground">{draft.technician_name}</p>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">{draft.schedule_status ? getStatusLabel(draft.schedule_status) : 'Sem escala'}{planned}</p>
+                </td>
+                <td className="py-3 pr-4">
+                  <select
+                    value={draft.attendance_status}
+                    onChange={(event) => {
+                      const status = event.target.value as AttendanceStatus;
+                      onChange(draft.key, {
+                        attendance_status: status,
+                        actual_start_time: draft.actual_start_time || draft.planned_start_time || scheduleRules.defaultStartTime,
+                        actual_end_time: draft.actual_end_time || draft.planned_end_time || scheduleRules.defaultEndTime,
+                      });
+                    }}
+                    className={`${attendanceFieldClass} w-44`}
+                    aria-label={`Situação de ${draft.technician_name}`}
+                  >
+                    {ATTENDANCE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                </td>
+                <td className="py-3 pr-4">
+                  {withHours ? (
+                    <input type="time" value={draft.actual_start_time} onChange={(event) => onChange(draft.key, { actual_start_time: event.target.value })} className={`${attendanceFieldClass} w-28`} aria-label={`Entrada de ${draft.technician_name}`} />
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </td>
+                <td className="py-3 pr-4">
+                  {withHours ? (
+                    <input type="time" value={draft.actual_end_time} onChange={(event) => onChange(draft.key, { actual_end_time: event.target.value })} className={`${attendanceFieldClass} w-28`} aria-label={`Saída de ${draft.technician_name}`} />
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </td>
+                <td className="py-3 pr-4">
+                  <input
+                    value={draft.notes}
+                    onChange={(event) => onChange(draft.key, { notes: event.target.value })}
+                    placeholder="Ex.: troca, curso, atestado"
+                    className={`${attendanceFieldClass} w-52`}
+                    aria-label={`Observação de ${draft.technician_name}`}
+                  />
+                </td>
+                <td className="py-3 text-right">
+                  {isAttendanceSelected(draft) ? (
+                    <>
+                      <p className={`font-semibold tabular-nums ${balance < 0 ? 'text-rose-600' : balance > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                        {balance > 0 ? '+' : ''}{formatHours(balance)}
+                      </p>
+                      <p className="mt-0.5 text-[13px] text-muted-foreground">{getAttendanceResultLabel(draft, getAttendanceWorkedHours(draft))}</p>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">-</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
 }
 
 function AdminScheduleBuilderContent({ organizationSettings }: { organizationSettings: OrganizationSettings }) {
@@ -3282,12 +3410,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
-          <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Folgas e ajustes</DialogTitle>
-            <DialogDescription>Exceções à semana padrão: feriados, a folga fixa de um técnico, ou um turno ou folga de um dia só.</DialogDescription>
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Folgas e ajustes</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Exceções à semana padrão: feriados, a folga fixa de um técnico, ou um turno ou folga de um dia só.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-6 py-6 sm:px-8">
             <section className="rounded-lg border border-border/70 bg-background p-4">
               <p className="mb-3 text-sm font-semibold text-foreground">Nova exceção</p>
 
@@ -3422,7 +3550,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </p>
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-4">
+          <DialogFooter className={MODAL_FOOTER_CLASS}>
             <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
           </DialogFooter>
         </div>
@@ -3432,12 +3560,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     if (builderDialog === 'scope') {
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
-          <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Escopo da escala</DialogTitle>
-            <DialogDescription>Escolha quem entra nesta geração.</DialogDescription>
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Escopo da escala</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Escolha quem entra nesta geração.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className={MODAL_BODY_CLASS}>
             <div className="grid gap-4">
               <label className="text-sm md:max-w-sm">
                 <span className="mb-1.5 block font-medium">Aplicar em</span>
@@ -3455,7 +3583,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-4">
+          <DialogFooter className={MODAL_FOOTER_CLASS}>
             <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
           </DialogFooter>
         </div>
@@ -3465,12 +3593,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     if (builderDialog === 'groups') {
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
-          <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Grupos</DialogTitle>
-            <DialogDescription>Crie grupos para usar na cobertura com equipe selecionada.</DialogDescription>
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Grupos</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Crie grupos para usar na cobertura com equipe selecionada.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className={MODAL_BODY_CLASS}>
             <div className="mb-3 flex justify-end">
               <Button type="button" variant="outline" onClick={addGroup}>
                 <Plus className="h-4 w-4" />
@@ -3506,7 +3634,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-4">
+          <DialogFooter className={MODAL_FOOTER_CLASS}>
             <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
           </DialogFooter>
         </div>
@@ -3516,12 +3644,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     if (builderDialog === 'recurring') {
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
-          <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Recorrências</DialogTitle>
-            <DialogDescription>Regras fixas por técnico e dia da semana.</DialogDescription>
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Recorrências</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Regras fixas por técnico e dia da semana.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className={MODAL_BODY_CLASS}>
             <div className="mb-3 flex justify-end">
               <Button type="button" variant="outline" onClick={addRecurringRule}>
                 <Plus className="h-4 w-4" />
@@ -3600,7 +3728,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-4">
+          <DialogFooter className={MODAL_FOOTER_CLASS}>
             <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
           </DialogFooter>
         </div>
@@ -3610,12 +3738,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     if (builderDialog === 'rotation') {
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
-          <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Equipes que se alternam</DialogTitle>
-            <DialogDescription>Duas equipes se alternam no mesmo dia da semana: uma trabalha numa semana, e a outra na seguinte.</DialogDescription>
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Equipes que se alternam</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Duas equipes se alternam no mesmo dia da semana: uma trabalha numa semana, e a outra na seguinte.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className={MODAL_BODY_CLASS}>
             <div className="mb-3 flex justify-end">
               <Button type="button" variant="outline" onClick={addRotationGroup}>
                 <Plus className="h-4 w-4" />
@@ -3713,7 +3841,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-4">
+          <DialogFooter className={MODAL_FOOTER_CLASS}>
             <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
           </DialogFooter>
         </div>
@@ -3723,12 +3851,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     if (builderDialog === 'general-days-off') {
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
-          <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Folga geral</DialogTitle>
-            <DialogDescription>Datas sem expediente para todo o escopo.</DialogDescription>
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Folga geral</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Datas sem expediente para todo o escopo.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className={MODAL_BODY_CLASS}>
             <div className="mb-3 flex justify-end">
               <Button type="button" variant="outline" onClick={addGeneralDayOff}>
                 <Plus className="h-4 w-4" />
@@ -3764,7 +3892,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-4">
+          <DialogFooter className={MODAL_FOOTER_CLASS}>
             <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
           </DialogFooter>
         </div>
@@ -3774,12 +3902,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     if (builderDialog === 'overrides') {
       return (
         <div className="flex max-h-[88vh] min-h-0 flex-col">
-          <DialogHeader className="border-b border-border/70 px-5 py-4">
-            <DialogTitle>Ajustes individuais</DialogTitle>
-            <DialogDescription>Folgas ou turnos pontuais por técnico.</DialogDescription>
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Ajustes individuais</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Folgas ou turnos pontuais por técnico.</DialogDescription>
           </DialogHeader>
 
-          <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          <div className={MODAL_BODY_CLASS}>
             <div className="mb-3 flex justify-end">
               <Button type="button" variant="outline" onClick={addOverride}>
                 <Plus className="h-4 w-4" />
@@ -3850,7 +3978,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </div>
           </div>
 
-          <DialogFooter className="border-t border-border/70 px-5 py-4">
+          <DialogFooter className={MODAL_FOOTER_CLASS}>
             <Button type="button" onClick={() => setBuilderDialog(null)}>Concluir</Button>
           </DialogFooter>
         </div>
@@ -3991,14 +4119,14 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       <Dialog open={isHourBankDetailDialogOpen} onOpenChange={setIsHourBankDetailDialogOpen}>
         <DialogContent className="max-h-[90vh] overflow-hidden p-0 sm:max-w-7xl">
           <div className="flex max-h-[90vh] min-h-0 flex-col">
-            <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
-              <DialogTitle className="text-xl">Banco de horas detalhado</DialogTitle>
-              <DialogDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            <DialogHeader className={MODAL_HEADER_CLASS}>
+              <DialogTitle className={MODAL_TITLE_CLASS}>Banco de horas detalhado</DialogTitle>
+              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
                 Somente visualização — situação, escala prevista, entrada e saída reais e saldo por técnico e dia.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 sm:px-7">
+            <div className={MODAL_BODY_CLASS}>
               <div className="mb-4 flex flex-wrap items-end gap-2 rounded-lg border border-border/70 bg-card/70 p-4">
                 <div className="flex h-11 items-center rounded-md border border-border bg-background p-1">
                   {hourBankPeriodOptions.map((option) => (
@@ -4092,7 +4220,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
               <div className="overflow-x-auto rounded-lg border border-border/70 bg-background">
                 <table className="w-full min-w-[1160px] text-sm">
-                  <thead className="bg-secondary/60 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  <thead className="bg-transparent text-left text-[13px] font-normal text-muted-foreground">
                     <tr>
                       <th className="px-3 py-3">Data</th>
                       <th className="px-3 py-3">Situação</th>
@@ -4138,7 +4266,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               </div>
             </div>
 
-            <DialogFooter className="border-t border-border/70 bg-background/95 px-6 py-4 sm:px-7">
+            <DialogFooter className={MODAL_FOOTER_CLASS}>
               <Button type="button" variant="outline" onClick={() => setIsHourBankDetailDialogOpen(false)}>
                 Fechar
               </Button>
@@ -4150,96 +4278,85 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       <Dialog open={isFormDialogOpen} onOpenChange={handleFormDialogChange}>
         <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-6xl">
           <div className="flex max-h-[92vh] min-h-0 flex-col">
-            <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
-              <DialogTitle className="text-xl">Montar escala</DialogTitle>
-              <DialogDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            <DialogHeader className={MODAL_HEADER_CLASS}>
+              <DialogTitle className={MODAL_TITLE_CLASS}>Montar escala</DialogTitle>
+              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
                 Defina período, equipe e regra semanal. Ao salvar, a escala aberta do período é substituída e os dias já concluídos são preservados.
               </DialogDescription>
             </DialogHeader>
 
-            <form id="schedule-builder-form" onSubmit={handleSubmit} className="min-h-0 flex-1 overflow-y-auto px-6 py-6 sm:px-7">
-              {formError ? <div className="mb-5 rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{formError}</div> : null}
+            <form id="schedule-builder-form" onSubmit={handleSubmit} className={MODAL_BODY_CLASS}>
+              {formError ? <div className="mb-5"><ModalNotice tone="error">{formError}</ModalNotice></div> : null}
 
-              <div className="grid gap-4 xl:grid-cols-[1fr_0.85fr]">
-                <section className="rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
-                  <div className="mb-4 space-y-1">
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Período</p>
-                    <h3 className="text-base font-semibold text-foreground">Competência da escala</h3>
-                  </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <SegmentedControl
+                  label="Período da escala"
+                  value={formData.period_mode}
+                  onChange={(value) => setFormData((current) => ({ ...current, period_mode: value }))}
+                  options={[
+                    { value: 'day', label: 'Diário' },
+                    { value: 'week', label: 'Semanal' },
+                    { value: 'month', label: 'Mensal' },
+                    { value: 'year', label: 'Anual' },
+                  ]}
+                />
 
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <label className="text-sm">
-                      <span className="mb-1.5 block font-medium">Modo</span>
-                      <select value={formData.period_mode} onChange={(event) => setFormData((current) => ({ ...current, period_mode: event.target.value as SchedulePeriodMode }))} className={inputClassName}>
-                        <option value="day">Diário</option>
-                        <option value="week">Semanal</option>
-                        <option value="month">Mensal</option>
-                        <option value="year">Anual</option>
-                      </select>
-                    </label>
+                {formData.period_mode === 'day' || formData.period_mode === 'week' ? (
+                  <input
+                    type="date"
+                    value={formData.date}
+                    onChange={(event) => setFormData((current) => ({ ...current, date: event.target.value }))}
+                    className={toolbarFieldClass}
+                    aria-label={formData.period_mode === 'day' ? 'Data' : 'Semana de referência'}
+                  />
+                ) : null}
 
-                    {formData.period_mode === 'day' || formData.period_mode === 'week' ? (
-                      <label className="text-sm">
-                        <span className="mb-1.5 block font-medium">{formData.period_mode === 'day' ? 'Data' : 'Semana de referência'}</span>
-                        <input type="date" value={formData.date} onChange={(event) => setFormData((current) => ({ ...current, date: event.target.value }))} className={inputClassName} />
-                      </label>
-                    ) : null}
+                {formData.period_mode === 'month' ? (
+                  <select value={formData.month} onChange={(event) => setFormData((current) => ({ ...current, month: Number(event.target.value) }))} className={toolbarFieldClass} aria-label="Mês">
+                    {monthNames.map((month, index) => (
+                      <option key={month} value={index + 1}>{month}</option>
+                    ))}
+                  </select>
+                ) : null}
 
-                    {formData.period_mode === 'month' ? (
-                      <label className="text-sm">
-                        <span className="mb-1.5 block font-medium">Mês</span>
-                        <select value={formData.month} onChange={(event) => setFormData((current) => ({ ...current, month: Number(event.target.value) }))} className={inputClassName}>
-                          {monthNames.map((month, index) => (
-                            <option key={month} value={index + 1}>{month}</option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
+                {formData.period_mode === 'month' || formData.period_mode === 'year' ? (
+                  <select value={formData.year} onChange={(event) => setFormData((current) => ({ ...current, year: Number(event.target.value) }))} className={`${toolbarFieldClass} w-28`} aria-label="Ano">
+                    {Array.from({ length: 6 }, (_, index) => Number(brasiliaDateKey().slice(0, 4)) - 1 + index).map((year) => (
+                      <option key={year} value={year}>{year}</option>
+                    ))}
+                  </select>
+                ) : null}
 
-                    {formData.period_mode === 'month' || formData.period_mode === 'year' ? (
-                      <label className="text-sm">
-                        <span className="mb-1.5 block font-medium">Ano</span>
-                        <select value={formData.year} onChange={(event) => setFormData((current) => ({ ...current, year: Number(event.target.value) }))} className={inputClassName}>
-                          {Array.from({ length: 6 }, (_, index) => Number(brasiliaDateKey().slice(0, 4)) - 1 + index).map((year) => (
-                            <option key={year} value={year}>{year}</option>
-                          ))}
-                        </select>
-                      </label>
-                    ) : null}
-                  </div>
+                <span className="text-sm text-muted-foreground">
+                  {formatDate(range.startDate)} até {formatDate(range.endDate)}
+                </span>
 
-                  <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-900">
-                    {formatDate(range.startDate)} até {formatDate(range.endDate)}
-                  </div>
-
-                  {lastRules ? (
-                    <div className="mt-3">
-                      <Button type="button" variant="outline" size="sm" onClick={applyLastRules}>
-                        <CalendarDays className="h-4 w-4" />
-                        Usar as regras da última escala salva
-                      </Button>
-                      <p className="mt-1 text-xs text-muted-foreground">Traz horários, semana, equipes que se alternam e folgas fixas. Feriados e ajustes de um dia não são copiados.</p>
-                    </div>
-                  ) : null}
-                </section>
-
-                <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">Resumo</p>
-                  <div className="mt-3 flex flex-wrap gap-2 text-sm text-emerald-950">
-                    <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{scopeSummary}</span>
-                    <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(generationPreview.totalRows, 'linha prevista', 'linhas previstas')}</span>
-                    <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{optionalAdjustmentsCount} ajustes</span>
-                  </div>
-                </section>
+                {lastRules ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={applyLastRules}
+                    className="sm:ml-auto"
+                    title="Traz horários, semana, equipes que se alternam e folgas fixas. Feriados e ajustes de um dia não são copiados."
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                    Usar as regras da última escala salva
+                  </Button>
+                ) : null}
               </div>
 
-              <section className="mt-4 rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
-                <div className="mb-3 flex items-center justify-between gap-3">
-                  <div>
-                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Configurações</p>
-                    <h3 className="text-base font-semibold text-foreground">Equipe e exceções</h3>
-                  </div>
-                </div>
+              <div className="mt-5">
+                <SummaryBand
+                  items={[
+                    { label: 'Quem entra', value: scopeSummary },
+                    { label: 'Linhas previstas', value: generationPreview.totalRows },
+                    { label: 'Ajustes', value: optionalAdjustmentsCount },
+                  ]}
+                />
+              </div>
+
+              <section className="mt-8 space-y-3">
+                <h3 className="text-base font-semibold text-foreground">Equipe e exceções</h3>
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <BuilderActionCard eyebrow="Equipe" title="Quem entra" value={scopeSummary} onClick={() => setBuilderDialog('scope')} />
@@ -4248,14 +4365,11 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                 </div>
               </section>
 
-              <section className="mt-4 rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
-                <div className="mb-4 space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Grade semanal</p>
-                  <h3 className="text-base font-semibold text-foreground">A semana: horário e quem trabalha</h3>
-                </div>
+              <section className="mt-8 space-y-4">
+                <h3 className="text-base font-semibold text-foreground">A semana: horário e quem trabalha</h3>
 
                 <div className="grid gap-3 xl:grid-cols-2">
-                  <div className="rounded-lg border border-border/70 bg-background p-3">
+                  <div className="rounded-xl bg-secondary/40 p-4">
                     <p className="text-sm font-semibold text-foreground">Dias úteis</p>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <label className="text-sm">
@@ -4270,7 +4384,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                     </div>
                   </div>
 
-                  <div className="rounded-lg border border-border/70 bg-background p-3">
+                  <div className="rounded-xl bg-secondary/40 p-4">
                     <p className="text-sm font-semibold text-foreground">Fim de semana</p>
                     <div className="mt-3 grid gap-3 md:grid-cols-2">
                       <label className="text-sm">
@@ -4296,7 +4410,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
                 <div className="mt-3 overflow-x-auto rounded-lg border border-border/70 bg-background">
                   <table className="w-full min-w-[720px] border-collapse text-sm">
-                    <thead className="bg-secondary/60 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                    <thead className="bg-transparent text-left text-[13px] font-normal text-muted-foreground">
                       <tr>
                         <th className="px-3 py-3">Dia da semana</th>
                         <th className="px-3 py-3">Quem trabalha</th>
@@ -4332,11 +4446,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                 </div>
               </section>
 
-              <section className="mt-4 rounded-lg border border-border/70 bg-card/70 p-4 shadow-sm">
-                <div className="mb-3 space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Prévia</p>
-                  <h3 className="text-base font-semibold text-foreground">Como a escala vai ficar</h3>
-                </div>
+              <section className="mt-8 space-y-3">
+                <h3 className="text-base font-semibold text-foreground">Como a escala vai ficar</h3>
 
                 {previewDays ? (
                   <>
@@ -4398,7 +4509,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               </section>
             </form>
 
-            <DialogFooter className="border-t border-border/70 bg-background/95 px-6 py-4 sm:px-7">
+            <DialogFooter className={MODAL_FOOTER_CLASS}>
               <p className="mr-auto text-xs text-muted-foreground sm:max-w-xl">
                 {replaceInfo.replaced || replaceInfo.kept
                   ? `Ao salvar, ${formatCount(replaceInfo.replaced, 'linha aberta', 'linhas abertas')} deste período serão substituídas e ${formatCount(replaceInfo.kept, 'linha concluída ou apontada', 'linhas concluídas ou apontadas')} ficam como estão.`
@@ -4416,412 +4527,211 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       </Dialog>
 
       <Dialog open={isAttendanceDialogOpen} onOpenChange={handleAttendanceDialogChange}>
-        <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-[96vw]">
+        <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-6xl">
           <div className="flex max-h-[92vh] min-h-0 flex-col">
-            <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
-              <DialogTitle className="text-xl">Apontar horas</DialogTitle>
-              <DialogDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
-                Lance um dia específico, feche o mês inteiro ou importe os apontamentos por planilha.
+            <DialogHeader className={MODAL_HEADER_CLASS}>
+              <DialogTitle className={MODAL_TITLE_CLASS}>Apontar horas</DialogTitle>
+              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
+                Registre quem trabalhou, folgou ou faltou: um dia, o mês inteiro ou por planilha.
               </DialogDescription>
             </DialogHeader>
 
-            <form id="attendance-form" onSubmit={handleAttendanceSubmit} className="min-h-0 flex-1 overflow-y-auto px-6 py-5 sm:px-7">
-              {attendanceError ? <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{attendanceError}</div> : null}
-              {attendanceMessage ? <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{attendanceMessage}</div> : null}
+            <form id="attendance-form" onSubmit={handleAttendanceSubmit} className={`${MODAL_BODY_CLASS} space-y-5`}>
+              {attendanceError ? <ModalNotice tone="error">{attendanceError}</ModalNotice> : null}
+              {attendanceMessage ? <ModalNotice tone="success">{attendanceMessage}</ModalNotice> : null}
 
-              <div className="mb-4 grid gap-3 lg:grid-cols-[16rem_1fr]">
-                <section className="rounded-lg border border-border/70 bg-card/70 p-4">
-                  <label className="text-sm">
-                    <span className="mb-1.5 block font-medium">Modo</span>
-                    <select value={attendanceMode} onChange={(event) => handleAttendanceModeChange(event.target.value as AttendanceMode)} className={inputClassName}>
-                      <option value="day">Diário</option>
-                      <option value="month">Mensal</option>
-                      <option value="spreadsheet">Horas por planilha</option>
-                    </select>
-                  </label>
+              <div className="flex flex-wrap items-center gap-3">
+                <SegmentedControl
+                  label="Como apontar"
+                  value={attendanceMode}
+                  onChange={handleAttendanceModeChange}
+                  options={[
+                    { value: 'day', label: 'Dia' },
+                    { value: 'month', label: 'Mês' },
+                    { value: 'spreadsheet', label: 'Planilha' },
+                  ]}
+                />
 
-                  {attendanceMode === 'spreadsheet' ? (
-                    <div className="mt-3">
-                      <label className="flex min-h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-input bg-background px-3 text-sm font-medium transition hover:bg-secondary">
-                        <Upload className="h-4 w-4" />
-                        {isAttendanceImportParsing ? 'Lendo planilha...' : 'Selecionar planilha de horas'}
-                        <input type="file" accept=".xlsx,.xls,.csv" onChange={handleAttendanceImportFile} className="sr-only" />
-                      </label>
-                      <Button type="button" variant="outline" onClick={handleDownloadAttendanceImportTemplate} className="mt-2 w-full">
-                        <Download className="h-4 w-4" />
-                        Baixar modelo XLSX
-                      </Button>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {attendanceImportFileName || 'Use a aba Banco de Dados com Data, Funcionário, Hora Início, Hora Final e Horas Trabalhadas.'}
-                      </p>
-                    </div>
-                  ) : (
-                    <>
-                      <label className="mt-3 block text-sm">
-                        <span className="mb-1.5 block font-medium">{attendanceMode === 'day' ? 'Data do apontamento' : 'Mês do apontamento'}</span>
-                        {attendanceMode === 'day' ? (
-                          <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} className={inputClassName} />
-                        ) : (
-                          <input type="month" value={attendanceMonth} onChange={(event) => setAttendanceMonth(event.target.value)} className={inputClassName} />
-                        )}
-                      </label>
-                      <Button type="button" variant="outline" onClick={markAttendanceAutomatically} className="mt-3 w-full">
-                        <Clock3 className="h-4 w-4" />
-                        Marcar automático
-                      </Button>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {attendanceMode === 'day'
-                          ? 'Automático marca todos com o horário previsto.'
-                          : 'Automático marca todos os apontamentos do mês com o horário previsto.'}
-                      </p>
-                    </>
-                  )}
-                </section>
+                {attendanceMode === 'day' ? (
+                  <input type="date" value={attendanceDate} onChange={(event) => setAttendanceDate(event.target.value)} className={toolbarFieldClass} aria-label="Data do apontamento" />
+                ) : attendanceMode === 'month' ? (
+                  <input type="month" value={attendanceMonth} onChange={(event) => setAttendanceMonth(event.target.value)} className={toolbarFieldClass} aria-label="Mês do apontamento" />
+                ) : (
+                  <>
+                    <label className="inline-flex min-h-10 cursor-pointer items-center gap-2 rounded-lg border border-input bg-background px-4 text-sm font-medium transition hover:bg-secondary">
+                      <Upload className="h-4 w-4" />
+                      {isAttendanceImportParsing ? 'Lendo planilha...' : attendanceImportFileName ? 'Trocar planilha' : 'Escolher planilha'}
+                      <input type="file" accept=".xlsx,.xls,.csv" onChange={handleAttendanceImportFile} className="sr-only" />
+                    </label>
+                    <Button type="button" variant="ghost" onClick={handleDownloadAttendanceImportTemplate} className="text-muted-foreground">
+                      <Download className="h-4 w-4" />
+                      Baixar modelo XLSX
+                    </Button>
+                  </>
+                )}
 
-                <section className="rounded-lg border border-emerald-200 bg-emerald-50 p-4">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-800">{attendanceMode === 'day' ? 'Resumo do dia' : attendanceMode === 'month' ? 'Resumo do mês' : 'Resumo da importação'}</p>
-                  <div className="mt-3 flex flex-wrap gap-2 text-sm text-emerald-950">
-                    {attendanceMode === 'day' ? (
-                      <>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(selectedAttendanceDrafts.length, 'técnico', 'técnicos')}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Previsto: {formatHours(attendancePlannedTotal)}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Realizado: {formatHours(attendanceWorkedTotal)}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Saldo: {formatHours(attendanceBalance)}</span>
-                      </>
-                    ) : attendanceMode === 'month' ? (
-                      <>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(selectedMonthlyAttendanceDrafts.length, 'apontamento', 'apontamentos')}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(monthlyAttendanceDays, 'dia escalado', 'dias escalados')}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Previsto: {formatHours(monthlyAttendancePlannedTotal)}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Realizado: {formatHours(monthlyAttendanceWorkedTotal)}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Saldo: {formatHours(monthlyAttendanceBalance)}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(attendanceImportRows.length, 'linha válida', 'linhas válidas')}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">{formatCount(attendanceImportTechnicianCount, 'técnico', 'técnicos')}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Período: {attendanceImportPeriodLabel}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Horas: {formatHours(attendanceImportWorkedTotal)}</span>
-                        <span className="rounded-md border border-emerald-200 bg-white/80 px-3 py-2">Erros: {attendanceImportErrors.length}</span>
-                      </>
-                    )}
-                  </div>
-                </section>
+                {attendanceMode !== 'spreadsheet' ? (
+                  <Button type="button" variant="outline" onClick={markAttendanceAutomatically} className="sm:ml-auto" title="Lança todos com o horário previsto na escala">
+                    <Clock3 className="h-4 w-4" />
+                    Marcar automático
+                  </Button>
+                ) : attendanceImportFileName ? (
+                  <span className="truncate text-sm text-muted-foreground sm:ml-auto">{attendanceImportFileName}</span>
+                ) : null}
               </div>
 
               {attendanceMode === 'day' ? (
-              <div className="overflow-x-auto rounded-lg border border-border/70 bg-background">
-                <table className="w-full min-w-[1160px] text-sm">
-                  <thead className="bg-secondary/60 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    <tr>
-                      <th className="px-3 py-3">Situação</th>
-                      <th className="px-3 py-3">Técnico</th>
-                      <th className="px-3 py-3">Escala</th>
-                      <th className="px-3 py-3">Previsto</th>
-                      <th className="px-3 py-3">Entrada</th>
-                      <th className="px-3 py-3">Saída</th>
-                      <th className="px-3 py-3">Observação</th>
-                      <th className="px-3 py-3">Saldo</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {attendanceDrafts.map((draft) => {
-                      const hoursWorked = getAttendanceWorkedHours(draft);
-                      const balance = getAttendanceBalance(draft);
-                      const balanceTone = balance > 0 ? 'success' : balance < 0 ? 'danger' : 'neutral';
-                      const plannedLabel = draft.planned_hours > 0
-                        ? `${formatTimeRange(draft.planned_start_time, draft.planned_end_time)} • ${formatHours(draft.planned_hours)}`
-                        : 'Sem expediente previsto';
-
-                      return (
-                        <tr key={draft.key} className="border-t border-border/70">
-                          <td className="px-3 py-3">
-                            <select
-                              value={draft.attendance_status}
-                              onChange={(event) => {
-                                const status = event.target.value as AttendanceStatus;
-                                updateAttendanceDraft(draft.key, {
-                                  attendance_status: status,
-                                  actual_start_time: draft.actual_start_time || draft.planned_start_time || scheduleRules.defaultStartTime,
-                                  actual_end_time: draft.actual_end_time || draft.planned_end_time || scheduleRules.defaultEndTime,
-                                });
-                              }}
-                              className="min-h-10 w-44 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
-                            >
-                              <option value="not_marked">Não lançar</option>
-                              <option value="worked">Trabalhou</option>
-                              <option value="day_off">Folgou</option>
-                              <option value="missed">Faltou</option>
-                              <option value="justified">Justificou</option>
-                              <option value="cancelled_service">Serviço cancelado</option>
-                            </select>
-                          </td>
-                          <td className="px-3 py-3 font-medium text-foreground">{draft.technician_name}</td>
-                          <td className="px-3 py-3">
-                            <StatusBadge tone={draft.schedule_status === 'cancelled' ? 'warning' : draft.schedule_status === 'completed' ? 'success' : draft.schedule_status === 'scheduled' ? 'info' : 'neutral'}>
-                              {draft.schedule_status ? getStatusLabel(draft.schedule_status) : 'Sem escala'}
-                            </StatusBadge>
-                          </td>
-                          <td className="px-3 py-3 text-muted-foreground">{plannedLabel}</td>
-                          <td className="px-3 py-3">
-                            <input
-                              type="time"
-                              disabled={!attendanceHasHours(draft.attendance_status)}
-                              value={draft.actual_start_time}
-                              onChange={(event) => updateAttendanceDraft(draft.key, { actual_start_time: event.target.value })}
-                              className="min-h-10 w-28 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring disabled:opacity-60"
-                            />
-                          </td>
-                          <td className="px-3 py-3">
-                            <input
-                              type="time"
-                              disabled={!attendanceHasHours(draft.attendance_status)}
-                              value={draft.actual_end_time}
-                              onChange={(event) => updateAttendanceDraft(draft.key, { actual_end_time: event.target.value })}
-                              className="min-h-10 w-28 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring disabled:opacity-60"
-                            />
-                          </td>
-                          <td className="px-3 py-3">
-                            <input
-                              value={draft.notes}
-                              onChange={(event) => updateAttendanceDraft(draft.key, { notes: event.target.value })}
-                              placeholder="Ex.: troca, curso, atestado"
-                              className="min-h-10 w-52 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
-                            />
-                          </td>
-                          <td className="px-3 py-3">
-                            {isAttendanceSelected(draft) ? (
-                              <div className="space-y-1">
-                                <StatusBadge tone={balanceTone}>{balance >= 0 ? `+${formatHours(balance)}` : `-${formatHours(Math.abs(balance))}`}</StatusBadge>
-                                <p className="text-xs text-muted-foreground">{getAttendanceResultLabel(draft, hoursWorked)}</p>
-                              </div>
-                            ) : (
-                              <span className="text-muted-foreground">-</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                <SummaryBand
+                  items={[
+                    { label: 'Técnicos', value: selectedAttendanceDrafts.length },
+                    { label: 'Previsto', value: formatHours(attendancePlannedTotal) },
+                    { label: 'Realizado', value: formatHours(attendanceWorkedTotal) },
+                    { label: 'Saldo', value: `${attendanceBalance > 0 ? '+' : ''}${formatHours(attendanceBalance)}`, tone: attendanceBalance < 0 ? 'bad' : attendanceBalance > 0 ? 'good' : 'default' },
+                  ]}
+                />
               ) : attendanceMode === 'month' ? (
-                <div className="overflow-x-auto rounded-lg border border-border/70 bg-background">
-                  <table className="w-full min-w-[1320px] text-sm">
-                    <thead className="bg-secondary/60 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                      <tr>
-                        <th className="px-3 py-3">Data</th>
-                        <th className="px-3 py-3">Situação</th>
-                        <th className="px-3 py-3">Técnico</th>
-                        <th className="px-3 py-3">Escala</th>
-                        <th className="px-3 py-3">Previsto</th>
-                        <th className="px-3 py-3">Entrada</th>
-                        <th className="px-3 py-3">Saída</th>
-                        <th className="px-3 py-3">Observação</th>
-                        <th className="px-3 py-3">Saldo</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {monthlyAttendanceDrafts.length ? monthlyAttendanceDrafts.map((draft) => {
-                        const hoursWorked = getAttendanceWorkedHours(draft);
-                        const balance = getAttendanceBalance(draft);
-                        const balanceTone = balance > 0 ? 'success' : balance < 0 ? 'danger' : 'neutral';
-                        const plannedLabel = draft.planned_hours > 0
-                          ? `${formatTimeRange(draft.planned_start_time, draft.planned_end_time)} • ${formatHours(draft.planned_hours)}`
-                          : 'Sem expediente previsto';
-
-                        return (
-                          <tr key={draft.key} className="border-t border-border/70">
-                            <td className="px-3 py-3 text-muted-foreground">{formatDate(draft.date)}</td>
-                            <td className="px-3 py-3">
-                              <select
-                                value={draft.attendance_status}
-                                onChange={(event) => {
-                                  const status = event.target.value as AttendanceStatus;
-                                  updateMonthlyAttendanceDraft(draft.key, {
-                                    attendance_status: status,
-                                    actual_start_time: draft.actual_start_time || draft.planned_start_time || scheduleRules.defaultStartTime,
-                                    actual_end_time: draft.actual_end_time || draft.planned_end_time || scheduleRules.defaultEndTime,
-                                  });
-                                }}
-                                className="min-h-10 w-44 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
-                              >
-                                <option value="not_marked">Não lançar</option>
-                                <option value="worked">Trabalhou</option>
-                                <option value="day_off">Folgou</option>
-                                <option value="missed">Faltou</option>
-                                <option value="justified">Justificou</option>
-                              <option value="cancelled_service">Serviço cancelado</option>
-                              </select>
-                            </td>
-                            <td className="px-3 py-3 font-medium text-foreground">{draft.technician_name}</td>
-                            <td className="px-3 py-3">
-                              <StatusBadge tone={draft.schedule_status === 'cancelled' ? 'warning' : draft.schedule_status === 'completed' ? 'success' : draft.schedule_status === 'scheduled' ? 'info' : 'neutral'}>
-                                {draft.schedule_status ? getStatusLabel(draft.schedule_status) : 'Sem escala'}
-                              </StatusBadge>
-                            </td>
-                            <td className="px-3 py-3 text-muted-foreground">{plannedLabel}</td>
-                            <td className="px-3 py-3">
-                              <input
-                                type="time"
-                                disabled={!attendanceHasHours(draft.attendance_status)}
-                                value={draft.actual_start_time}
-                                onChange={(event) => updateMonthlyAttendanceDraft(draft.key, { actual_start_time: event.target.value })}
-                                className="min-h-10 w-28 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring disabled:opacity-60"
-                              />
-                            </td>
-                            <td className="px-3 py-3">
-                              <input
-                                type="time"
-                                disabled={!attendanceHasHours(draft.attendance_status)}
-                                value={draft.actual_end_time}
-                                onChange={(event) => updateMonthlyAttendanceDraft(draft.key, { actual_end_time: event.target.value })}
-                                className="min-h-10 w-28 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring disabled:opacity-60"
-                              />
-                            </td>
-                            <td className="px-3 py-3">
-                              <input
-                                value={draft.notes}
-                                onChange={(event) => updateMonthlyAttendanceDraft(draft.key, { notes: event.target.value })}
-                                placeholder="Ex.: troca, curso, atestado"
-                                className="min-h-10 w-52 rounded-lg border border-input bg-background px-3 text-sm outline-none transition focus:ring-2 focus:ring-ring"
-                              />
-                            </td>
-                            <td className="px-3 py-3">
-                              {isAttendanceSelected(draft) ? (
-                                <div className="space-y-1">
-                                  <StatusBadge tone={balanceTone}>{balance >= 0 ? `+${formatHours(balance)}` : `-${formatHours(Math.abs(balance))}`}</StatusBadge>
-                                  <p className="text-xs text-muted-foreground">{getAttendanceResultLabel(draft, hoursWorked)}</p>
-                                </div>
-                              ) : (
-                                <span className="text-muted-foreground">-</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      }) : (
-                        <tr>
-                          <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">Nenhuma escala ativa salva para este mês.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                <SummaryBand
+                  items={[
+                    { label: 'Apontamentos', value: selectedMonthlyAttendanceDrafts.length },
+                    { label: 'Dias escalados', value: monthlyAttendanceDays },
+                    { label: 'Previsto', value: formatHours(monthlyAttendancePlannedTotal) },
+                    { label: 'Realizado', value: formatHours(monthlyAttendanceWorkedTotal) },
+                    { label: 'Saldo', value: `${monthlyAttendanceBalance > 0 ? '+' : ''}${formatHours(monthlyAttendanceBalance)}`, tone: monthlyAttendanceBalance < 0 ? 'bad' : monthlyAttendanceBalance > 0 ? 'good' : 'default' },
+                  ]}
+                />
               ) : (
-                <div className="space-y-4">
+                <SummaryBand
+                  items={[
+                    { label: 'Linhas válidas', value: attendanceImportRows.length },
+                    { label: 'Técnicos', value: attendanceImportTechnicianCount },
+                    { label: 'Período', value: attendanceImportPeriodLabel },
+                    { label: 'Horas', value: formatHours(attendanceImportWorkedTotal) },
+                    { label: 'Erros', value: attendanceImportErrors.length, tone: attendanceImportErrors.length ? 'bad' : 'default' },
+                  ]}
+                />
+              )}
+
+              {attendanceMode === 'day' ? (
+                <AttendanceTable drafts={attendanceDrafts} showDate={false} emptyText="Nenhum técnico ativo para apontar." onChange={updateAttendanceDraft} />
+              ) : attendanceMode === 'month' ? (
+                <AttendanceTable drafts={monthlyAttendanceDrafts} showDate emptyText="Nenhuma escala salva para este mês." onChange={updateMonthlyAttendanceDraft} />
+              ) : (
+                <div className="space-y-5">
                   {attendanceImportErrors.length ? (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                    <ModalNotice tone="warning">
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-semibold">{formatCount(attendanceImportErrors.length, 'linha com erro', 'linhas com erro')}</p>
-                          <p className="mt-1 text-xs text-amber-800">Corrija as linhas abaixo na planilha e suba o arquivo novamente.</p>
+                          <p className="mt-0.5 text-[13px]">Corrija as linhas abaixo na planilha e suba o arquivo de novo.</p>
                         </div>
                         <div className="flex flex-wrap gap-2">
                           {attendanceImportErrors.length > 8 ? (
                             <Button type="button" variant="outline" size="sm" onClick={() => setShowAllAttendanceImportErrors((current) => !current)}>
-                              {showAllAttendanceImportErrors ? 'Ver menos' : `Ver todos (${attendanceImportErrors.length})`}
+                              {showAllAttendanceImportErrors ? 'Ver menos' : `Ver todas (${attendanceImportErrors.length})`}
                             </Button>
                           ) : null}
                           <Button type="button" variant="outline" size="sm" onClick={handleDownloadAttendanceImportErrors}>
                             <Download className="h-4 w-4" />
-                            Baixar erros XLSX
+                            Baixar erros
                           </Button>
                         </div>
                       </div>
 
                       <div className="mt-3 grid gap-2">
                         {visibleAttendanceImportErrors.map((item) => (
-                          <div key={item.key} className="rounded-md border border-amber-200 bg-white/80 p-3">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-semibold">Linha {item.row_number || '-'}</span>
-                              {item.sheet_name ? <span className="text-xs text-amber-700">Aba {item.sheet_name}</span> : null}
-                            </div>
-                            <p className="mt-1 font-medium text-amber-950">{item.message}</p>
-                            <div className="mt-2 grid gap-1 text-xs text-amber-900 md:grid-cols-2 xl:grid-cols-5">
-                              <span>Data: {item.values.date || '-'}</span>
-                              <span>Funcionário: {item.values.employee || '-'}</span>
-                              <span>Entrada: {item.values.start_time || '-'}</span>
-                              <span>Saída: {item.values.end_time || '-'}</span>
-                              <span>Horas: {item.values.hours_worked || '-'}</span>
-                            </div>
+                          <div key={item.key} className="rounded-lg bg-white/70 p-3">
+                            <p className="font-medium text-amber-950">
+                              Linha {item.row_number || '-'}{item.sheet_name ? ` · aba ${item.sheet_name}` : ''}: {item.message}
+                            </p>
+                            <p className="mt-1 text-[13px] text-amber-900">
+                              {[
+                                item.values.date && `Data ${item.values.date}`,
+                                item.values.employee && `Funcionário ${item.values.employee}`,
+                                item.values.start_time && `Entrada ${item.values.start_time}`,
+                                item.values.end_time && `Saída ${item.values.end_time}`,
+                                item.values.hours_worked && `Horas ${item.values.hours_worked}`,
+                              ].filter(Boolean).join(' · ') || 'Linha sem dados legíveis.'}
+                            </p>
                             {item.details.length ? (
-                              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-amber-900">
+                              <ul className="mt-1.5 list-disc space-y-0.5 pl-5 text-[13px] text-amber-900">
                                 {item.details.map((detail) => (
                                   <li key={`${item.key}-${detail}`}>{detail}</li>
                                 ))}
                               </ul>
                             ) : null}
-                            <p className="mt-2 text-xs font-medium text-amber-950">Como corrigir: {item.suggestion}</p>
+                            <p className="mt-1.5 text-[13px] font-medium text-amber-950">Como corrigir: {item.suggestion}</p>
                           </div>
                         ))}
                       </div>
-                      {hiddenAttendanceImportErrorCount ? <p className="mt-2 text-xs">Exibindo 8 primeiros erros. Ainda há {formatCount(hiddenAttendanceImportErrorCount, 'linha oculta', 'linhas ocultas')}.</p> : null}
+                      {hiddenAttendanceImportErrorCount ? <p className="mt-2 text-[13px]">Mostrando os 8 primeiros erros. Ainda há {formatCount(hiddenAttendanceImportErrorCount, 'linha oculta', 'linhas ocultas')}.</p> : null}
+                    </ModalNotice>
+                  ) : null}
+
+                  {attendanceImportRows.length ? (
+                    <ModalSection title="Linhas que serão salvas">
+                      <div className="overflow-x-auto">
+                        <table className="w-full min-w-[760px] text-sm">
+                          <thead className="bg-transparent">
+                            <tr className="text-left text-[13px] text-muted-foreground">
+                              <th className="pb-2 pr-4 font-normal">Data</th>
+                              <th className="pb-2 pr-4 font-normal">Técnico</th>
+                              <th className="pb-2 pr-4 font-normal">Entrada e saída</th>
+                              <th className="pb-2 pr-4 text-right font-normal">Horas</th>
+                              <th className="pb-2 font-normal">Previsto na escala</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {attendanceImportRows.slice(0, 160).map((row) => (
+                              <tr key={`${row.key}-${row.row_number}`} className="border-t border-border">
+                                <td className="py-3 pr-4">
+                                  <p>{formatDate(row.date)}</p>
+                                  <p className="mt-0.5 text-[13px] text-muted-foreground">linha {row.row_number}</p>
+                                </td>
+                                <td className="py-3 pr-4">
+                                  <p className="font-medium text-foreground">{row.technician_name}</p>
+                                  {normalizeText(row.imported_name) !== normalizeText(row.technician_name) ? <p className="mt-0.5 text-[13px] text-muted-foreground">na planilha: {row.imported_name}</p> : null}
+                                </td>
+                                <td className="py-3 pr-4 tabular-nums">{formatTime(row.start_time)} às {formatTime(row.end_time)}</td>
+                                <td className="py-3 pr-4 text-right font-semibold tabular-nums">{formatHours(row.hours_worked)}</td>
+                                <td className="py-3 tabular-nums text-muted-foreground">{formatTimeRange(row.planned_start_time, row.planned_end_time)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                      {attendanceImportRows.length > 160 ? (
+                        <p className="text-[13px] text-muted-foreground">Mostrando as 160 primeiras linhas. Todas as {attendanceImportRows.length} linhas válidas serão salvas.</p>
+                      ) : null}
+                    </ModalSection>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-border px-6 py-12 text-center">
+                      <p className="text-sm font-medium text-foreground">Escolha uma planilha para conferir antes de salvar</p>
+                      <p className="mx-auto mt-1 max-w-md text-sm text-muted-foreground">
+                        Aceita XLSX, XLS ou CSV. Use a aba Banco de Dados, com Data, Funcionário, Hora Início, Hora Final e Horas Trabalhadas. O modelo ajuda a começar.
+                      </p>
                     </div>
-                  ) : null}
-
-                  <div className="overflow-x-auto rounded-lg border border-border/70 bg-background">
-                    <table className="w-full min-w-[1120px] text-sm">
-                      <thead className="bg-secondary/60 text-left text-xs font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                        <tr>
-                          <th className="px-3 py-3">Linha</th>
-                          <th className="px-3 py-3">Data</th>
-                          <th className="px-3 py-3">Técnico</th>
-                          <th className="px-3 py-3">Nome na planilha</th>
-                          <th className="px-3 py-3">Entrada</th>
-                          <th className="px-3 py-3">Saída</th>
-                          <th className="px-3 py-3">Horas</th>
-                          <th className="px-3 py-3">Previsto</th>
-                          <th className="px-3 py-3">Semana</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {attendanceImportRows.length ? attendanceImportRows.slice(0, 160).map((row) => (
-                          <tr key={`${row.key}-${row.row_number}`} className="border-t border-border/70">
-                            <td className="px-3 py-3 text-muted-foreground">{row.row_number}</td>
-                            <td className="px-3 py-3">{formatDate(row.date)}</td>
-                            <td className="px-3 py-3 font-medium text-foreground">{row.technician_name}</td>
-                            <td className="px-3 py-3 text-muted-foreground">{row.imported_name}</td>
-                            <td className="px-3 py-3">{formatTime(row.start_time)}</td>
-                            <td className="px-3 py-3">{formatTime(row.end_time)}</td>
-                            <td className="px-3 py-3">{formatHours(row.hours_worked)}</td>
-                            <td className="px-3 py-3 text-muted-foreground">{formatTimeRange(row.planned_start_time, row.planned_end_time)}</td>
-                            <td className="px-3 py-3 text-muted-foreground">{row.week_number || '-'}</td>
-                          </tr>
-                        )) : (
-                          <tr>
-                            <td colSpan={9} className="px-3 py-8 text-center text-muted-foreground">
-                              Carregue uma planilha XLSX, XLS ou CSV para validar os apontamentos antes de salvar.
-                            </td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {attendanceImportRows.length > 160 ? (
-                    <p className="text-xs text-muted-foreground">Exibindo as 160 primeiras linhas válidas. Todas as {attendanceImportRows.length} linhas válidas serão salvas.</p>
-                  ) : null}
+                  )}
                 </div>
               )}
             </form>
 
-            <DialogFooter className="items-center border-t border-border/70 bg-background/95 px-6 py-4 sm:justify-between sm:px-7">
-              <div className="min-h-5 flex-1 text-sm">
-                {attendanceError ? <span className="text-rose-700">{attendanceError}</span> : null}
-                {attendanceMessage ? <span className="text-emerald-700">{attendanceMessage}</span> : null}
-                {isAttendanceSubmitting ? (
-                  <span className="text-muted-foreground">
-                    {attendanceMode === 'spreadsheet' ? 'Salvando horas importadas...' : attendanceMode === 'month' ? 'Salvando apontamentos do mês...' : 'Salvando apontamento...'}
-                  </span>
-                ) : null}
-                {isAttendanceImportParsing ? <span className="text-muted-foreground">Lendo planilha...</span> : null}
+            <DialogFooter className={MODAL_FOOTER_CLASS}>
+              <div className="min-h-5 flex-1 text-sm text-muted-foreground">
+                {isAttendanceSubmitting ? (attendanceMode === 'spreadsheet' ? 'Salvando as horas importadas...' : attendanceMode === 'month' ? 'Salvando os apontamentos do mês...' : 'Salvando o apontamento...') : null}
+                {isAttendanceImportParsing ? 'Lendo a planilha...' : null}
               </div>
               <div className="flex gap-2">
                 <Button type="button" variant="outline" onClick={() => handleAttendanceDialogChange(false)}>
                   Cancelar
                 </Button>
-                <Button type="submit" form="attendance-form" disabled={isAttendanceSubmitting || isAttendanceImportParsing || (attendanceMode === 'spreadsheet' && !attendanceImportRows.length)} className="min-w-44">
-                  {isAttendanceSubmitting ? 'Salvando...' : attendanceMode === 'spreadsheet' ? `Salvar horas importadas (${attendanceImportRows.length})` : attendanceMode === 'month' ? 'Salvar mês automático' : 'Salvar apontamento'}
+                <Button type="submit" form="attendance-form" disabled={isAttendanceSubmitting || isAttendanceImportParsing || (attendanceMode === 'spreadsheet' && !attendanceImportRows.length)}>
+                  {isAttendanceSubmitting
+                    ? 'Salvando...'
+                    : attendanceMode === 'spreadsheet'
+                      ? (attendanceImportRows.length ? `Salvar ${formatCount(attendanceImportRows.length, 'linha', 'linhas')}` : 'Salvar planilha')
+                      : attendanceMode === 'month'
+                        ? 'Salvar apontamentos do mês'
+                        : 'Salvar apontamento'}
                 </Button>
               </div>
             </DialogFooter>
@@ -4834,8 +4744,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       }}>
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Desconto de almoço</DialogTitle>
-            <DialogDescription>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Desconto de almoço</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
               {formatCount(attendanceLunchPromptCount, 'apontamento da planilha está', 'apontamentos da planilha estão')} com as horas sem o desconto de {formatBreakLabel(scheduleRules.dailyBreakMinutes)} de almoço (saída menos entrada).
             </DialogDescription>
           </DialogHeader>
@@ -4865,14 +4775,14 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
         {activeDayDefinition && activeDayRule && activeDayRuleKey ? (
           <DialogContent className="max-h-[88vh] overflow-hidden p-0 sm:max-w-3xl">
             <div className="flex max-h-[88vh] min-h-0 flex-col">
-              <DialogHeader className="border-b border-border/70 px-5 py-4">
-                <DialogTitle>Quem trabalha: {activeDayDefinition.label}</DialogTitle>
-                <DialogDescription>
+              <DialogHeader className={MODAL_HEADER_CLASS}>
+                <DialogTitle className={MODAL_TITLE_CLASS}>Quem trabalha: {activeDayDefinition.label}</DialogTitle>
+                <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
                   Marque quem trabalha neste dia.
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+              <div className={MODAL_BODY_CLASS}>
                                   <TechnicianChecklist
                     technicians={ruleTechnicians}
                     value={activeDayRule.technician_ids}
@@ -4881,7 +4791,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                   />
               </div>
 
-              <DialogFooter className="border-t border-border/70 px-5 py-4">
+              <DialogFooter className={MODAL_FOOTER_CLASS}>
                 <Button type="button" onClick={() => setActiveDayRuleKey(null)}>Concluir</Button>
               </DialogFooter>
             </div>
@@ -4892,14 +4802,14 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       <Dialog open={isCalendarDialogOpen} onOpenChange={setIsCalendarDialogOpen}>
         <DialogContent className="max-h-[92vh] overflow-hidden p-0 sm:max-w-375">
           <div className="flex max-h-[92vh] min-h-0 flex-col">
-            <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
-              <DialogTitle className="text-xl">Calendário da escala</DialogTitle>
-              <DialogDescription className="max-w-3xl text-sm leading-6 text-muted-foreground">
+            <DialogHeader className={MODAL_HEADER_CLASS}>
+              <DialogTitle className={MODAL_TITLE_CLASS}>Calendário da escala</DialogTitle>
+              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
                 Veja, dia a dia, quem está escalado.
               </DialogDescription>
             </DialogHeader>
 
-            <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5 sm:px-7">
+            <div className={MODAL_BODY_CLASS}>
               <div className="mb-5 grid gap-3 md:grid-cols-[1.4fr_1fr_1fr_1fr_auto]">
                 <label className="text-sm">
                   <span className="mb-1.5 block font-medium">Técnico</span>
