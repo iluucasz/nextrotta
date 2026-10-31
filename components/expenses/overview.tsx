@@ -27,6 +27,14 @@ import type { Budget } from './use-expenses';
 
 const LIMIT = 6;
 
+/** "A pagar R$ 100,00 · A receber R$ 50,00": what is owed and what is coming in are never added together. */
+function groupTotals(entries: ExpenseEntry[]) {
+  const sum = (type: 'payable' | 'receivable') => cents(entries.filter((entry) => entry.type === type).reduce((total, entry) => total + remainingOf(entry), 0));
+  const payable = sum('payable');
+  const receivable = sum('receivable');
+  return [payable ? `A pagar ${formatCurrency(payable)}` : '', receivable ? `A receber ${formatCurrency(receivable)}` : ''].filter(Boolean).join(' · ');
+}
+
 function BillRow({ entry, today, onOpen, onPay }: { entry: ExpenseEntry; today: string; onOpen: (entry: ExpenseEntry) => void; onPay: (entry: ExpenseEntry) => void }) {
   const late = entry.due_date < today;
   return (
@@ -209,7 +217,7 @@ export function Overview({
                     <div key={group.key}>
                       <div className={cn('ex-group-title', group.tone)}>
                         <span>{group.title}</span>
-                        <span>{formatCurrency(cents(group.entries.reduce((total, entry) => total + remainingOf(entry), 0)))}</span>
+                        <span>{groupTotals(group.entries)}</span>
                       </div>
                       {shown.map((entry) => (
                         <BillRow key={entry.id} entry={entry} today={today} onOpen={onOpen} onPay={onPay} />

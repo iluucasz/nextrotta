@@ -4,12 +4,12 @@ import { useState } from 'react';
 import { CheckCircle2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS, ModalNotice, SummaryBand } from '@/components/modal-kit';
+import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS, ModalNotice } from '@/components/modal-kit';
 import { cents, PAYMENT_METHODS, remainingOf, type ExpenseEntry } from '@/lib/expenses';
 import { normalizeAmount } from '@/lib/expenses-import';
 import { formatCurrency } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
-import { Field, inputClass, MoneyField } from './ui';
+import { amountText, Field, Figures, inputClass, MoneyField } from './ui';
 import type { ExpensesApi } from './use-expenses';
 
 /**
@@ -22,7 +22,7 @@ export function PayDialog({ entries, today, api, onClose, onDone }: { entries: E
   const receiving = entries.every((entry) => entry.type === 'receivable');
   const open = cents(entries.reduce((total, entry) => total + remainingOf(entry), 0));
 
-  const [amount, setAmount] = useState(() => String(single ? remainingOf(single) : 0).replace('.', ','));
+  const [amount, setAmount] = useState(() => amountText(single ? remainingOf(single) : 0));
   const [paidAt, setPaidAt] = useState(today);
   const [method, setMethod] = useState(() => (single?.payment_method ?? '') as string);
   const [note, setNote] = useState('');
@@ -67,15 +67,20 @@ export function PayDialog({ entries, today, api, onClose, onDone }: { entries: E
         <div className={cn(MODAL_BODY_CLASS, 'space-y-5')}>
           {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
 
-          <SummaryBand
+          <Figures
             items={
               many
                 ? [{ label: 'Contas', value: entries.length }, { label: 'Total a baixar', value: formatCurrency(open) }]
-                : [
-                    { label: 'Valor da conta', value: formatCurrency(single.amount) },
-                    { label: 'Já registrado', value: formatCurrency(single.paid_amount) },
-                    { label: 'Falta', value: formatCurrency(open) },
-                  ]
+                : single.paid_amount > 0
+                  ? [
+                      { label: 'Valor da conta', value: formatCurrency(single.amount) },
+                      { label: receiving ? 'Já recebido' : 'Já pago', value: formatCurrency(single.paid_amount) },
+                      { label: 'Falta', value: formatCurrency(open) },
+                    ]
+                  : [
+                      { label: 'Valor da conta', value: formatCurrency(single.amount) },
+                      { label: 'Vencimento', value: single.due_date.split('-').reverse().join('/') },
+                    ]
             }
           />
 
@@ -90,7 +95,7 @@ export function PayDialog({ entries, today, api, onClose, onDone }: { entries: E
               />
             ) : null}
             <Field label="Data">
-              <input type="date" value={paidAt} max={undefined} onChange={(event) => setPaidAt(event.target.value)} className={inputClass} />
+              <input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} className={inputClass} />
             </Field>
             <Field label="Forma de pagamento" className={many ? '' : 'sm:col-span-2'}>
               <select value={method} onChange={(event) => setMethod(event.target.value)} className={inputClass}>

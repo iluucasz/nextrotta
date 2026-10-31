@@ -87,7 +87,7 @@ export function Accounts({
         <div className="ex-toolbar">
           <label className="mg-search">
             <Search size={15} />
-            <input placeholder="Buscar descrição, fornecedor ou categoria" aria-label="Buscar contas" value={filters.query} onChange={(event) => update({ query: event.target.value })} />
+            <input placeholder="Buscar conta ou fornecedor" aria-label="Buscar contas" value={filters.query} onChange={(event) => update({ query: event.target.value })} />
           </label>
           <div className="ex-chips" role="group" aria-label="Situação">
             {(

@@ -89,19 +89,19 @@ function Legend() {
   return (
     <div className="mg-legend" style={{ marginTop: 12 }}>
       <span>
-        <i style={{ background: '#fde4e1' }} />
+        <i style={{ background: '#fde4e1', boxShadow: 'inset 0 0 0 1.5px #e9a29b' }} />
         Vencida
       </span>
       <span>
-        <i style={{ background: '#fff1d6' }} />
+        <i style={{ background: '#fff1d6', boxShadow: 'inset 0 0 0 1.5px #e8c070' }} />
         Vence hoje
       </span>
       <span>
-        <i style={{ background: '#eef0ff' }} />
+        <i style={{ background: '#eef0ff', boxShadow: 'inset 0 0 0 1.5px #a9adf0' }} />
         A vencer
       </span>
       <span>
-        <i style={{ background: '#e3f5ec' }} />
+        <i style={{ background: '#e3f5ec', boxShadow: 'inset 0 0 0 1.5px #85cba6' }} />
         Paga
       </span>
       <span>

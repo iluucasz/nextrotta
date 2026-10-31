@@ -97,7 +97,7 @@ export function DetailDialog({
           <dl className="divide-y divide-border">
             <Line label="Valor">{formatCurrency(entry.amount)}</Line>
             {entry.paid_amount > 0 ? <Line label={entry.type === 'payable' ? 'Já pago' : 'Já recebido'}>{formatCurrency(entry.paid_amount)}</Line> : null}
-            {open > 0 ? <Line label="Falta">{formatCurrency(open)}</Line> : null}
+            {open > 0 && entry.paid_amount > 0 ? <Line label="Falta">{formatCurrency(open)}</Line> : null}
             <Line label="Vencimento">
               {fullDate(entry.due_date)}
               {open > 0 ? <span className={cn('ml-2 text-xs font-normal', state === 'overdue' ? 'text-rose-700' : 'text-muted-foreground')}>{dueLabel(entry.due_date, today)}</span> : null}

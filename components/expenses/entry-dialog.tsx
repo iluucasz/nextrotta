@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useId, useMemo, useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -9,7 +9,7 @@ import { addMonths, cents, PAYMENT_METHODS, splitInstallmentAmounts, type EntryN
 import { normalizeAmount } from '@/lib/expenses-import';
 import { formatCurrency } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
-import { Field, fullDate, inputClass, MoneyField } from './ui';
+import { amountText, Field, fullDate, inputClass, MoneyField } from './ui';
 import type { ExpensesApi, SeriesScope } from './use-expenses';
 
 type Mode = 'new' | 'edit' | 'duplicate';
@@ -18,7 +18,8 @@ const NEW_CATEGORY = '__new__';
 
 /**
  * One form for a new bill, an edit and a copy. The essentials are on top (what, who, how much, when, how often); the
- * rest (how it is paid, the boleto code, fixed or variable, the competence, notes) is one click away.
+ * rest (how it is paid, the boleto code, fixed or variable, the competence, notes) is one click away. Explanations
+ * live behind the "?" next to each label.
  */
 export function EntryDialog({
   mode,
@@ -41,13 +42,14 @@ export function EntryDialog({
 }) {
   const editing = mode === 'edit' && entry;
   const inSeries = Boolean(editing && entry.series_id && entry.installment_total > 1);
+  const categoryId = useId();
 
   const [type, setType] = useState<EntryType>(entry?.type ?? initialType);
   const [description, setDescription] = useState(entry?.description ?? '');
   const [supplier, setSupplier] = useState(entry?.supplier ?? '');
   const [category, setCategory] = useState(entry?.category ?? 'Geral');
   const [newCategory, setNewCategory] = useState('');
-  const [amount, setAmount] = useState(entry?.amount ? String(entry.amount).replace('.', ',') : '');
+  const [amount, setAmount] = useState(entry?.amount ? amountText(entry.amount) : '');
   const [dueDate, setDueDate] = useState(mode === 'duplicate' ? addMonths(entry!.due_date, 1) : (entry?.due_date ?? today));
   const [competence, setCompetence] = useState(mode === 'edit' ? (entry?.competence_month ?? '') : '');
   const [repeat, setRepeat] = useState<'single' | 'installments' | 'recurring'>('single');
@@ -60,7 +62,7 @@ export function EntryDialog({
   const [alreadyPaid, setAlreadyPaid] = useState(false);
   const [paidAt, setPaidAt] = useState(today);
   const [scope, setScope] = useState<SeriesScope>('this');
-  const [moreOpen, setMoreOpen] = useState(Boolean(entry && (entry.payment_code || entry.notes || entry.payment_method)));
+  const [moreOpen, setMoreOpen] = useState(Boolean(entry && (entry.payment_code || entry.notes)));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -125,38 +127,46 @@ export function EntryDialog({
 
   return (
     <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:max-w-2xl">
+      <DialogContent
+        className="flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:max-w-3xl"
+        // Editing opens on the form, not on a selected description that looks like an error.
+        onOpenAutoFocus={editing ? (event) => event.preventDefault() : undefined}
+      >
         <DialogHeader className={MODAL_HEADER_CLASS}>
-          <DialogTitle className={MODAL_TITLE_CLASS}>{editing ? 'Editar conta' : mode === 'duplicate' ? 'Duplicar conta' : type === 'payable' ? 'Nova conta a pagar' : 'Nova conta a receber'}</DialogTitle>
+          <div className="flex flex-wrap items-center justify-between gap-3 pr-8">
+            <DialogTitle className={MODAL_TITLE_CLASS}>{editing ? 'Editar conta' : mode === 'duplicate' ? 'Duplicar conta' : 'Nova conta'}</DialogTitle>
+            {!editing ? (
+              <SegmentedControl
+                label="Tipo de conta"
+                value={type}
+                onChange={setType}
+                options={[
+                  { value: 'payable', label: 'A pagar' },
+                  { value: 'receivable', label: 'A receber' },
+                ]}
+              />
+            ) : (
+              <span className="rounded-md bg-secondary px-2.5 py-1 text-sm text-muted-foreground">{type === 'payable' ? 'A pagar' : 'A receber'}</span>
+            )}
+          </div>
           <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
-            {editing ? 'Mude o que for preciso. O que já foi pago continua registrado.' : 'O essencial primeiro: o resto é opcional.'}
+            {editing ? 'Mude o que for preciso. O que já foi pago continua registrado.' : type === 'payable' ? 'Uma conta que você precisa pagar.' : 'Um valor que você tem a receber.'}
           </DialogDescription>
         </DialogHeader>
 
         <div className={cn(MODAL_BODY_CLASS, 'space-y-5')}>
           {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
 
-          {!editing ? (
-            <SegmentedControl
-              label="Tipo de conta"
-              value={type}
-              onChange={setType}
-              options={[
-                { value: 'payable', label: 'A pagar' },
-                { value: 'receivable', label: 'A receber' },
-              ]}
-            />
-          ) : null}
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Descrição" className="sm:col-span-2">
+          <div className="grid gap-x-4 gap-y-4 sm:grid-cols-6">
+            <Field label="Descrição" className="sm:col-span-6">
               <input value={description} onChange={(event) => setDescription(event.target.value)} maxLength={160} className={inputClass} placeholder={type === 'payable' ? 'Ex.: Aluguel da base, Combustível' : 'Ex.: Contrato mensal'} autoFocus={!editing} />
             </Field>
-            <Field label={noun} hint="Opcional. Ajuda a achar a conta depois.">
-              <input value={supplier} onChange={(event) => setSupplier(event.target.value)} maxLength={120} className={inputClass} />
+            <MoneyField label={repeat === 'installments' ? 'Valor total' : 'Valor'} value={amount} onChange={setAmount} className="sm:col-span-2" />
+            <Field label="Vencimento" className="sm:col-span-2">
+              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className={inputClass} />
             </Field>
-            <Field label="Categoria">
-              <select value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass}>
+            <Field label="Categoria" className="sm:col-span-2" htmlFor={categoryId}>
+              <select id={categoryId} value={category} onChange={(event) => setCategory(event.target.value)} className={inputClass}>
                 {options.map((item) => (
                   <option key={item} value={item}>
                     {item}
@@ -164,18 +174,17 @@ export function EntryDialog({
                 ))}
                 <option value={NEW_CATEGORY}>Outra categoria…</option>
               </select>
-              {category === NEW_CATEGORY ? <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} maxLength={60} className={cn(inputClass, 'mt-2')} placeholder="Nome da categoria" autoFocus /> : null}
+              {category === NEW_CATEGORY ? <input value={newCategory} onChange={(event) => setNewCategory(event.target.value)} maxLength={60} className={cn(inputClass, 'mt-2')} placeholder="Nome da categoria" aria-label="Nome da nova categoria" autoFocus /> : null}
             </Field>
-            <MoneyField label={repeat === 'installments' ? 'Valor total' : 'Valor'} value={amount} onChange={setAmount} />
-            <Field label="Vencimento">
-              <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} className={inputClass} />
+            <Field label={noun} className="sm:col-span-6">
+              <input value={supplier} onChange={(event) => setSupplier(event.target.value)} maxLength={120} className={inputClass} placeholder={type === 'payable' ? 'Opcional. Ex.: Imobiliária Central' : 'Opcional. Ex.: Seguradora parceira'} />
             </Field>
           </div>
 
           {!editing ? (
             <div className="space-y-2">
-              <span className="block text-sm font-medium text-foreground">Quantas vezes?</span>
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <span className="text-sm font-medium text-foreground">Quantas vezes?</span>
                 <SegmentedControl
                   label="Repetição"
                   value={repeat}
@@ -198,48 +207,51 @@ export function EntryDialog({
           ) : null}
 
           {inSeries ? (
-            <fieldset className="space-y-2 rounded-xl bg-secondary/40 p-4">
-              <legend className="px-1 text-sm font-medium">
-                Esta conta é a {entry?.installment_number}ª de {entry?.installment_total}. Aplicar a:
-              </legend>
-              {(
-                [
-                  ['this', 'Só esta conta'],
-                  ['following', 'Esta e as próximas'],
-                  ['all', 'Toda a série'],
-                ] as const
-              ).map(([key, label]) => (
-                <label key={key} className="flex items-center gap-2 text-sm">
-                  <input type="radio" name="scope" checked={scope === key} onChange={() => setScope(key)} />
-                  {label}
-                </label>
-              ))}
-              <p className="text-xs text-muted-foreground">Descrição, categoria, {noun.toLowerCase()}, valor e forma de pagamento vão para as escolhidas. O valor só muda onde ainda não foi pago acima dele.</p>
-            </fieldset>
+            <div role="radiogroup" aria-labelledby="series-scope" className="space-y-2.5 rounded-xl bg-secondary/40 p-4">
+              <p id="series-scope" className="text-sm font-medium">
+                Esta é a conta {entry?.installment_number} de {entry?.installment_total}. A mudança vale para:
+              </p>
+              <div className="flex flex-wrap gap-x-6 gap-y-2">
+                {(
+                  [
+                    ['this', 'Só esta'],
+                    ['following', 'Esta e as próximas'],
+                    ['all', 'Toda a série'],
+                  ] as const
+                ).map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 text-sm">
+                    <input type="radio" name="scope" checked={scope === key} onChange={() => setScope(key)} />
+                    {label}
+                  </label>
+                ))}
+              </div>
+              {scope !== 'this' ? <p className="text-xs text-muted-foreground">Descrição, categoria, {noun.toLowerCase()}, valor e forma de pagamento vão para as contas escolhidas. O vencimento muda só desta.</p> : null}
+            </div>
           ) : null}
 
           {!editing && repeat === 'single' ? (
-            <div className="rounded-xl bg-secondary/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-secondary/40 px-4 py-3">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input type="checkbox" checked={alreadyPaid} onChange={(event) => setAlreadyPaid(event.target.checked)} />
                 {type === 'payable' ? 'Esta conta já foi paga' : 'Este valor já foi recebido'}
               </label>
               {alreadyPaid ? (
-                <Field label="Data" className="mt-3 max-w-[220px]">
-                  <input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} className={inputClass} />
-                </Field>
+                <label className="flex items-center gap-2 text-sm">
+                  Em
+                  <input type="date" value={paidAt} onChange={(event) => setPaidAt(event.target.value)} className={cn(inputClass, 'w-auto')} aria-label="Data do pagamento" />
+                </label>
               ) : null}
             </div>
           ) : null}
 
           <div>
-            <button type="button" onClick={() => setMoreOpen((value) => !value)} aria-expanded={moreOpen} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+            <button type="button" onClick={() => setMoreOpen((open) => !open)} aria-expanded={moreOpen} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
               Mais detalhes
               <ChevronDown className={cn('h-4 w-4 transition-transform', moreOpen && 'rotate-180')} />
             </button>
             {moreOpen ? (
-              <div className="mt-3 grid gap-4 sm:grid-cols-2">
-                <Field label="Forma de pagamento">
+              <div className="mt-3 grid gap-x-4 gap-y-4 sm:grid-cols-6">
+                <Field label="Forma de pagamento" className="sm:col-span-2">
                   <select value={method} onChange={(event) => setMethod(event.target.value)} className={inputClass}>
                     <option value="">Não informar</option>
                     {PAYMENT_METHODS.map((item) => (
@@ -249,7 +261,7 @@ export function EntryDialog({
                     ))}
                   </select>
                 </Field>
-                <Field label="Tipo de custo" hint="Fixo se repete todo mês; variável muda com a operação.">
+                <Field label="Tipo de custo" className="sm:col-span-2" help="Fixo é o que se repete todo mês (aluguel, internet). Variável muda com a operação (combustível, peças).">
                   <select
                     value={nature}
                     onChange={(event) => {
@@ -262,16 +274,16 @@ export function EntryDialog({
                     <option value="fixed">Fixo</option>
                   </select>
                 </Field>
+                <Field label="Competência" className="sm:col-span-2" help="O mês a que a conta pertence. Normalmente é o do vencimento; muda quando você paga em um mês algo que é de outro.">
+                  <input type="month" value={competence} onChange={(event) => setCompetence(event.target.value)} className={inputClass} />
+                </Field>
                 {type === 'payable' ? (
-                  <Field label="Código de barras ou Pix copia e cola" className="sm:col-span-2" hint="Fica guardado na conta para copiar na hora de pagar.">
+                  <Field label="Código de barras ou Pix copia e cola" className="sm:col-span-6" help="Fica guardado na conta para você copiar com um clique na hora de pagar.">
                     <input value={code} onChange={(event) => setCode(event.target.value)} maxLength={200} className={cn(inputClass, 'font-mono text-xs')} />
                   </Field>
                 ) : null}
-                <Field label="Competência" hint="O mês a que a conta pertence. Normalmente é o do vencimento.">
-                  <input type="month" value={competence} onChange={(event) => setCompetence(event.target.value)} className={inputClass} />
-                </Field>
-                <Field label="Observações" className="sm:col-span-2">
-                  <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={1000} rows={3} className={cn(inputClass, 'h-auto py-2')} />
+                <Field label="Observações" className="sm:col-span-6">
+                  <textarea value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={1000} rows={2} className={cn(inputClass, 'h-auto py-2')} />
                 </Field>
               </div>
             ) : null}

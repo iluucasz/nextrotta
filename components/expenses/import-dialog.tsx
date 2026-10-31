@@ -114,6 +114,13 @@ export function ImportDialog({ api, onClose, onDone }: { api: ExpensesApi; onClo
             {fileName ? <span className="text-sm text-muted-foreground">{fileName}</span> : null}
           </div>
 
+          {!rows.length ? (
+            <p className="rounded-xl bg-secondary/40 px-4 py-3 text-sm text-muted-foreground">
+              Obrigatórias: <strong className="text-foreground">Tipo</strong> (A pagar ou A receber), <strong className="text-foreground">Descrição</strong>,{' '}
+              <strong className="text-foreground">Valor</strong> e <strong className="text-foreground">Vencimento</strong>. O resto é opcional: fornecedor, categoria, competência, status, valor pago, data da baixa e forma de pagamento.
+            </p>
+          ) : null}
+
           {rows.length ? (
             <>
               <p className="text-sm">

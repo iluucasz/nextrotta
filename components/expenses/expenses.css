@@ -357,6 +357,11 @@
 .mg-dashboard .ex-toolbar .mg-search {
   flex: 1 1 280px;
   min-width: 220px;
+  width: auto;
+}
+.mg-dashboard .ex-toolbar .mg-search input {
+  width: 100%;
+  min-width: 0;
 }
 .mg-dashboard .ex-table td:first-child,
 .mg-dashboard .ex-table th:first-child {
