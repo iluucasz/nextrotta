@@ -49,7 +49,7 @@ import {
   SegmentedControl,
   SummaryBand,
 } from '@/components/modal-kit';
-import { HourBankNumbers, HourBankRows, TodayStrip, WeekOverview, type TodayTechnician, type WeekCell, type WeekRow } from './schedule-overview';
+import { HourBankNumbers, HourBankRows, PortoStatusBar, TodayStrip, WeekOverview, type PortoStatus, type TodayTechnician, type WeekCell, type WeekRow } from './schedule-overview';
 import {
   buildPersistedSchedule,
   createDateKey,
@@ -1438,6 +1438,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [activeDayRuleKey, setActiveDayRuleKey] = useState<ScheduleDayRuleKey | null>(null);
   const [selectedPreviewDate, setSelectedPreviewDate] = useState<string | null>(null);
   const [builderStep, setBuilderStep] = useState(0);
+  // null = this company has no Porto (or it could not be read): nothing about it is shown.
+  const [portoStatus, setPortoStatus] = useState<{ status: PortoStatus; lastImport: string | null } | null>(null);
   // The daily break is a company-wide rule (Configurações). It can be changed from the escala dialog; until the
   // page is reloaded, this keeps the value that was just saved.
   const [breakOverride, setBreakOverride] = useState<number | null>(null);
@@ -1455,6 +1457,29 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [exceptionDraft, setExceptionDraft] = useState<ExceptionDraft>(createExceptionDraft);
   const [exceptionError, setExceptionError] = useState('');
   const [lastRules, setLastRules] = useState<SavedScheduleRules | null>(null);
+
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    fetch('/api/porto-config')
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data) => {
+        if (cancelled || !data?.config) return;
+        const config = data.config as { automation_enabled?: boolean; dry_run_only?: boolean; last_hours_import_at?: string | null };
+        const status: PortoStatus = !config.automation_enabled ? 'off' : config.dry_run_only === false ? 'active' : 'test';
+        const last = config.last_hours_import_at ? new Date(config.last_hours_import_at) : null;
+        setPortoStatus({
+          status,
+          lastImport: last && !Number.isNaN(last.getTime()) ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).format(last) : null,
+        });
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user]);
 
   useEffect(() => {
     let mounted = true;
@@ -4178,6 +4203,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       {dataError ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{dataError}</div> : null}
       {saveMessage ? <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{saveMessage}</div> : null}
 
+      {portoStatus ? <PortoStatusBar status={portoStatus.status} lastImport={portoStatus.lastImport} /> : null}
+
       <TodayStrip dateLabel={todayLabel} technicians={todayTechnicians} plannedUntil={plannedUntil} missingDays={missingDays} />
 
       <div className="mt-5">
@@ -4425,6 +4452,12 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
               className={MODAL_BODY_CLASS}
             >
               {formError ? <div className="mb-5"><ModalNotice tone="error">{formError}</ModalNotice></div> : null}
+
+              {portoStatus?.status === 'active' && builderStep === 0 ? (
+                <div className="mb-5">
+                  <ModalNotice tone="warning">O Porto está ativo: a escala é importada sozinha todo dia e prevalece sobre a que for montada aqui.</ModalNotice>
+                </div>
+              ) : null}
 
               <p className="mb-5 text-sm text-muted-foreground">{BUILDER_STEPS[builderStep].help}</p>
 
@@ -4774,6 +4807,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
             </DialogHeader>
 
             <form id="attendance-form" onSubmit={handleAttendanceSubmit} className={`${MODAL_BODY_CLASS} space-y-5`}>
+              {portoStatus?.status === 'active' ? <ModalNotice tone="warning">O Porto está ativo: as horas são apontadas sozinhas todo dia. Use esta tela só para corrigir.</ModalNotice> : null}
               {attendanceError ? <ModalNotice tone="error">{attendanceError}</ModalNotice> : null}
               {attendanceMessage ? <ModalNotice tone="success">{attendanceMessage}</ModalNotice> : null}
 

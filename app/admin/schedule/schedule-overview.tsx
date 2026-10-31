@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 import { Users } from 'lucide-react';
 import { EmptyState } from '@/components/empty-state';
@@ -9,6 +10,34 @@ import { formatDate, formatHours } from '@/lib/formatters';
  * The three zones of the Escala page, presentation only: who works today, the hour bank of the period and
  * the next seven days. The page computes the numbers and passes them in.
  */
+
+/** What the company's Porto robot is doing: it fills in the escala and the hours by itself when it is on. */
+export type PortoStatus = 'active' | 'test' | 'off';
+
+const PORTO_STATUS_STYLE: Record<PortoStatus, { dot: string; title: string; text: string }> = {
+  active: { dot: 'bg-emerald-500', title: 'Porto ativo', text: 'A escala e o apontamento de horas são feitos sozinhos, todo dia.' },
+  test: { dot: 'bg-amber-400', title: 'Porto em modo teste', text: 'Ele ainda não grava nada: monte a escala e aponte as horas à mão.' },
+  off: { dot: 'bg-border', title: 'Porto desligado', text: 'Monte a escala e aponte as horas à mão.' },
+};
+
+/** One line under the page title: is the Porto doing the escala and the hours, or is it up to the admin? */
+export function PortoStatusBar({ status, lastImport }: { status: PortoStatus; lastImport?: string | null }) {
+  const style = PORTO_STATUS_STYLE[status];
+
+  return (
+    <div className="mb-5 flex flex-wrap items-center gap-x-3 gap-y-1 rounded-xl border border-border bg-card px-5 py-3 text-sm">
+      <span className="inline-flex items-center gap-2 font-semibold text-foreground">
+        <span className={`h-2.5 w-2.5 rounded-full ${style.dot}`} aria-hidden="true" />
+        {style.title}
+      </span>
+      <span className="text-muted-foreground">{style.text}</span>
+      {status === 'active' && lastImport ? <span className="text-muted-foreground">Última importação: {lastImport}.</span> : null}
+      <Link href="/admin/config-porto" className="ml-auto font-medium text-primary hover:underline">
+        Config. Porto
+      </Link>
+    </div>
+  );
+}
 
 export type TodayKind = 'work' | 'off' | 'none';
 
