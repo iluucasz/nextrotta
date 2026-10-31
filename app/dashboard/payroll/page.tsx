@@ -122,6 +122,8 @@ export default function TechnicianPayrollPage() {
   const vaTotal = moneyValue(currentPayroll?.va_deduction);
   const vrTotal = moneyValue(currentPayroll?.vr_deduction);
   const benefitsTotal = getBenefitsTotal(currentPayroll);
+  // Only the cards the company pays: VR, VA, both or none.
+  const benefitsLabel = vaTotal > 0 && vrTotal > 0 ? 'VA/VR' : vrTotal > 0 ? 'VR' : 'VA';
   const cashNetTotal = moneyValue(currentPayroll?.net_total);
   const payrollTotal = getPayrollTotal(currentPayroll);
 
@@ -170,9 +172,9 @@ export default function TechnicianPayrollPage() {
             <MetricCard title="Horas realizadas" value={formatHours(workedHoursTotal)} hint={`Banco de horas: ${formatHours(hourBankBalance)}`} icon={Clock3} tone={hourBankBalance < 0 ? 'danger' : 'warning'} />
             <MetricCard title="OS realizadas" value={servicesCount} hint="Quantidade de OS na competência" icon={WalletCards} />
             <MetricCard title="Salário base" value={formatCurrency(baseSalary)} hint={competenceLabel} icon={WalletCards} />
-            <MetricCard title="Vale alimentação" value={formatCurrency(vaTotal)} hint="Pago no cartão" icon={CreditCard} />
-            <MetricCard title="Vale refeição" value={formatCurrency(vrTotal)} hint="Pago no cartão" icon={CreditCard} />
-            <MetricCard title="Total VA/VR" value={formatCurrency(benefitsTotal)} hint="Soma dos benefícios" icon={CreditCard} />
+            {vaTotal > 0 ? <MetricCard title="Vale alimentação" value={formatCurrency(vaTotal)} hint="Pago no cartão" icon={CreditCard} /> : null}
+            {vrTotal > 0 ? <MetricCard title="Vale refeição" value={formatCurrency(vrTotal)} hint="Pago no cartão" icon={CreditCard} /> : null}
+            {vaTotal > 0 && vrTotal > 0 ? <MetricCard title="Total VA/VR" value={formatCurrency(benefitsTotal)} hint="Soma dos benefícios" icon={CreditCard} /> : null}
           </div>
 
           <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,0.95fr)_minmax(0,1.05fr)] xl:items-start">
@@ -184,11 +186,13 @@ export default function TechnicianPayrollPage() {
                     <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatCurrency(cashNetTotal)}</div>
                     <div className="mt-1 text-xs text-muted-foreground">Valor pago em conta nesta competência</div>
                   </div>
-                  <div className={summaryCardClass}>
-                    <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">VA/VR no cartão</div>
-                    <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatCurrency(benefitsTotal)}</div>
-                    <div className="mt-1 text-xs text-muted-foreground">Benefícios pagos fora da conta</div>
-                  </div>
+                  {benefitsTotal > 0 ? (
+                    <div className={summaryCardClass}>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{benefitsLabel} no cartão</div>
+                      <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatCurrency(benefitsTotal)}</div>
+                      <div className="mt-1 text-xs text-muted-foreground">Benefícios pagos fora da conta</div>
+                    </div>
+                  ) : null}
                   <div className="rounded-md border border-emerald-200 bg-emerald-50 p-3 shadow-sm">
                     <div className="text-xs font-medium uppercase tracking-wide text-emerald-700">Total da folha</div>
                     <div className="mt-1 text-2xl font-semibold tabular-nums text-emerald-900">{formatCurrency(payrollTotal)}</div>
@@ -222,10 +226,12 @@ export default function TechnicianPayrollPage() {
                         <span className="text-sm text-muted-foreground">Em conta</span>
                         <span className={detailValueClass}>{formatCurrency(cashNetTotal)}</span>
                       </div>
-                      <div className={detailRowClass}>
-                        <span className="text-sm text-muted-foreground">VA/VR no cartão</span>
-                        <span className={detailValueClass}>{formatCurrency(benefitsTotal)}</span>
-                      </div>
+                      {benefitsTotal > 0 ? (
+                        <div className={detailRowClass}>
+                          <span className="text-sm text-muted-foreground">{benefitsLabel} no cartão</span>
+                          <span className={detailValueClass}>{formatCurrency(benefitsTotal)}</span>
+                        </div>
+                      ) : null}
                       <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-emerald-900">
                         <span className="font-semibold">Total da folha</span>
                         <span className="text-right text-lg font-semibold tabular-nums whitespace-nowrap">{formatCurrency(payrollTotal)}</span>

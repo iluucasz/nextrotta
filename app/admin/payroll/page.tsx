@@ -755,8 +755,8 @@ export default function PayrollPage() {
               <tr><td>Valor por quinzena</td><td>${escapeHtml(formatFortnights(row.serviceFortnightSummary, true) || 'Sem valor')}</td></tr>
               <tr><td>Comissão</td><td>${escapeHtml(formatCurrency(payrollItem.commission_value))}</td></tr>
               <tr><td>Salário base</td><td>${escapeHtml(formatCurrency(payrollItem.base_salary))}</td></tr>
-              <tr><td>Vale-refeição</td><td>${escapeHtml(formatCurrency(payrollItem.vr_deduction))}</td></tr>
-              <tr><td>Vale-alimentação</td><td>${escapeHtml(formatCurrency(payrollItem.va_deduction))}</td></tr>
+              ${payrollItem.vr_deduction > 0 ? `<tr><td>Vale-refeição</td><td>${escapeHtml(formatCurrency(payrollItem.vr_deduction))}</td></tr>` : ''}
+              ${payrollItem.va_deduction > 0 ? `<tr><td>Vale-alimentação</td><td>${escapeHtml(formatCurrency(payrollItem.va_deduction))}</td></tr>` : ''}
               <tr><td>Horas extras</td><td>${escapeHtml(formatCurrency(payrollItem.extra_hours_value))}</td></tr>
               <tr><td>Prêmio por produção</td><td>${escapeHtml(formatCurrency(payrollItem.extraordinary_award_value ?? 0))}</td></tr>
               <tr><td>Banco de horas</td><td>${escapeHtml(formatHours(payrollItem.hour_bank_balance))}</td></tr>
@@ -997,6 +997,11 @@ export default function PayrollPage() {
     .filter(([field]) => isAdjusted(field))
     .map(([, label]) => label);
 
+  // A company may pay only VR, only VA or neither: a card line shows when it has a value, when it is configured
+  // for this technician, or when the admin asked to add it.
+  const showVr = Boolean(draft?.vr_deduction) || (selectedRow?.vrAllowance ?? 0) > 0 || unlocked.has('vr_deduction');
+  const showVa = Boolean(draft?.va_deduction) || (selectedRow?.vaAllowance ?? 0) > 0 || unlocked.has('va_deduction');
+  const cardsLabel = draft?.vr_deduction && draft?.va_deduction ? 'Cartões (VR e VA)' : draft?.vr_deduction ? 'Vale-refeição (VR)' : 'Vale-alimentação (VA)';
   const awardTiers = organizationSettings.serviceAwardTiers;
   const showCommission = commissionMode !== 'none' || Boolean(draft?.commission_value);
   const showAward = awardTiers.length > 0 || Boolean(draft?.extraordinary_award_value);
@@ -1008,9 +1013,10 @@ export default function PayrollPage() {
     } else if (commissionMode === 'percentage') {
       commissionHint = `${currentCommissionPercentage}% de ${money(draft.total_services_value)}`;
     } else {
+      const fixedParts = [draft.base_salary > 0 && 'salário', draft.vr_deduction > 0 && 'VR', draft.va_deduction > 0 && 'VA'].filter(Boolean);
       commissionHint = `${currentCommissionPercentage}% de ${money(draft.total_services_value)} = ${money(draftBase)}
-menos o fixo de ${money(draftFixed)} (salário + VR + VA)`;
-      if (draftBase <= draftFixed) commissionHint += `
+${fixedParts.length ? `menos o fixo de ${money(draftFixed)} (${fixedParts.join(' + ')})` : 'sem salário nem vales para abater'}`;
+      if (draftFixed > 0 && draftBase <= draftFixed) commissionHint += `
 Ainda não passou do fixo: faltam ${money(roundMoney(draftFixed - draftBase))} de produção.`;
     }
   }
@@ -1353,10 +1359,28 @@ Só informativo: não entra no valor em conta.`
                           : 'Pagos no cartão, fora do valor em conta.'
                       }
                     >
-                      <div className="divide-y divide-border">
-                        <AmountRow label="Vale-refeição (VR)" {...lineProps('vr_deduction')} />
-                        <AmountRow label="Vale-alimentação (VA)" {...lineProps('va_deduction')} />
-                      </div>
+                      {showVr || showVa ? (
+                        <div className="divide-y divide-border">
+                          {showVr ? <AmountRow label="Vale-refeição (VR)" {...lineProps('vr_deduction')} /> : null}
+                          {showVa ? <AmountRow label="Vale-alimentação (VA)" {...lineProps('va_deduction')} /> : null}
+                        </div>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Sem vales neste mês.</p>
+                      )}
+                      {!isClosed && (!showVr || !showVa) ? (
+                        <div className="flex flex-wrap gap-x-4 gap-y-1">
+                          {!showVr ? (
+                            <button type="button" onClick={() => unlock('vr_deduction')} className="text-sm font-medium text-primary hover:underline">
+                              + Vale-refeição
+                            </button>
+                          ) : null}
+                          {!showVa ? (
+                            <button type="button" onClick={() => unlock('va_deduction')} className="text-sm font-medium text-primary hover:underline">
+                              + Vale-alimentação
+                            </button>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </ModalSection>
 
                     <ModalSection title="Banco de horas">
@@ -1450,10 +1474,12 @@ Só informativo: não entra no valor em conta.`
                 <dt className="text-muted-foreground">Valor em conta</dt>
                 <dd className="text-base font-semibold">{money(draft?.net_total ?? 0)}</dd>
               </div>
-              <div className="flex justify-between gap-4">
-                <dt className="text-muted-foreground">Cartões (VR e VA)</dt>
-                <dd className="font-medium">{money(cardsTotal)}</dd>
-              </div>
+              {cardsTotal > 0 ? (
+                <div className="flex justify-between gap-4">
+                  <dt className="text-muted-foreground">{cardsLabel}</dt>
+                  <dd className="font-medium">{money(cardsTotal)}</dd>
+                </div>
+              ) : null}
             </dl>
             {adjustedLabels.length ? <p className="text-sm text-amber-800">Ajustado à mão: {adjustedLabels.join(', ')}.</p> : null}
             <p className="text-sm text-muted-foreground">O técnico passa a ver esta folha. Se precisar mudar algo depois, é só reabrir.</p>

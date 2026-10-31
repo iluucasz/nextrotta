@@ -352,8 +352,8 @@ export default function ConfiguracoesPage() {
                 <NumberField id="commission" label="Comissão" unit="%" hint="Percentual sobre o total das OS." value={form.commissionPercentage} onChange={(value) => update('commissionPercentage', value)} />
               ) : null}
               <NumberField id="base-salary" label="Salário base" unit="R$" unitPosition="start" value={form.baseSalary} onChange={(value) => update('baseSalary', value)} />
-              <NumberField id="va" label="Vale-alimentação (VA)" unit="R$" unitPosition="start" value={form.vaAllowance} onChange={(value) => update('vaAllowance', value)} />
-              <NumberField id="vr" label="Vale-refeição (VR)" unit="R$" unitPosition="start" value={form.vrAllowance} onChange={(value) => update('vrAllowance', value)} />
+              <NumberField id="va" label="Vale-alimentação (VA)" unit="R$" unitPosition="start" hint="Deixe 0 se a empresa não paga." value={form.vaAllowance} onChange={(value) => update('vaAllowance', value)} />
+              <NumberField id="vr" label="Vale-refeição (VR)" unit="R$" unitPosition="start" hint="Deixe 0 se a empresa não paga." value={form.vrAllowance} onChange={(value) => update('vrAllowance', value)} />
             </div>
           </DataPanel>
 
