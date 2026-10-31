@@ -26,13 +26,15 @@ const TODAY_STYLE: Record<TodayKind, { bar: string; dot: string; label: string }
 export function TodayStrip({
   dateLabel,
   technicians,
-  linesSaved,
-  coveredTechnicians,
+  plannedUntil,
+  missingDays,
 }: {
   dateLabel: string;
   technicians: TodayTechnician[];
-  linesSaved: number;
-  coveredTechnicians: number;
+  /** Last day that has a saved escala (YYYY-MM-DD), or null when nothing is planned yet. */
+  plannedUntil: string | null;
+  /** Technician-days without escala in the next seven days. */
+  missingDays: number;
 }) {
   const counts = { work: 0, off: 0, none: 0 };
   technicians.forEach((technician) => {
@@ -82,12 +84,12 @@ export function TodayStrip({
 
         <dl className="flex gap-8 border-t border-border pt-5 lg:border-l lg:border-t-0 lg:pl-8 lg:pt-0">
           <div>
-            <dd className="text-2xl font-semibold tabular-nums text-foreground">{linesSaved}</dd>
-            <dt className="mt-0.5 text-sm text-muted-foreground">{linesSaved === 1 ? 'linha salva' : 'linhas salvas'}</dt>
+            <dd className="text-2xl font-semibold tabular-nums text-foreground">{plannedUntil ? formatDate(plannedUntil) : '-'}</dd>
+            <dt className="mt-0.5 text-sm text-muted-foreground">{plannedUntil ? 'escala montada até' : 'nenhuma escala montada'}</dt>
           </div>
           <div>
-            <dd className="text-2xl font-semibold tabular-nums text-foreground">{coveredTechnicians}</dd>
-            <dt className="mt-0.5 text-sm text-muted-foreground">{coveredTechnicians === 1 ? 'técnico coberto' : 'técnicos cobertos'}</dt>
+            <dd className={`text-2xl font-semibold tabular-nums ${missingDays > 0 ? 'text-amber-600' : 'text-foreground'}`}>{missingDays}</dd>
+            <dt className="mt-0.5 text-sm text-muted-foreground">{missingDays === 1 ? 'dia sem escala' : 'dias sem escala'} nos próximos 7 dias</dt>
           </div>
         </dl>
       </div>

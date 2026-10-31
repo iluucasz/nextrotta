@@ -3209,7 +3209,11 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
 
     return { id: technician.id, name: technician.name, cells };
   });
-  const coveredTechnicians = new Set(visibleSchedule.map((item) => item.technician_id)).size;
+  const missingDays = weekRows.reduce((total, row) => total + row.cells.filter((cell) => cell.kind === 'none').length, 0);
+  const plannedUntil = visibleSchedule.reduce<string | null>((latest, item) => {
+    const dateKey = normalizeDateKey(item.date);
+    return !latest || dateKey > latest ? dateKey : latest;
+  }, null);
   const range = getScheduleRange(formData.period_mode, formData.year, formData.month, formData.date);
   const scopeSummary = formData.technician_scope === 'all'
     ? 'Todos os técnicos ativos'
@@ -3919,7 +3923,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       {dataError ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{dataError}</div> : null}
       {saveMessage ? <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">{saveMessage}</div> : null}
 
-      <TodayStrip dateLabel={todayLabel} technicians={todayTechnicians} linesSaved={visibleSchedule.length} coveredTechnicians={coveredTechnicians} />
+      <TodayStrip dateLabel={todayLabel} technicians={todayTechnicians} plannedUntil={plannedUntil} missingDays={missingDays} />
 
       <div className="mt-5">
         <DataPanel
