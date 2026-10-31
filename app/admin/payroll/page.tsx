@@ -403,19 +403,6 @@ function AmountRow({
   );
 }
 
-/** A subtotal under a group of lines. */
-function TotalLine({ label, value, sign }: { label: string; value: number; sign?: '−' }) {
-  return (
-    <div className="flex items-center justify-between gap-4 border-t border-border pt-3 text-sm font-semibold tabular-nums">
-      <span>{label}</span>
-      <span>
-        {sign ? `${sign} ` : ''}
-        {formatCurrency(value)}
-      </span>
-    </div>
-  );
-}
-
 export default function PayrollPage() {
   const { user, loading } = useAppSession();
   // Technicians' empty commission/salary/VA/VR fall back to the organization's defaults.
@@ -445,6 +432,7 @@ export default function PayrollPage() {
   const [details, setDetails] = useState<PayrollDetails | null>(null);
   // Normally derived values (gross, commission, final amount) stay locked until "Ajustar" is pressed.
   const [unlocked, setUnlocked] = useState<Set<PayrollDraftField>>(new Set());
+  const [confirmingClose, setConfirmingClose] = useState(false);
   const activeTechnicianRef = useRef('');
   const commissionMode: CommissionMode = organizationSettings.commissionMode ?? 'excess';
   const selectedCompetenceYear = Number(competenceMonth.slice(0, 4)) || new Date().getFullYear();
@@ -624,6 +612,7 @@ export default function PayrollPage() {
     setCalculated(null);
     setDetails(null);
     setUnlocked(new Set());
+    setConfirmingClose(false);
     setDraftError('');
     setIsPreviewLoading(false);
     setIsClosing(false);
@@ -883,6 +872,7 @@ export default function PayrollPage() {
       setIsPayrollDialogOpen(false);
       resetDialogState();
     } catch (error) {
+      setConfirmingClose(false);
       setDraftError(error instanceof Error ? error.message : 'Não foi possível fechar a folha.');
     } finally {
       setIsClosing(false);
@@ -1302,54 +1292,30 @@ Só informativo: não entra no valor em conta.`
 
             {draft ? (
               <>
-                <SummaryBand
-                  items={[
-                    { label: 'Valor bruto', value: money(draft.total_services_value) },
-                    { label: 'Em conta', value: money(draft.net_total) },
-                    { label: 'Folha total', value: money(draftPayrollNet) },
-                    { label: 'Lucro gerado', value: money(draftProfit), tone: draftProfit >= 0 ? 'good' : 'bad' },
-                  ]}
-                />
+                {adjustedLabels.length ? <p className="text-sm text-amber-800">Ajustado à mão: {adjustedLabels.join(', ')}.</p> : null}
 
-                {adjustedLabels.length ? (
-                  <p className="text-sm text-amber-800">
-                    Ajustado à mão: {adjustedLabels.join(', ')}.
-                  </p>
-                ) : null}
-
-                <div className="grid gap-x-12 gap-y-8 lg:grid-cols-[1.15fr_1fr]">
-                  <div className="space-y-8">
-                    <ModalSection title="Ganhos">
+                <div className="grid gap-x-0 gap-y-8 lg:grid-cols-2">
+                  <div className="space-y-6 lg:pr-8">
+                    <ModalSection title="Pago em conta">
                       <div className="divide-y divide-border">
                         <AmountRow label="Salário base" {...lineProps('base_salary')} />
                         {showCommission ? <AmountRow label="Comissão" hint={commissionHint} {...lineProps('commission_value', { locked: true })} /> : null}
                         <AmountRow label="Horas extras" hint={overtimeHint} {...lineProps('extra_hours_value')} />
                         {showAward ? <AmountRow label="Prêmio por produção" hint={awardHint} {...lineProps('extraordinary_award_value')} /> : null}
-                      </div>
-                      <TotalLine label="Total de ganhos" value={earningsTotal} />
-                    </ModalSection>
-
-                    <ModalSection title="Descontos">
-                      <div className="divide-y divide-border">
                         <AmountRow label="Descontos" sign="−" {...lineProps('discounts_total')} />
                         <AmountRow label="Adiantamentos" sign="−" {...lineProps('advances_total')} />
                       </div>
-                      <TotalLine label="Total de descontos" value={deductionsTotal} sign="−" />
                     </ModalSection>
 
                     <div className="space-y-3">
                       <div className="flex items-center justify-between gap-4 rounded-xl bg-primary px-5 py-4 text-primary-foreground">
-                        <div>
-                          <p className="text-base font-semibold">Valor em conta</p>
-                        </div>
+                        <p className="text-base font-semibold">Valor em conta</p>
                         <p className="text-2xl font-semibold tabular-nums">{money(draft.net_total)}</p>
                       </div>
 
                       {isClosed ? (
                         netAdjustment !== 0 ? (
-                          <p className="text-xs text-muted-foreground">
-                            Valor ajustado à mão: a soma dos ganhos e descontos daria {money(cashSum)}.
-                          </p>
+                          <p className="text-xs text-muted-foreground">Valor ajustado à mão: a soma dos ganhos e descontos daria {money(cashSum)}.</p>
                         ) : null
                       ) : unlocked.has('net_total') || netAdjustment !== 0 ? (
                         <div className="rounded-xl border border-amber-200 bg-amber-50/60 px-4 py-1">
@@ -1368,7 +1334,7 @@ Só informativo: não entra no valor em conta.`
                     </div>
                   </div>
 
-                  <div className="space-y-8">
+                  <div className="space-y-6 lg:border-l lg:border-border lg:pl-8">
                     <ModalSection title="Produção do mês">
                       <div className="divide-y divide-border">
                         <AmountRow
@@ -1391,13 +1357,25 @@ Só informativo: não entra no valor em conta.`
                         <AmountRow label="Vale-refeição (VR)" {...lineProps('vr_deduction')} />
                         <AmountRow label="Vale-alimentação (VA)" {...lineProps('va_deduction')} />
                       </div>
-                      <TotalLine label="Total nos cartões" value={cardsTotal} />
                     </ModalSection>
 
                     <ModalSection title="Banco de horas">
                       <div className="divide-y divide-border">
                         <AmountRow label="Saldo acumulado" unit="h" hint={bankHint} allowNegative {...lineProps('hour_bank_balance')} />
                       </div>
+                    </ModalSection>
+
+                    <ModalSection title="Para a empresa" help="Folha total = valor em conta + cartões. Lucro = valor bruto das OS − folha total.">
+                      <dl className="space-y-1.5 text-sm tabular-nums">
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-muted-foreground">Folha total</dt>
+                          <dd className="font-medium">{money(draftPayrollNet)}</dd>
+                        </div>
+                        <div className="flex justify-between gap-4">
+                          <dt className="text-muted-foreground">Lucro gerado</dt>
+                          <dd className={cn('font-medium', draftProfit >= 0 ? 'text-emerald-700' : 'text-rose-700')}>{money(draftProfit)}</dd>
+                        </div>
+                      </dl>
                     </ModalSection>
                   </div>
                 </div>
@@ -1447,13 +1425,47 @@ Só informativo: não entra no valor em conta.`
                   <Button type="button" variant="outline" onClick={() => void requestClose()} disabled={isClosing || autoSaveState === 'saving'} className="flex-1 sm:flex-none">
                     {autoSaveState === 'error' ? 'Sair sem salvar' : 'Fechar janela'}
                   </Button>
-                  <Button type="button" onClick={closePayroll} disabled={!payrollDraft || isClosing || isPreviewLoading || autoSaveState === 'saving'} className="order-first basis-full sm:order-none sm:basis-auto">
+                  <Button type="button" onClick={() => setConfirmingClose(true)} disabled={!payrollDraft || isClosing || isPreviewLoading || autoSaveState === 'saving'} className="order-first basis-full sm:order-none sm:basis-auto">
                     <CheckCircle2 className="h-4 w-4" />
-                    {isClosing ? 'Fechando...' : 'Fechar folha'}
+                    Fechar folha
                   </Button>
                 </>
               )}
             </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={confirmingClose && Boolean(draft)} onOpenChange={(open) => !open && !isClosing && setConfirmingClose(false)}>
+        <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+          <DialogHeader className={MODAL_HEADER_CLASS}>
+            <DialogTitle className={MODAL_TITLE_CLASS}>Fechar a folha?</DialogTitle>
+            <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
+              {selectedRow ? `${selectedRow.technician.name} · ${formatCompetenceLabel(competenceMonth)}` : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className={cn(MODAL_BODY_CLASS, 'space-y-4')}>
+            <dl className="space-y-2 rounded-xl bg-secondary/40 px-4 py-3 text-sm tabular-nums">
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Valor em conta</dt>
+                <dd className="text-base font-semibold">{money(draft?.net_total ?? 0)}</dd>
+              </div>
+              <div className="flex justify-between gap-4">
+                <dt className="text-muted-foreground">Cartões (VR e VA)</dt>
+                <dd className="font-medium">{money(cardsTotal)}</dd>
+              </div>
+            </dl>
+            {adjustedLabels.length ? <p className="text-sm text-amber-800">Ajustado à mão: {adjustedLabels.join(', ')}.</p> : null}
+            <p className="text-sm text-muted-foreground">O técnico passa a ver esta folha. Se precisar mudar algo depois, é só reabrir.</p>
+          </div>
+          <DialogFooter className={cn(MODAL_FOOTER_CLASS, 'flex-col-reverse sm:flex-row sm:justify-end')}>
+            <Button type="button" variant="outline" onClick={() => setConfirmingClose(false)} disabled={isClosing}>
+              Voltar
+            </Button>
+            <Button type="button" onClick={closePayroll} disabled={isClosing}>
+              <CheckCircle2 className="h-4 w-4" />
+              {isClosing ? 'Fechando...' : 'Sim, fechar folha'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
