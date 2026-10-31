@@ -1221,6 +1221,35 @@ function BuilderActionCard({ eyebrow, title, value, buttonLabel = 'Editar', onCl
   );
 }
 
+function PreviewDayLists({ day }: { day: { workingNames: string[]; off: string[] } }) {
+  return (
+    <div className="space-y-2">
+      <div>
+        <p className="font-semibold text-emerald-800">Trabalham ({day.workingNames.length})</p>
+        {day.workingNames.length ? (
+          <ul className="mt-0.5 space-y-0.5 text-foreground">
+            {day.workingNames.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-muted-foreground">Ninguém</p>
+        )}
+      </div>
+      {day.off.length ? (
+        <div>
+          <p className="font-semibold text-amber-700">Folgam ({day.off.length})</p>
+          <ul className="mt-0.5 space-y-0.5 text-foreground">
+            {day.off.map((name) => (
+              <li key={name}>{name}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DayRuleEditor({ label, dayLabel, rule, fallbackStartTime, fallbackEndTime, showTimes, onModeChange, onCadenceChange, onStartTimeChange, onEndTimeChange, onConfigureTechnicians, inputClassName }: DayRuleEditorProps) {
   const usesCadence = rule.mode !== 'off';
   const pickedCount = normalizeTechnicianIds(rule.technician_ids).length;
@@ -1331,6 +1360,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
   const [hourBankDetailTechnicianId, setHourBankDetailTechnicianId] = useState('all');
   const [builderDialog, setBuilderDialog] = useState<ScheduleBuilderDialog>(null);
   const [activeDayRuleKey, setActiveDayRuleKey] = useState<ScheduleDayRuleKey | null>(null);
+  const [selectedPreviewDate, setSelectedPreviewDate] = useState<string | null>(null);
   const [formData, setFormData] = useState<ScheduleBuilderForm>(createInitialBuilderForm);
   const [formError, setFormError] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -4938,25 +4968,46 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                       {Array.from({ length: (new Date(`${previewDays[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 }, (_, index) => (
                         <div key={`blank-${index}`} />
                       ))}
-                      {previewDays.map((day) => (
-                        <div
-                          key={day.date}
-                          title={[
-                            day.workingNames.length ? `Trabalham: ${day.workingNames.join(', ')}` : 'Ninguém trabalha',
-                            day.off.length ? `Folgam: ${day.off.join(', ')}` : '',
-                          ].filter(Boolean).join('\n')}
-                          className={`min-h-14 rounded-md border p-1.5 text-left text-xs ${day.working ? 'border-emerald-200 bg-emerald-50/60' : 'border-border bg-secondary/40'}`}
-                        >
-                          <p className="font-semibold text-foreground">
-                            {Number(day.date.slice(8, 10))}
-                            {day.hasException ? <span className="ml-1 text-amber-600" title="Tem exceção neste dia">•</span> : null}
-                          </p>
-                          <p className={day.working ? 'text-emerald-800' : 'text-muted-foreground'}>{day.working} trabalham</p>
-                          {day.off.length ? <p className="text-amber-700">{day.off.length} de folga</p> : null}
-                        </div>
-                      ))}
+                      {previewDays.map((day, dayIndex) => {
+                        const column = ((new Date(`${previewDays[0].date}T00:00:00Z`).getUTCDay() + 6) % 7 + dayIndex) % 7;
+                        const selected = selectedPreviewDate === day.date;
+                        return (
+                          <div key={day.date} className="group relative">
+                            <button
+                              type="button"
+                              onClick={() => setSelectedPreviewDate(selected ? null : day.date)}
+                              aria-pressed={selected}
+                              className={`block min-h-14 w-full rounded-md border p-1.5 text-left text-xs ${day.working ? 'border-emerald-200 bg-emerald-50/60' : 'border-border bg-secondary/40'} ${selected ? 'ring-2 ring-foreground/70' : ''}`}
+                            >
+                              <p className="font-semibold text-foreground">
+                                {Number(day.date.slice(8, 10))}
+                                {day.hasException ? <span className="ml-1 text-amber-600" title="Tem exceção neste dia">•</span> : null}
+                              </p>
+                              <p className={day.working ? 'text-emerald-800' : 'text-muted-foreground'}>{day.working} trabalham</p>
+                              {day.off.length ? <p className="text-amber-700">{day.off.length} de folga</p> : null}
+                            </button>
+                            <div
+                              className={`pointer-events-none absolute top-full z-20 mt-1 hidden w-48 rounded-md border border-border bg-popover p-2 text-left text-xs shadow-lg group-hover:block ${column >= 4 ? 'right-0' : 'left-0'}`}
+                            >
+                              <PreviewDayLists day={day} />
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                    <p className="mt-2 text-xs text-muted-foreground">Passe o mouse num dia para ver quem trabalha e quem folga. O ponto marca dias com exceção.</p>
+                    {selectedPreviewDate ? (() => {
+                      const day = previewDays.find((item) => item.date === selectedPreviewDate);
+                      if (!day) return null;
+                      return (
+                        <div className="mt-3 rounded-md border border-border bg-background p-3 text-xs">
+                          <p className="mb-2 font-semibold text-foreground">
+                            Dia {Number(day.date.slice(8, 10))}/{day.date.slice(5, 7)}
+                          </p>
+                          <PreviewDayLists day={day} />
+                        </div>
+                      );
+                    })() : null}
+                    <p className="mt-2 text-xs text-muted-foreground">Passe o mouse ou clique num dia para ver quem trabalha e quem folga. O ponto marca dias com exceção.</p>
                   </>
                 ) : (
                   <p className="text-sm text-muted-foreground">A prévia aparece para períodos de até dois meses.</p>
