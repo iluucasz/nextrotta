@@ -70,27 +70,54 @@ interface AppShellProps {
   userName?: string;
 }
 
-const adminLinks: NavItem[] = [
-  { href: '/admin', label: 'Operação', icon: LayoutDashboard },
-  { href: '/admin/dashboard-gerencial', label: 'Dashboard Gerencial', icon: ChartNoAxesCombined },
-  { href: '/admin/assistente', label: 'Assistente IA', icon: Sparkles },
-  { href: '/admin/technicians', label: 'Técnicos', icon: Users },
-  { href: '/admin/services', label: 'Serviços', icon: Wrench },
+/** A titled group of menu entries. The first one has no title: it is the way back to the start. */
+interface NavSection {
+  label?: string;
+  items: NavItem[];
+}
+
+// Grouped by what the admin is doing: the day-to-day, the money, the extra tools, the company itself.
+const adminSections: NavSection[] = [
+  { items: [{ href: '/admin', label: 'Operação', icon: LayoutDashboard }] },
   {
-    href: '/admin/schedule',
-    label: 'Escala',
-    icon: CalendarDays,
-    children: [{ href: '/admin/schedule/registros', label: 'Registros da escala', icon: History }],
+    label: 'Rotina',
+    items: [
+      { href: '/admin/technicians', label: 'Técnicos', icon: Users },
+      { href: '/admin/services', label: 'Serviços', icon: Wrench },
+      {
+        href: '/admin/schedule',
+        label: 'Escala',
+        icon: CalendarDays,
+        children: [{ href: '/admin/schedule/registros', label: 'Registros da escala', icon: History }],
+      },
+      { href: '/admin/payroll', label: 'Folha', icon: WalletCards },
+      { href: '/admin/pecas', label: 'Venda de Peças', icon: Package },
+    ],
   },
-  { href: '/admin/payroll', label: 'Folha', icon: WalletCards },
-  { href: '/admin/pecas', label: 'Venda de Peças', icon: Package },
-  { href: '/admin/faturamento', label: 'Faturamento', icon: TrendingUp },
-  { href: '/admin/financeiro', label: 'Controle de Despesas', icon: Landmark },
-  { href: '/admin/library', label: 'Biblioteca', icon: BookOpen },
-  { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
-  { href: '/admin/config-porto', label: 'Config. Porto', icon: ShieldCheck },
-  { href: '/admin/configuracoes', label: 'Configurações', icon: Settings },
-  { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
+  {
+    label: 'Financeiro',
+    items: [
+      { href: '/admin/dashboard-gerencial', label: 'Dashboard Gerencial', icon: ChartNoAxesCombined },
+      { href: '/admin/faturamento', label: 'Faturamento', icon: TrendingUp },
+      { href: '/admin/financeiro', label: 'Controle de Despesas', icon: Landmark },
+    ],
+  },
+  {
+    label: 'Ferramentas',
+    items: [
+      { href: '/admin/assistente', label: 'Assistente IA', icon: Sparkles },
+      { href: '/admin/library', label: 'Biblioteca', icon: BookOpen },
+      { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
+      { href: '/admin/config-porto', label: 'Config. Porto', icon: ShieldCheck },
+    ],
+  },
+  {
+    label: 'Empresa',
+    items: [
+      { href: '/admin/configuracoes', label: 'Configurações', icon: Settings },
+      { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
+    ],
+  },
 ];
 
 /** Menu entries that only exist when the organization's plan includes the feature. */
@@ -453,18 +480,18 @@ export function AppShell({ children, role, userName }: AppShellProps) {
   // Pages the admin hid for this technician drop out of the menu; the pages themselves also
   // redirect, in case someone reaches them by URL. Until the settings arrive, the hideable entries
   // stay out too — briefly showing a link that then vanishes would reveal it was hidden.
-  const links = (
-    role === 'admin'
-      ? adminLinks
-      : technicianLinks.filter((link) => {
-          const page = (Object.keys(TECHNICIAN_PAGE_PATHS) as HideableTechnicianPage[]).find(
-            (key) => TECHNICIAN_PAGE_PATHS[key] === link.href,
-          );
-          return !page || (!visibilityLoading && visibility[page].visible);
-        })
-  )
-    .filter(allowedByPlan)
-    .map((link) => (link.children ? { ...link, children: link.children.filter(allowedByPlan) } : link));
+  const technicianItems = technicianLinks.filter((link) => {
+    const page = (Object.keys(TECHNICIAN_PAGE_PATHS) as HideableTechnicianPage[]).find((key) => TECHNICIAN_PAGE_PATHS[key] === link.href);
+    return !page || (!visibilityLoading && visibility[page].visible);
+  });
+  // A group whose entries the plan (or the technician settings) all took away does not show its title either.
+  const sections = (role === 'admin' ? adminSections : [{ items: technicianItems }])
+    .map((section) => ({
+      ...section,
+      items: section.items.filter(allowedByPlan).map((link) => (link.children ? { ...link, children: link.children.filter(allowedByPlan) } : link)),
+    }))
+    .filter((section) => section.items.length > 0);
+  const links = sections.flatMap((section) => section.items);
 
   // Read from the client-visible marker cookie rather than refetching the session: it's only
   // deciding whether to render a banner, and the server-side cookies remain the source of truth
@@ -613,8 +640,17 @@ export function AppShell({ children, role, userName }: AppShellProps) {
             </span>
           </div>
 
-          <nav className="app-navigation flex-1 space-y-1.5 px-3 py-4">
-            {links.map((link) => {
+          <nav className="app-navigation flex-1 space-y-1 overflow-y-auto px-3 py-3" aria-label="Menu principal">
+            {sections.map((section) => (
+              <div key={section.label ?? 'start'} className="space-y-1">
+                {section.label ? (
+                  <>
+                    <p className={`px-3.5 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/80 ${collapsed ? 'lg:hidden' : ''}`}>{section.label}</p>
+                    {/* Collapsed, the title has no room: a thin line keeps the groups apart. */}
+                    <div className={`mx-2 mt-2 hidden border-t border-border ${collapsed ? 'lg:block' : ''}`} aria-hidden="true" />
+                  </>
+                ) : null}
+                {section.items.map((link) => {
               const Icon = link.icon;
               const isActive = activeLink?.href === link.href;
               const children = link.children ?? [];
@@ -629,7 +665,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
                       onClick={() => setOpen(false)}
                       aria-current={isActive ? 'page' : undefined}
                       title={collapsed ? link.label : undefined}
-                      className={`flex min-h-10 items-center gap-2.5 rounded-md px-3.5 text-sm font-medium ${motion || 'transition-colors'} ${
+                      className={`flex min-h-9 items-center gap-2.5 rounded-md px-3.5 text-sm font-medium ${motion || 'transition-colors'} ${
                         collapsed ? 'lg:justify-center' : ''
                       } ${
                         isActive
@@ -688,7 +724,9 @@ export function AppShell({ children, role, userName }: AppShellProps) {
                   ) : null}
                 </div>
               );
-            })}
+                })}
+              </div>
+            ))}
           </nav>
 
         </div>

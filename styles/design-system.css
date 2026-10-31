@@ -41,12 +41,12 @@
   justify-content: center;
 }
 .app-navigation {
-  padding: 27px 16px;
+  padding: 14px 16px;
 }
 .app-navigation a {
   gap: 11px;
   border-radius: 8px;
-  padding: 12px;
+  padding: 9px 12px;
   font-size: 16px;
   color: var(--sidebar-foreground);
 }
@@ -404,10 +404,10 @@ body:has(.app-shell) {
   border-right: 1px solid var(--sidebar-border);
 }
 .app-navigation {
-  padding: 20px 16px;
+  padding: 14px 16px;
 }
 .app-navigation a {
-  min-height: 48px;
+  min-height: 44px;
   font-size: 16px;
 }
 .app-navigation a > span {
