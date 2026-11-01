@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { IMPERSONATION_FLAG_COOKIE, PREVIEW_FLAG_COOKIE } from '@/lib/preview-mode';
 import { TECHNICIAN_PAGE_PATHS, type HideableTechnicianPage } from '@/lib/technician-visibility';
 import { resetTechnicianVisibilityCache, useTechnicianVisibility } from '@/hooks/use-technician-visibility';
@@ -56,6 +56,13 @@ const SIDEBAR_COLLAPSED_STORAGE_KEY = 'app-sidebar-collapsed';
 // navigation — see the comment where it's read in AppShell.
 let cachedCollapsed = false;
 let cachedCollapsedKnown = false;
+
+// Every page renders its own AppShell, so the menu is rebuilt on each click. What the person did to it
+// (how far it was scrolled, which titles they folded) has to live here, outside the component.
+let cachedNavScroll = 0;
+let cachedClosedSections: Record<string, boolean> = {};
+let cachedClosedSectionsKnown = false;
+const SIDEBAR_SECTIONS_STORAGE_KEY = 'app-sidebar-closed-sections';
 
 type Role = 'admin' | 'technician';
 
@@ -485,6 +492,8 @@ export function AppShell({ children, role, userName }: AppShellProps) {
   }, []);
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({});
+  const [closedSections, setClosedSections] = useState<Record<string, boolean>>(cachedClosedSections);
+  const navRef = useRef<HTMLElement>(null);
 
   const allowedByPlan = (link: NavItem) => {
     const feature = LINK_FEATURES[link.href];
@@ -531,6 +540,33 @@ export function AppShell({ children, role, userName }: AppShellProps) {
     return () => cancelAnimationFrame(frame);
   }, []);
 
+  useEffect(() => {
+    if (cachedClosedSectionsKnown) return;
+    cachedClosedSectionsKnown = true;
+    try {
+      const stored = JSON.parse(window.localStorage.getItem(SIDEBAR_SECTIONS_STORAGE_KEY) ?? '{}');
+      if (stored && typeof stored === 'object') {
+        cachedClosedSections = stored;
+        setClosedSections(stored);
+      }
+    } catch {
+      // A blocked or broken storage only means the folded titles are not remembered.
+    }
+  }, []);
+
+  const toggleSection = (label: string) => {
+    setClosedSections((current) => {
+      const next = { ...current, [label]: !current[label] };
+      cachedClosedSections = next;
+      try {
+        window.localStorage.setItem(SIDEBAR_SECTIONS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // see above
+      }
+      return next;
+    });
+  };
+
   const toggleCollapsed = () => {
     setCollapsed((value) => {
       const next = !value;
@@ -547,6 +583,21 @@ export function AppShell({ children, role, userName }: AppShellProps) {
     .flatMap((link) => [link, ...(link.children ?? [])])
     .filter((link) => (link.href === rootHref ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`)))
     .sort((left, right) => right.href.length - left.href.length)[0];
+
+  // The menu is rebuilt on every page: put it back where it was, then make sure the page you are on is in view.
+  useLayoutEffect(() => {
+    const nav = navRef.current;
+    if (!nav) return;
+    nav.scrollTop = cachedNavScroll;
+    const active = nav.querySelector<HTMLElement>('a[aria-current="page"]');
+    if (!active) return;
+    const navBox = nav.getBoundingClientRect();
+    const box = active.getBoundingClientRect();
+    if (box.top < navBox.top + 8) nav.scrollTop -= navBox.top + 8 - box.top;
+    else if (box.bottom > navBox.bottom - 8) nav.scrollTop += box.bottom - (navBox.bottom - 8);
+    cachedNavScroll = nav.scrollTop;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeLink?.href, sections.length, organizationStatus?.features?.length]);
 
   const handleLogout = async () => {
     setIsLoggingOut(true);
@@ -655,17 +706,29 @@ export function AppShell({ children, role, userName }: AppShellProps) {
             </span>
           </div>
 
-          <nav className="app-navigation flex-1 space-y-1 overflow-y-auto px-3 py-3" aria-label="Menu principal">
-            {sections.map((section) => (
-              <div key={section.label ?? 'start'} className="space-y-1">
+          <nav ref={navRef} onScroll={(event) => (cachedNavScroll = event.currentTarget.scrollTop)} className="app-navigation flex-1 overflow-y-auto px-3 py-3" aria-label="Menu principal">
+            {sections.map((section) => {
+              const hasActive = section.items.some((link) => link.href === activeLink?.href || link.children?.some((child) => child.href === activeLink?.href));
+              // Folding only applies to the full menu, and the group you are in never folds away.
+              const folded = Boolean(section.label && closedSections[section.label] && !hasActive && !collapsed);
+              return (
+              <div key={section.label ?? 'start'} className="app-nav-section">
                 {section.label ? (
                   <>
-                    <p className={`px-3.5 pb-0.5 pt-3 text-xs font-medium text-muted-foreground/80 ${collapsed ? 'lg:hidden' : ''}`}>{section.label}</p>
+                    <button
+                      type="button"
+                      onClick={() => toggleSection(section.label!)}
+                      aria-expanded={!folded}
+                      className={`app-nav-title ${collapsed ? 'lg:hidden' : ''}`}
+                    >
+                      <span>{section.label}</span>
+                      <ChevronDown className={`h-3.5 w-3.5 transition-transform ${folded ? '-rotate-90' : ''}`} />
+                    </button>
                     {/* Collapsed, the title has no room: a thin line keeps the groups apart. */}
                     <div className={`mx-2 mt-2 hidden border-t border-border ${collapsed ? 'lg:block' : ''}`} aria-hidden="true" />
                   </>
                 ) : null}
-                {section.items.map((link) => {
+                {folded ? null : section.items.map((link) => {
               const Icon = link.icon;
               const isActive = activeLink?.href === link.href;
               const children = link.children ?? [];
@@ -686,7 +749,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
                         isActive
                           ? 'bg-primary text-primary-foreground'
                           : inSection
-                            ? 'bg-secondary text-foreground'
+                            ? 'app-nav-open text-foreground'
                             : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
                       } ${children.length ? (collapsed ? 'lg:pr-3.5 pr-10' : 'pr-10') : ''}`}
                     >
@@ -700,7 +763,15 @@ export function AppShell({ children, role, userName }: AppShellProps) {
                     {children.length ? (
                       <button
                         type="button"
-                        onClick={() => setExpandedGroups((current) => ({ ...current, [link.href]: !isExpanded }))}
+                        onClick={() =>
+                          setExpandedGroups(() => {
+                            // One submenu open at a time keeps the menu short: the others close.
+                            const next: Record<string, boolean> = {};
+                            for (const other of links) if (other.children?.length) next[other.href] = false;
+                            next[link.href] = !isExpanded;
+                            return next;
+                          })
+                        }
                         aria-expanded={isExpanded}
                         aria-label={`${isExpanded ? 'Recolher' : 'Expandir'} ${link.label}`}
                         className={`absolute right-1.5 top-1/2 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-md ${
@@ -713,7 +784,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
                   </div>
 
                   {isExpanded ? (
-                    <div className={`mt-1 space-y-1 border-l border-border pl-2 ml-5 ${collapsed ? 'lg:hidden' : ''}`}>
+                    <div className={`app-nav-children ${collapsed ? 'lg:hidden' : ''}`}>
                       {children.map((child) => {
                         const ChildIcon = child.icon;
                         const isChildActive = activeLink?.href === child.href;
@@ -724,7 +795,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
                             href={child.href}
                             onClick={() => setOpen(false)}
                             aria-current={isChildActive ? 'page' : undefined}
-                            className={`flex min-h-9 items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${
+                            className={`app-nav-child flex items-center gap-2 rounded-md px-3 text-sm font-medium transition-colors ${
                               isChildActive
                                 ? 'bg-primary text-primary-foreground'
                                 : 'text-muted-foreground hover:bg-secondary hover:text-foreground'
@@ -741,7 +812,8 @@ export function AppShell({ children, role, userName }: AppShellProps) {
               );
                 })}
               </div>
-            ))}
+              );
+            })}
           </nav>
 
         </div>

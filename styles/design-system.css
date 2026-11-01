@@ -584,3 +584,93 @@ body:has(.app-shell)
     font-size: 28px;
   }
 }
+
+/* ---- sidebar: compact, folds by group, one open submenu at a time ---- */
+.app-navigation {
+  padding: 10px 12px 16px;
+}
+.app-navigation a {
+  min-height: 38px;
+  padding-block: 8px;
+  font-size: 15px;
+}
+.app-navigation a > svg {
+  width: 18px;
+  height: 18px;
+}
+.app-nav-section {
+  display: grid;
+  gap: 2px;
+}
+.app-nav-section + .app-nav-section {
+  margin-top: 4px;
+}
+.app-nav-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 12px 3px;
+  border: 0;
+  background: none;
+  color: var(--sidebar-foreground);
+  opacity: 0.62;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  text-align: left;
+  transition: opacity 0.15s;
+}
+.app-nav-title:hover,
+.app-nav-title:focus-visible {
+  opacity: 1;
+}
+.app-nav-title svg {
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.app-nav-title:hover svg,
+.app-nav-title:focus-visible svg {
+  opacity: 1;
+}
+.app-navigation a.app-nav-open {
+  color: var(--sidebar-accent-foreground);
+  font-weight: 600;
+}
+.app-nav-children {
+  display: grid;
+  gap: 2px;
+  margin: 2px 0 6px 21px;
+  padding-left: 10px;
+  border-left: 1px solid var(--sidebar-border);
+}
+.app-navigation a.app-nav-child {
+  min-height: 32px;
+  padding: 5px 10px;
+  font-size: 14px;
+}
+.app-navigation a.app-nav-child > svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* the section is a single column that may shrink: a long title must not stretch the icon-only menu */
+.app-nav-section {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* icon-only menu: no titles, just a thin line between the groups (the markup draws it) */
+@media (min-width: 1024px) {
+  .app-shell[data-collapsed='true'] .app-nav-title,
+  .app-shell[data-collapsed='true'] .app-nav-children {
+    display: none;
+  }
+}
+/* touch screens keep comfortable targets */
+@media (max-width: 1023px) {
+  .app-navigation a {
+    min-height: 44px;
+  }
+  .app-navigation a.app-nav-child {
+    min-height: 40px;
+  }
+}
