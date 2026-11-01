@@ -17,14 +17,22 @@ As configurações são divididas por assunto, cada uma uma página no padrão d
 
 Código: `components/settings/form.ts` (`useSettingsForm(grupo)` carrega tudo, mas cada página salva **só os campos dela**; a API mantém o resto), `components/settings/kit.tsx` (`SettingsPage`, `Frame`, `Field`/`NumberField`/`TimeField`/`TextField`, `Toggle`, `Choice`, `SectionPanel`) e `settings.css` (`st-*`). A barra "Alterações não salvas" (Descartar / Salvar) só aparece quando algo mudou. Teste de navegador: abrir cada página, editar um campo e conferir que o `PUT` leva só os campos da página.
 
-## Como a comissão é paga (`commissionMode`, migração `0030`)
+## Como a comissão é paga (`commissionMode`, migrações `0030` e `0033`)
 
-Cada empresa escolhe uma das três regras em Configurações → Pagamento. O cálculo é um só
+Cada empresa escolhe uma das seis regras em Configurações → Pagamento. O cálculo é um só
 (`lib/payroll-rules.ts`), usado pela API (`/api/payroll/preview`) e pela tela da Folha:
 
 - `excess` (padrão, regra do cliente original): comissão = `% da produção − salário − VR − VA`, nunca abaixo de zero.
 - `percentage`: comissão = `% da produção`, somada ao salário; os vales não são abatidos.
+- `per_service`: comissão = `valor por OS × número de OS` do mês.
+- `per_hour`: comissão = `valor por hora × horas trabalhadas` no mês (`work_hours`).
+- `per_day`: comissão = `valor por dia × dias com horas` no mês.
 - `none`: não há comissão (a linha some da folha).
+
+O valor por OS, hora ou dia é `commissionRate` (padrão da empresa) e `technicians.commission_rate` (do técnico; 0 usa o padrão).
+`commissionMinimum` (mínimo garantido) e `commissionMaximum` (teto) seguram a comissão do mês em qualquer modo, menos `none`.
+Na Folha, a janela do técnico explica a conta ("42 OS × R$ 30,00", "168,5 h × R$ 18,00") e avisa quando o mínimo ou o teto agiu.
+Teste: `scripts/test-payroll-rules.cjs`.
 
 ## Onde fica
 
@@ -51,7 +59,7 @@ Cada empresa escolhe uma das três regras em Configurações → Pagamento. O c�
 
 | Campo | Padrão de organização nova | Onde é usado |
 |---|---|---|
-| Comissão, salário base, VA, VR | 25%, R$ 0, R$ 0, R$ 0 | Folha (servidor e tela), Faturamento, cadastro de técnico (valor inicial e campo vazio). Vale o do técnico quando > 0 (`valueOrDefault`). |
+| Comissão (percentual ou valor por OS/hora/dia), mínimo e teto, salário base, VA, VR | 25%, R$ 0 (valor), R$ 0, R$ 0, R$ 0, R$ 0 | Folha (servidor e tela), Faturamento, cadastro de técnico (valor inicial e campo vazio). Vale o do técnico quando > 0 (`valueOrDefault`). |
 | Jornada mensal | 220 h | Hora extra da folha, banco de horas, painel do técnico, `{meta_mes}` do WhatsApp. |
 | Adicional de hora extra | 50% (×1,5) | Folha: `max(0, horas − jornada) × (salário ÷ jornada) × multiplicador`. |
 | Intervalo diário | 60 min | Horas da escala/apontamento, robô do Porto, dashboard gerencial, modal de almoço da planilha. |

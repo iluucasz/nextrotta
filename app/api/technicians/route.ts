@@ -127,7 +127,7 @@ export async function GET(request: NextRequest) {
     }
 
     const technicians = await sql`
-      SELECT id, qra, porto_name_hint, name, email, phone, commission_percentage, base_salary,
+      SELECT id, qra, porto_name_hint, name, email, phone, commission_percentage, commission_rate, base_salary,
              va_allowance, vr_allowance, status, created_at
       FROM technicians
       WHERE organization_id = ${auth.organizationId}
@@ -163,6 +163,7 @@ export async function POST(request: NextRequest) {
       email: rawEmail,
       password,
       commission_percentage,
+      commission_rate,
       base_salary,
       va_allowance,
       vr_allowance,
@@ -190,6 +191,7 @@ export async function POST(request: NextRequest) {
 
     const amountError = validateAmounts([
       ['Comissão', commission_percentage, 100],
+      ['Valor da comissão', commission_rate, MAX_MONEY],
       ['Salário base', base_salary, MAX_MONEY],
       ['VA', va_allowance, MAX_MONEY],
       ['VR', vr_allowance, MAX_MONEY],
@@ -230,12 +232,13 @@ export async function POST(request: NextRequest) {
       userStatement,
       sql`
         INSERT INTO technicians (
-          organization_id, user_id, qra, name, email, commission_percentage,
+          organization_id, user_id, qra, name, email, commission_percentage, commission_rate,
           base_salary, va_allowance, vr_allowance, porto_name_hint, phone
         )
         VALUES (
           ${organizationId}, ${userId}, ${qra || null}, ${name}, ${email},
           ${valueOrDefault(commission_percentage, defaults.commissionPercentage)},
+          ${valueOrDefault(commission_rate, defaults.commissionRate)},
           ${valueOrDefault(base_salary, defaults.baseSalary)},
           ${valueOrDefault(va_allowance, defaults.vaAllowance)},
           ${valueOrDefault(vr_allowance, defaults.vrAllowance)},
@@ -288,6 +291,7 @@ export async function PATCH(request: NextRequest) {
       email: rawEmail,
       password,
       commission_percentage,
+      commission_rate,
       base_salary,
       va_allowance,
       vr_allowance,
@@ -316,6 +320,7 @@ export async function PATCH(request: NextRequest) {
 
     const amountError = validateAmounts([
       ['Comissão', commission_percentage, 100],
+      ['Valor da comissão', commission_rate, MAX_MONEY],
       ['Salário base', base_salary, MAX_MONEY],
       ['VA', va_allowance, MAX_MONEY],
       ['VR', vr_allowance, MAX_MONEY],
@@ -412,6 +417,7 @@ export async function PATCH(request: NextRequest) {
         name = ${name},
         email = ${email},
         commission_percentage = ${valueOrDefault(commission_percentage, defaults.commissionPercentage)},
+        commission_rate = CASE WHEN ${commission_rate !== undefined} THEN ${valueOrDefault(commission_rate, defaults.commissionRate)} ELSE commission_rate END,
         base_salary = ${valueOrDefault(base_salary, defaults.baseSalary)},
         va_allowance = ${valueOrDefault(va_allowance, defaults.vaAllowance)},
         vr_allowance = ${valueOrDefault(vr_allowance, defaults.vrAllowance)},

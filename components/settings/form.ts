@@ -17,6 +17,9 @@ export type SettingsGroup = 'payment' | 'hours' | 'porto' | 'finance';
 
 type NumericKey =
   | 'commissionPercentage'
+  | 'commissionRate'
+  | 'commissionMinimum'
+  | 'commissionMaximum'
   | 'baseSalary'
   | 'vaAllowance'
   | 'vrAllowance'
@@ -64,6 +67,9 @@ export function toForm(settings: OrganizationSettings): FormState {
   return {
     commissionMode: settings.commissionMode,
     commissionPercentage: formatNumber(settings.commissionPercentage),
+    commissionRate: formatNumber(settings.commissionRate),
+    commissionMinimum: formatNumber(settings.commissionMinimum),
+    commissionMaximum: formatNumber(settings.commissionMaximum),
     baseSalary: formatNumber(settings.baseSalary),
     vaAllowance: formatNumber(settings.vaAllowance),
     vrAllowance: formatNumber(settings.vrAllowance),
@@ -101,6 +107,9 @@ export function toPayload(form: FormState, group: SettingsGroup) {
       return {
         commissionMode: form.commissionMode,
         commissionPercentage: number('commissionPercentage'),
+        commissionRate: number('commissionRate'),
+        commissionMinimum: number('commissionMinimum'),
+        commissionMaximum: number('commissionMaximum'),
         baseSalary: number('baseSalary'),
         vaAllowance: number('vaAllowance'),
         vrAllowance: number('vrAllowance'),

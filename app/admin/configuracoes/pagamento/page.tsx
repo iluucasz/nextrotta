@@ -9,26 +9,67 @@ import type { CommissionMode } from '@/lib/organization-settings';
 
 const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: string }> = [
   { value: 'excess', title: 'Sobre o excedente', text: 'Paga o que passa do fixo' },
-  { value: 'percentage', title: 'Percentual da produção', text: 'Soma ao salário' },
+  { value: 'percentage', title: 'Percentual da produção', text: '% do valor das OS' },
+  { value: 'per_service', title: 'Valor fixo por OS', text: 'R$ por serviço feito' },
+  { value: 'per_hour', title: 'Valor por hora', text: 'R$ por hora trabalhada' },
+  { value: 'per_day', title: 'Diária', text: 'R$ por dia trabalhado' },
   { value: 'none', title: 'Sem comissão', text: 'Só salário e extras' },
 ];
 
 const COMMISSION_HELP =
-  'Sobre o excedente: a comissão é o que a produção passa do fixo (% da produção − salário − vales). Abaixo disso, não há comissão.\nPercentual da produção: a comissão é o % da produção, somada ao salário. Os vales não são abatidos.\nSem comissão: o técnico recebe salário, horas extras e prêmio.';
+  'Sobre o excedente: a comissão é o que a produção passa do fixo (% das OS − salário − vales). Abaixo disso, não há comissão.\nPercentual da produção: a comissão é o % do valor das OS, somada ao salário. Os vales não são abatidos.\nValor fixo por OS: cada serviço do mês vale um valor, não importa o preço da OS (42 OS × R$ 30 = R$ 1.260).\nValor por hora: as horas trabalhadas no mês (escala e Porto) vezes o valor da hora.\nDiária: os dias com horas trabalhadas no mês vezes o valor do dia.\nSem comissão: o técnico recebe só salário, horas extras e prêmio.';
+
+/** The amount that goes with each way of paying: a percentage, or R$ per service, hour or day. */
+const RATE_FIELD: Record<Exclude<CommissionMode, 'none'>, { label: string; unit: string; position: 'start' | 'end'; help: string }> = {
+  excess: { label: 'Percentual', unit: '%', position: 'end', help: 'Percentual sobre o total das OS do técnico. Cada técnico pode ter o seu no cadastro; sem valor próprio, vale este.' },
+  percentage: { label: 'Percentual', unit: '%', position: 'end', help: 'Percentual sobre o total das OS do técnico. Cada técnico pode ter o seu no cadastro; sem valor próprio, vale este.' },
+  per_service: { label: 'Valor por OS', unit: 'R$', position: 'start', help: 'Quanto o técnico recebe por cada OS do mês. Cada técnico pode ter um valor próprio no cadastro; sem valor próprio, vale este.' },
+  per_hour: { label: 'Valor por hora', unit: 'R$', position: 'start', help: 'Quanto o técnico recebe por hora trabalhada no mês (as horas vêm da escala e do Porto). Cada técnico pode ter um valor próprio no cadastro; sem valor próprio, vale este.' },
+  per_day: { label: 'Valor por dia', unit: 'R$', position: 'start', help: 'Quanto o técnico recebe por dia com horas trabalhadas no mês. Cada técnico pode ter um valor próprio no cadastro; sem valor próprio, vale este.' },
+};
 
 export default function PagamentoPage() {
   const api = useSettingsForm('payment');
   const { form, update } = api;
+  const mode = form.commissionMode;
+  const rateField = mode === 'none' ? null : RATE_FIELD[mode];
+  const isPercent = mode === 'excess' || mode === 'percentage';
 
   return (
     <SettingsPage api={api} title="Pagamento" description="Como a comissão e o prêmio dos técnicos são calculados.">
       <Panel title="Comissão" help={COMMISSION_HELP}>
-        <div className={form.commissionMode !== 'none' ? 'st-commission' : undefined}>
-          <Choice label="Como a comissão é paga" value={form.commissionMode} options={COMMISSION_OPTIONS} onChange={(value) => update('commissionMode', value)} />
-          {form.commissionMode !== 'none' ? (
-            <NumberField id="commission" label="Percentual" unit="%" help="Percentual sobre o total das OS do técnico." value={form.commissionPercentage} onChange={(value) => update('commissionPercentage', value)} />
-          ) : null}
-        </div>
+        <Choice label="Como a comissão é paga" value={mode} options={COMMISSION_OPTIONS} onChange={(value) => update('commissionMode', value)} />
+        {rateField ? (
+          <div className="st-fields three st-divider">
+            <NumberField
+              id="commission-value"
+              label={rateField.label}
+              unit={rateField.unit}
+              unitPosition={rateField.position}
+              help={rateField.help}
+              value={isPercent ? form.commissionPercentage : form.commissionRate}
+              onChange={(value) => update(isPercent ? 'commissionPercentage' : 'commissionRate', value)}
+            />
+            <NumberField
+              id="commission-minimum"
+              label="Mínimo garantido"
+              unit="R$"
+              unitPosition="start"
+              help="Se a comissão do mês der menos que isto, o técnico recebe este valor. Deixe 0 para não garantir mínimo."
+              value={form.commissionMinimum}
+              onChange={(value) => update('commissionMinimum', value)}
+            />
+            <NumberField
+              id="commission-maximum"
+              label="Teto"
+              unit="R$"
+              unitPosition="start"
+              help="A comissão do mês nunca passa deste valor, mesmo que a produção seja maior. Deixe 0 para não ter teto. O teto vale mais que o mínimo."
+              value={form.commissionMaximum}
+              onChange={(value) => update('commissionMaximum', value)}
+            />
+          </div>
+        ) : null}
       </Panel>
 
       <div className="st-grid-two">

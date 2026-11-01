@@ -20,25 +20,88 @@ export function fixedCosts(baseSalary: number, vrAllowance: number, vaAllowance:
   return roundCents(roundCents(baseSalary) + roundCents(vrAllowance) + roundCents(vaAllowance));
 }
 
-/**
- * - `excess`: the commission is what the production percentage leaves after the salary and the cards (never below 0).
- * - `percentage`: the commission is the production percentage itself, paid on top of the salary.
- * - `none`: there is no commission.
- */
-export function calculateCommissionValue(input: {
+/** What the amount stored next to a commission mode means: a percentage, or R$ per service, hour or day. */
+export type RateKind = 'percent' | 'service' | 'hour' | 'day';
+
+export function rateKindOf(mode: CommissionMode): RateKind | null {
+  switch (mode) {
+    case 'excess':
+    case 'percentage':
+      return 'percent';
+    case 'per_service':
+      return 'service';
+    case 'per_hour':
+      return 'hour';
+    case 'per_day':
+      return 'day';
+    default:
+      return null;
+  }
+}
+
+/** Keeps the month's commission inside the optional guaranteed minimum and cap (0 = not used). The cap has the last word. */
+export function boundCommission(value: number, minimum = 0, maximum = 0): number {
+  let bounded = value;
+  if (minimum > 0) bounded = Math.max(bounded, minimum);
+  if (maximum > 0) bounded = Math.min(bounded, maximum);
+  return roundCents(bounded);
+}
+
+export interface CommissionInput {
   mode: CommissionMode;
+  /** Total value of the month's OS, in R$ (the percentage modes). */
   totalServices: number;
+  /** Commission percentage (the percentage modes). */
   percentage: number;
   baseSalary: number;
   vrAllowance: number;
   vaAllowance: number;
-}): number {
+  /** Number of OS in the month (per_service). */
+  serviceCount?: number;
+  /** Hours worked in the month (per_hour). */
+  totalHours?: number;
+  /** Days with hours worked in the month (per_day). */
+  daysWorked?: number;
+  /** R$ per service, hour or day, according to the mode. */
+  rate?: number;
+  /** Guaranteed minimum and cap of the month's commission, in R$ (0 = not used). */
+  minimum?: number;
+  maximum?: number;
+}
+
+/**
+ * - `excess`: the commission is what the production percentage leaves after the salary and the cards (never below 0).
+ * - `percentage`: the commission is the production percentage itself, paid on top of the salary.
+ * - `per_service`: a fixed amount for each OS of the month.
+ * - `per_hour`: a fixed amount for each hour worked in the month.
+ * - `per_day`: a fixed amount for each day worked in the month.
+ * - `none`: there is no commission.
+ * Except for `none`, the result is held between the guaranteed minimum and the cap when they are set.
+ */
+export function calculateCommissionValue(input: CommissionInput): number {
   if (input.mode === 'none') return 0;
 
-  const base = commissionBase(input.totalServices, input.percentage);
-  if (input.mode === 'percentage') return base;
+  const rate = Math.max(0, Number(input.rate) || 0);
+  let value: number;
 
-  return roundCents(Math.max(0, base - fixedCosts(input.baseSalary, input.vrAllowance, input.vaAllowance)));
+  switch (input.mode) {
+    case 'percentage':
+      value = commissionBase(input.totalServices, input.percentage);
+      break;
+    case 'per_service':
+      value = roundCents(Math.max(0, input.serviceCount ?? 0) * rate);
+      break;
+    case 'per_hour':
+      value = roundCents(Math.max(0, input.totalHours ?? 0) * rate);
+      break;
+    case 'per_day':
+      value = roundCents(Math.max(0, input.daysWorked ?? 0) * rate);
+      break;
+    default:
+      value = roundCents(Math.max(0, commissionBase(input.totalServices, input.percentage) - fixedCosts(input.baseSalary, input.vrAllowance, input.vaAllowance)));
+  }
+
+  return boundCommission(value, input.minimum, input.maximum);
 }
 
 /** Overtime: hours over the monthly target, paid at the hourly rate (salary ÷ target) × the multiplier. */
@@ -79,7 +142,13 @@ export function calculateCashNet(parts: {
 export interface PayrollDetails {
   commissionMode: CommissionMode;
   commissionPercentage: number;
+  /** R$ per service, hour or day (the per_* modes). */
+  commissionRate: number;
+  commissionMinimum: number;
+  commissionMaximum: number;
   serviceCount: number;
+  /** Days with hours worked in the month. */
+  daysWorked: number;
   totalHours: number;
   monthlyHours: number;
   extraHours: number;

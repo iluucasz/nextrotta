@@ -182,39 +182,6 @@ function shouldUsePayrollReference(
 }
 
 /**
- * Calculate commission based on services and commission percentage
- */
-export async function calculateCommission(
-  organizationId: string,
-  technicianId: string,
-  competenceMonth: string,
-  totalServices: number,
-  settings: OrganizationSettings,
-): Promise<number> {
-  const technician = await sql`
-    SELECT commission_percentage, base_salary, va_allowance, vr_allowance
-    FROM technicians
-    WHERE id = ${technicianId}
-      AND organization_id = ${organizationId}
-      AND status = 'active'
-      AND deleted_at IS NULL
-  `;
-
-  if (!technician || technician.length === 0) {
-    return 0;
-  }
-
-  return calculateCommissionValue({
-    mode: settings.commissionMode,
-    totalServices,
-    percentage: valueOrDefault(technician[0]?.commission_percentage, settings.commissionPercentage),
-    baseSalary: valueOrDefault(technician[0]?.base_salary, settings.baseSalary),
-    vrAllowance: valueOrDefault(technician[0]?.vr_allowance, settings.vrAllowance),
-    vaAllowance: valueOrDefault(technician[0]?.va_allowance, settings.vaAllowance),
-  });
-}
-
-/**
  * Calculate total work hours for the month
  */
 export async function calculateTotalHours(
@@ -228,6 +195,25 @@ export async function calculateTotalHours(
     WHERE organization_id = ${organizationId}
     AND technician_id = ${technicianId}
     AND deleted_at IS NULL
+    AND TO_CHAR(date, 'YYYY-MM') = ${competenceMonth}
+  `;
+
+  return Number(result[0]?.total || 0);
+}
+
+/** Days of the month with hours worked: what a per-day (diária) commission counts. */
+export async function calculateDaysWorked(
+  organizationId: string,
+  technicianId: string,
+  competenceMonth: string
+): Promise<number> {
+  const result = await sql`
+    SELECT COUNT(DISTINCT date::date) as total
+    FROM work_hours
+    WHERE organization_id = ${organizationId}
+    AND technician_id = ${technicianId}
+    AND deleted_at IS NULL
+    AND hours_worked > 0
     AND TO_CHAR(date, 'YYYY-MM') = ${competenceMonth}
   `;
 
@@ -300,9 +286,9 @@ export async function getTechnicianAllowances(
   organizationId: string,
   technicianId: string,
   settings: OrganizationSettings,
-): Promise<{ va_allowance: number; vr_allowance: number; base_salary: number; commission_percentage: number }> {
+): Promise<{ va_allowance: number; vr_allowance: number; base_salary: number; commission_percentage: number; commission_rate: number }> {
   const result = await sql`
-    SELECT base_salary, va_allowance, vr_allowance, commission_percentage
+    SELECT base_salary, va_allowance, vr_allowance, commission_percentage, commission_rate
     FROM technicians
     WHERE id = ${technicianId}
       AND organization_id = ${organizationId}
@@ -311,7 +297,7 @@ export async function getTechnicianAllowances(
   `;
 
   if (!result || result.length === 0) {
-    return { va_allowance: 0, vr_allowance: 0, base_salary: 0, commission_percentage: settings.commissionPercentage };
+    return { va_allowance: 0, vr_allowance: 0, base_salary: 0, commission_percentage: settings.commissionPercentage, commission_rate: settings.commissionRate };
   }
 
   return {
@@ -319,6 +305,7 @@ export async function getTechnicianAllowances(
     va_allowance: roundCurrency(valueOrDefault(result[0]?.va_allowance, settings.vaAllowance)),
     vr_allowance: roundCurrency(valueOrDefault(result[0]?.vr_allowance, settings.vrAllowance)),
     commission_percentage: roundCurrency(valueOrDefault(result[0]?.commission_percentage, settings.commissionPercentage)),
+    commission_rate: roundCurrency(valueOrDefault(result[0]?.commission_rate, settings.commissionRate)),
   };
 }
 
@@ -360,6 +347,9 @@ export async function calculatePayroll(
   const totalServices = usePayrollReference
     ? roundCurrency(payrollReference?.total_services_value)
     : roundCurrency(calculatedTotalServices);
+  // Hours and days worked: the overtime needs them, and so does a commission paid per hour or per day.
+  const totalHours = await calculateTotalHours(organizationId, technicianId, competenceMonth);
+  const daysWorked = await calculateDaysWorked(organizationId, technicianId, competenceMonth);
   const commission = calculateCommissionValue({
     mode: settings.commissionMode,
     totalServices,
@@ -367,11 +357,16 @@ export async function calculatePayroll(
     baseSalary: allowances.base_salary,
     vrAllowance: allowances.vr_allowance,
     vaAllowance: allowances.va_allowance,
+    serviceCount,
+    totalHours,
+    daysWorked,
+    rate: allowances.commission_rate,
+    minimum: settings.commissionMinimum,
+    maximum: settings.commissionMaximum,
   });
   const extraordinaryAward = calculateServiceAward(serviceCount, settings.serviceAwardTiers);
 
   // Calculate hours
-  const totalHours = await calculateTotalHours(organizationId, technicianId, competenceMonth);
   const { extra_hours, bank_balance } = await calculateHourBank(
     organizationId,
     technicianId,
@@ -424,7 +419,11 @@ export async function calculatePayroll(
     details: {
       commissionMode: settings.commissionMode,
       commissionPercentage: allowances.commission_percentage,
+      commissionRate: allowances.commission_rate,
+      commissionMinimum: settings.commissionMinimum,
+      commissionMaximum: settings.commissionMaximum,
       serviceCount,
+      daysWorked,
       totalHours: roundCurrency(totalHours),
       monthlyHours: settings.monthlyHours,
       extraHours: roundCurrency(extra_hours),

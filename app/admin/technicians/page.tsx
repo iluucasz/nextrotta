@@ -39,7 +39,8 @@ import { formatCurrency, formatPercent, normalizeText } from '@/lib/formatters';
 import type { Technician, TechnicianStatus } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
-import { DEFAULT_ORGANIZATION_SETTINGS, type OrganizationSettings } from '@/lib/organization-settings';
+import { DEFAULT_ORGANIZATION_SETTINGS, valueOrDefault, type OrganizationSettings } from '@/lib/organization-settings';
+import { rateKindOf, type RateKind } from '@/lib/payroll-rules';
 import { PhoneInput } from '@/components/phone-input';
 import { formatPhoneInput, validatePhone } from '@/lib/whatsapp/phone';
 
@@ -51,6 +52,7 @@ const initialFormData = {
   phone: '',
   password: '',
   commission_percentage: DEFAULT_ORGANIZATION_SETTINGS.commissionPercentage,
+  commission_rate: DEFAULT_ORGANIZATION_SETTINGS.commissionRate,
   base_salary: DEFAULT_ORGANIZATION_SETTINGS.baseSalary,
   va_allowance: DEFAULT_ORGANIZATION_SETTINGS.vaAllowance,
   vr_allowance: DEFAULT_ORGANIZATION_SETTINGS.vrAllowance,
@@ -64,6 +66,7 @@ function createInitialFormData(settings: OrganizationSettings = DEFAULT_ORGANIZA
   return {
     ...initialFormData,
     commission_percentage: settings.commissionPercentage,
+    commission_rate: settings.commissionRate,
     base_salary: settings.baseSalary,
     va_allowance: settings.vaAllowance,
     vr_allowance: settings.vrAllowance,
@@ -79,12 +82,19 @@ function createFormDataFromTechnician(technician: Technician): TechnicianFormDat
     phone: technician.phone ? formatPhoneInput(technician.phone) : '',
     password: '',
     commission_percentage: Number(technician.commission_percentage),
+    commission_rate: Number(technician.commission_rate ?? 0),
     base_salary: Number(technician.base_salary),
     va_allowance: Number(technician.va_allowance),
     vr_allowance: Number(technician.vr_allowance),
     status: technician.status,
   };
 }
+
+const RATE_UNITS: Record<Exclude<RateKind, 'percent'>, { label: string; suffix: string }> = {
+  service: { label: 'Valor por OS', suffix: '/OS' },
+  hour: { label: 'Valor por hora', suffix: '/h' },
+  day: { label: 'Valor por dia', suffix: '/dia' },
+};
 
 export default function TechniciansPage() {
   const { user, loading } = useAppSession();
@@ -294,9 +304,16 @@ export default function TechniciansPage() {
 
   const activeTechnicians = technicians.filter((technician) => technician.status === 'active');
   const activeCount = activeTechnicians.length;
-  const averageCommission =
-    activeTechnicians.reduce((total, technician) => total + Number(technician.commission_percentage), 0) /
-    Math.max(activeTechnicians.length, 1);
+  // What the commission is made of depends on how the company pays it: a percentage, or R$ per OS, hour or day.
+  const rateKind = rateKindOf(organizationSettings.commissionMode);
+  const rateOf = (technician: Technician) =>
+    rateKind === 'percent'
+      ? valueOrDefault(technician.commission_percentage, organizationSettings.commissionPercentage)
+      : valueOrDefault(technician.commission_rate, organizationSettings.commissionRate);
+  const formatCommission = (technician: Technician) =>
+    rateKind === null ? '—' : rateKind === 'percent' ? formatPercent(rateOf(technician)) : `${formatCurrency(rateOf(technician))}${RATE_UNITS[rateKind].suffix}`;
+  const averageRate = activeTechnicians.reduce((total, technician) => total + rateOf(technician), 0) / Math.max(activeTechnicians.length, 1);
+  const averageCommission = rateKind === null ? '—' : rateKind === 'percent' ? formatPercent(averageRate) : `${formatCurrency(averageRate)}${RATE_UNITS[rateKind].suffix}`;
   const totalBaseSalary = activeTechnicians.reduce((total, technician) => total + Number(technician.base_salary), 0);
   const isEditing = Boolean(editingTechnician);
   const modalTitle = isEditing ? 'Editar técnico' : 'Novo técnico';
@@ -329,7 +346,7 @@ export default function TechniciansPage() {
 
       <div className="grid gap-3 md:grid-cols-3">
         <MetricCard title="Ativos" value={`${activeCount}/${technicians.length}`} hint="Técnicos em operação" icon={Users} />
-        <MetricCard title="Comissão média" value={formatPercent(averageCommission)} hint="Base dos ativos" icon={WalletCards} />
+        <MetricCard title={rateKind === null || rateKind === 'percent' ? 'Comissão média' : `${RATE_UNITS[rateKind].label} médio`} value={averageCommission} hint="Base dos ativos" icon={WalletCards} />
         <MetricCard title="Salários base" value={formatCurrency(totalBaseSalary)} hint="Somatório dos ativos" icon={WalletCards} tone="warning" />
       </div>
 
@@ -495,23 +512,46 @@ export default function TechniciansPage() {
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      <label className="text-sm">
-                        <span className="mb-1.5 block font-medium">Comissão %</span>
-                        <input
-                          type="number"
-                          value={formData.commission_percentage}
-                          onChange={(event) =>
-                            setFormData((current) => ({
-                              ...current,
-                              commission_percentage: Number(event.target.value),
-                            }))
-                          }
-                          className={inputClassName}
-                        />
-                        <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
-                          Vazio ou 0 usa o padrão da empresa ({formatPercent(organizationSettings.commissionPercentage)}).
-                        </p>
-                      </label>
+                      {rateKind === 'percent' ? (
+                        <label className="text-sm">
+                          <span className="mb-1.5 block font-medium">Comissão %</span>
+                          <input
+                            type="number"
+                            value={formData.commission_percentage}
+                            onChange={(event) =>
+                              setFormData((current) => ({
+                                ...current,
+                                commission_percentage: Number(event.target.value),
+                              }))
+                            }
+                            className={inputClassName}
+                          />
+                          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                            Vazio ou 0 usa o padrão da empresa ({formatPercent(organizationSettings.commissionPercentage)}).
+                          </p>
+                        </label>
+                      ) : rateKind !== null ? (
+                        <label className="text-sm">
+                          <span className="mb-1.5 block font-medium">{RATE_UNITS[rateKind].label} (R$)</span>
+                          <input
+                            type="number"
+                            min={0}
+                            step="0.01"
+                            value={formData.commission_rate}
+                            onChange={(event) =>
+                              setFormData((current) => ({
+                                ...current,
+                                commission_rate: Number(event.target.value),
+                              }))
+                            }
+                            className={inputClassName}
+                          />
+                          <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
+                            Vazio ou 0 usa o padrão da empresa ({formatCurrency(organizationSettings.commissionRate)}
+                            {RATE_UNITS[rateKind].suffix}).
+                          </p>
+                        </label>
+                      ) : null}
 
                       <label className="text-sm">
                         <span className="mb-1.5 block font-medium">Salário base</span>
@@ -655,7 +695,7 @@ export default function TechniciansPage() {
                         {technician.email || '-'}
                         {technician.phone ? <span className="block text-xs">{technician.phone}</span> : null}
                       </td>
-                      <td className="py-3 pr-4">{formatPercent(technician.commission_percentage)}</td>
+                      <td className="py-3 pr-4">{formatCommission(technician)}</td>
                       <td className="py-3 pr-4">{formatCurrency(technician.base_salary)}</td>
                       <td className="py-3 pr-4">{formatCurrency(technician.va_allowance)}</td>
                       <td className="py-3 pr-4">{formatCurrency(technician.vr_allowance)}</td>

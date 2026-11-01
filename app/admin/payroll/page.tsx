@@ -33,6 +33,8 @@ import {
   calculateCashNet as sumCashNet,
   calculateCommissionValue,
   commissionBase,
+  type CommissionInput,
+  rateKindOf,
   fixedCosts,
   type PayrollDetails,
 } from '@/lib/payroll-rules';
@@ -89,6 +91,11 @@ type PayrollRow = {
   profitValue: number;
   serviceFortnightSummary: ServiceFortnightSummary;
   commissionPercentage: number;
+  /** R$ per service, hour or day (the per_* modes). */
+  commissionRate: number;
+  /** Hours and days worked in the month: only known when the mode pays by them. */
+  totalHours: number;
+  daysWorked: number;
   baseSalary: number;
   vaAllowance: number;
   vrAllowance: number;
@@ -201,11 +208,13 @@ function serviceBelongsToTechnician(service: Service, technician: Technician) {
 const signedFields: PayrollDraftField[] = ['hour_bank_balance', 'net_total'];
 const MAX_AMOUNT = 99_999_999.99;
 
-function formulaCommissionOf(draft: PayrollDraft, percentage: number, mode: CommissionMode) {
+/** What the commission rule needs besides the folha's own values: the counts, the rate and the bounds. */
+type CommissionContext = Omit<CommissionInput, 'totalServices' | 'baseSalary' | 'vrAllowance' | 'vaAllowance'>;
+
+function formulaCommissionOf(draft: PayrollDraft, context: CommissionContext) {
   return calculateCommissionValue({
-    mode,
+    ...context,
     totalServices: moneyValue(draft.total_services_value),
-    percentage,
     baseSalary: moneyValue(draft.base_salary),
     vrAllowance: moneyValue(draft.vr_deduction),
     vaAllowance: moneyValue(draft.va_deduction),
@@ -402,6 +411,7 @@ export default function PayrollPage() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [discounts, setDiscounts] = useState<Discount[]>([]);
+  const [workHours, setWorkHours] = useState<Array<{ technician_id: string; date: string; hours_worked: number | string }>>([]);
   const [query, setQuery] = useState('');
   const [openingTechnicianId, setOpeningTechnicianId] = useState('');
   const [pdfRowId, setPdfRowId] = useState('');
@@ -427,6 +437,7 @@ export default function PayrollPage() {
   const [confirmingClose, setConfirmingClose] = useState(false);
   const activeTechnicianRef = useRef('');
   const commissionMode: CommissionMode = organizationSettings.commissionMode ?? 'excess';
+  const needsHours = commissionMode === 'per_hour' || commissionMode === 'per_day';
   const selectedCompetenceYear = Number(competenceMonth.slice(0, 4)) || new Date().getFullYear();
   const selectedCompetenceMonth = Number(competenceMonth.slice(5, 7)) || new Date().getMonth() + 1;
   const competenceYearOptions = useMemo(
@@ -457,11 +468,12 @@ export default function PayrollPage() {
       setIsDataLoading(true);
       setDataError('');
 
-      const [payrollResult, techniciansResult, servicesResult, discountsResult] = await Promise.allSettled([
+      const [payrollResult, techniciansResult, servicesResult, discountsResult, hoursResult] = await Promise.allSettled([
         fetch(`/api/payroll?competenceMonth=${competenceMonth}`),
         fetch('/api/technicians'),
         fetch(`/api/services?competenceMonth=${competenceMonth}`),
         fetch(`/api/discounts?competenceMonth=${competenceMonth}`),
+        needsHours ? fetch(`/api/work-hours?month=${competenceMonth}`) : Promise.resolve(null),
       ]);
       const errors: string[] = [];
 
@@ -497,6 +509,16 @@ export default function PayrollPage() {
         if (mounted) setDiscounts([]);
       }
 
+      if (!needsHours) {
+        if (mounted) setWorkHours([]);
+      } else if (hoursResult.status === 'fulfilled' && hoursResult.value?.ok) {
+        const data = await hoursResult.value.json();
+        if (mounted) setWorkHours(Array.isArray(data.workHours) ? data.workHours : []);
+      } else {
+        errors.push('horas trabalhadas');
+        if (mounted) setWorkHours([]);
+      }
+
       if (mounted) {
         setDataError(errors.length ? `Não foi possível carregar os dados de ${errors.join(', ')}.` : '');
         setIsDataLoading(false);
@@ -509,9 +531,19 @@ export default function PayrollPage() {
     return () => {
       mounted = false;
     };
-  }, [competenceMonth, user]);
+  }, [competenceMonth, needsHours, user]);
 
   const rows = useMemo<PayrollRow[]>(() => {
+    // Hours and days worked per technician, the same way the server counts them (a day counts when it has hours).
+    const workedByTechnician = new Map<string, { hours: number; days: Set<string> }>();
+    for (const entry of workHours) {
+      const hours = Number(entry.hours_worked) || 0;
+      const worked = workedByTechnician.get(entry.technician_id) ?? { hours: 0, days: new Set<string>() };
+      worked.hours += hours;
+      if (hours > 0) worked.days.add(String(entry.date).slice(0, 10));
+      workedByTechnician.set(entry.technician_id, worked);
+    }
+
     return technicians
       .filter((technician) => technician.status === 'active')
       .map((technician) => {
@@ -524,6 +556,10 @@ export default function PayrollPage() {
         );
         const serviceCount = technicianServices.length;
         const commissionPercentage = valueOrDefault(technician.commission_percentage, organizationSettings.commissionPercentage);
+        const commissionRate = valueOrDefault(technician.commission_rate, organizationSettings.commissionRate);
+        const worked = workedByTechnician.get(technician.id);
+        const totalHours = roundMoney(worked?.hours ?? 0);
+        const daysWorked = worked?.days.size ?? 0;
 
         // A saved folha (draft or closed) is the truth for its month: the OS list may have changed since.
         const totalServicesValue = payrollItem
@@ -541,6 +577,12 @@ export default function PayrollPage() {
               baseSalary,
               vrAllowance,
               vaAllowance,
+              serviceCount,
+              totalHours,
+              daysWorked,
+              rate: commissionRate,
+              minimum: organizationSettings.commissionMinimum,
+              maximum: organizationSettings.commissionMaximum,
             });
         const discountsTotal = payrollItem
           ? roundMoney(payrollItem.discounts_total)
@@ -570,6 +612,9 @@ export default function PayrollPage() {
           profitValue: roundMoney(totalServicesValue - payrollNetTotal),
           serviceFortnightSummary: createServiceFortnightSummary(technicianServices),
           commissionPercentage,
+          commissionRate,
+          totalHours,
+          daysWorked,
           baseSalary,
           vaAllowance,
           vrAllowance,
@@ -583,7 +628,7 @@ export default function PayrollPage() {
           payrollNetTotal,
         };
       });
-  }, [commissionMode, competenceMonth, discounts, organizationSettings, payroll, services, technicians]);
+  }, [commissionMode, competenceMonth, discounts, organizationSettings, payroll, services, technicians, workHours]);
 
   const filteredRows = rows.filter((row) => normalizeText(`${row.technician.name} ${row.technician.qra}`).includes(normalizeText(query)));
 
@@ -745,6 +790,17 @@ export default function PayrollPage() {
   }
 
   const currentCommissionPercentage = selectedRow?.commissionPercentage ?? organizationSettings.commissionPercentage;
+  // The server's own counts win once the preview is in; until then the table's.
+  const commissionContext: CommissionContext = {
+    mode: commissionMode,
+    percentage: currentCommissionPercentage,
+    serviceCount: details?.serviceCount ?? selectedRow?.serviceCount ?? 0,
+    totalHours: details?.totalHours ?? selectedRow?.totalHours ?? 0,
+    daysWorked: details?.daysWorked ?? selectedRow?.daysWorked ?? 0,
+    rate: details?.commissionRate ?? selectedRow?.commissionRate ?? organizationSettings.commissionRate,
+    minimum: organizationSettings.commissionMinimum,
+    maximum: organizationSettings.commissionMaximum,
+  };
   const isClosed = draftStatus === 'closed';
 
   function updateDraftNumber(field: PayrollDraftField, rawValue: number) {
@@ -759,8 +815,8 @@ export default function PayrollPage() {
 
       // A commission set by hand is kept; one that was following the rule keeps following it.
       if (commissionFormulaFields.includes(field)) {
-        const wasAutomatic = roundMoney(current.commission_value) === formulaCommissionOf(current, currentCommissionPercentage, commissionMode);
-        if (wasAutomatic) next.commission_value = formulaCommissionOf(next, currentCommissionPercentage, commissionMode);
+        const wasAutomatic = roundMoney(current.commission_value) === formulaCommissionOf(current, commissionContext);
+        if (wasAutomatic) next.commission_value = formulaCommissionOf(next, commissionContext);
       }
 
       if (field !== 'net_total') {
@@ -904,7 +960,7 @@ export default function PayrollPage() {
 
   const draft = payrollDraft;
   const money = formatCurrency;
-  const formulaCommission = draft ? formulaCommissionOf(draft, currentCommissionPercentage, commissionMode) : 0;
+  const formulaCommission = draft ? formulaCommissionOf(draft, commissionContext) : 0;
   const cashSum = draft ? calculateCashNet(draft) : 0;
   const draftPayrollNet = draft ? calculatePayrollNet(draft) : 0;
   const draftProfit = draft ? roundMoney(draft.total_services_value - draftPayrollNet) : 0;
@@ -971,16 +1027,32 @@ export default function PayrollPage() {
 
   let commissionHint: string | undefined;
   if (draft) {
+    const unit = rateKindOf(commissionMode);
+    const rate = commissionContext.rate ?? 0;
     if (commissionMode === 'none') {
       commissionHint = 'A empresa não paga comissão (Configurações).';
     } else if (commissionMode === 'percentage') {
       commissionHint = `${currentCommissionPercentage}% de ${money(draft.total_services_value)}`;
+    } else if (commissionMode === 'per_service') {
+      commissionHint = `${commissionContext.serviceCount} OS × ${money(rate)}${rate > 0 ? '' : '\nSem valor por OS: defina em Configurações ou no cadastro do técnico.'}`;
+    } else if (commissionMode === 'per_hour') {
+      commissionHint = `${hoursText(commissionContext.totalHours ?? 0)} h × ${money(rate)} por hora${rate > 0 ? '' : '\nSem valor por hora: defina em Configurações ou no cadastro do técnico.'}`;
+    } else if (commissionMode === 'per_day') {
+      const days = commissionContext.daysWorked ?? 0;
+      commissionHint = `${days} ${days === 1 ? 'dia' : 'dias'} × ${money(rate)}${rate > 0 ? '' : '\nSem valor por dia: defina em Configurações ou no cadastro do técnico.'}`;
     } else {
       const fixedParts = [draft.base_salary > 0 && 'salário', draft.vr_deduction > 0 && 'VR', draft.va_deduction > 0 && 'VA'].filter(Boolean);
       commissionHint = `${currentCommissionPercentage}% de ${money(draft.total_services_value)} = ${money(draftBase)}
 ${fixedParts.length ? `menos o fixo de ${money(draftFixed)} (${fixedParts.join(' + ')})` : 'sem salário nem vales para abater'}`;
       if (draftFixed > 0 && draftBase <= draftFixed) commissionHint += `
 Ainda não passou do fixo: faltam ${money(roundMoney(draftFixed - draftBase))} de produção.`;
+    }
+    // The company's guaranteed minimum and cap, said when they changed the month's result.
+    if (unit && commissionMode !== 'none') {
+      const { minimum = 0, maximum = 0 } = commissionContext;
+      const raw = calculateCommissionValue({ ...commissionContext, minimum: 0, maximum: 0, totalServices: draft.total_services_value, baseSalary: draft.base_salary, vrAllowance: draft.vr_deduction, vaAllowance: draft.va_deduction });
+      if (maximum > 0 && raw > maximum) commissionHint += `\nTeto de ${money(maximum)} aplicado (o cálculo daria ${money(raw)}).`;
+      else if (minimum > 0 && raw < minimum) commissionHint += `\nMínimo garantido de ${money(minimum)} aplicado (o cálculo daria ${money(raw)}).`;
     }
   }
 
@@ -1252,7 +1324,7 @@ Só informativo: não entra no valor em conta.`
             {draftError ? <ModalNotice tone="error">{draftError}</ModalNotice> : null}
             {isClosed ? (
               <ModalNotice tone="success">Esta folha está fechada e o técnico já a vê. Para mudar algum valor, reabra a folha.</ModalNotice>
-            ) : selectedRow && selectedRow.serviceCount === 0 && payrollDraft ? (
+            ) : selectedRow && selectedRow.serviceCount === 0 && payrollDraft && !needsHours ? (
               <ModalNotice tone="warning">Este técnico não tem OS nesta competência. Valem só os valores fixos do mês.</ModalNotice>
             ) : null}
 

@@ -10,15 +10,20 @@ export type ServiceAwardTier = {
 };
 
 /** How commission is paid: see lib/payroll-rules.ts. */
-export type CommissionMode = 'excess' | 'percentage' | 'none';
-export const COMMISSION_MODES: CommissionMode[] = ['excess', 'percentage', 'none'];
+export type CommissionMode = 'excess' | 'percentage' | 'per_service' | 'per_hour' | 'per_day' | 'none';
+export const COMMISSION_MODES: CommissionMode[] = ['excess', 'percentage', 'per_service', 'per_hour', 'per_day', 'none'];
 
 export type OrganizationSettings = {
-  /** What the commission is: the excess over the fixed costs, a plain percentage on top of the salary, or none. */
+  /** What the commission is: the excess over the fixed costs, a percentage on top of the salary, a fixed amount per service, hour or day, or none. */
   commissionMode: CommissionMode;
   // Technician defaults — used when a technician has no value of their own, and as a new one's start.
   /** % of the month's OS total that forms the commission base. */
   commissionPercentage: number;
+  /** R$ per service, hour or day, according to the mode (the per_* modes). */
+  commissionRate: number;
+  /** Guaranteed minimum and cap of a technician's commission in the month, in R$ (0 = not used). */
+  commissionMinimum: number;
+  commissionMaximum: number;
   baseSalary: number;
   vaAllowance: number;
   vrAllowance: number;
@@ -110,6 +115,9 @@ export function endOfWorkDayMinutes(settings: Pick<OrganizationSettings, 'defaul
 export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   commissionMode: 'excess',
   commissionPercentage: 25,
+  commissionRate: 0,
+  commissionMinimum: 0,
+  commissionMaximum: 0,
   baseSalary: 0,
   vaAllowance: 0,
   vrAllowance: 0,
@@ -269,6 +277,9 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
   return {
     commissionMode: COMMISSION_MODES.includes(mode as CommissionMode) ? (mode as CommissionMode) : null,
     commissionPercentage: number('commissionPercentage'),
+    commissionRate: number('commissionRate'),
+    commissionMinimum: number('commissionMinimum'),
+    commissionMaximum: number('commissionMaximum'),
     baseSalary: number('baseSalary'),
     vaAllowance: number('vaAllowance'),
     vrAllowance: number('vrAllowance'),
@@ -299,6 +310,7 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
 }
 
 const isInteger = (value: number) => Number.isInteger(value);
+const MAX_RATE = 100_000;
 const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
 
 /** Returns the user-facing error for one field, or null when it's valid. `all` is for cross-field rules. */
@@ -309,6 +321,12 @@ function validateField(key: keyof OrganizationSettings, value: unknown, all: Org
       return COMMISSION_MODES.includes(value as CommissionMode) ? null : 'Escolha como a comissão é paga.';
     case 'commissionPercentage':
       return n >= 0 && n <= 100 ? null : 'O percentual de comissão deve estar entre 0 e 100.';
+    case 'commissionRate':
+      return n >= 0 && n <= MAX_RATE ? null : 'O valor da comissão por OS, hora ou dia deve ficar entre 0 e 100.000.';
+    case 'commissionMinimum':
+    case 'commissionMaximum':
+      if (!(n >= 0 && n <= MAX_RATE * 100)) return 'O mínimo e o teto da comissão não podem ser negativos.';
+      return key === 'commissionMaximum' && n > 0 && all.commissionMinimum > n ? 'O teto da comissão não pode ser menor que o mínimo.' : null;
     case 'baseSalary':
     case 'vaAllowance':
     case 'vrAllowance':
@@ -397,6 +415,9 @@ export function parseOrganizationSettingsInput(body: unknown): { settings: Organ
 const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
   commissionMode: 'Escolha como a comissão é paga.',
   commissionPercentage: 'O percentual de comissão deve estar entre 0 e 100.',
+  commissionRate: 'O valor da comissão por OS, hora ou dia deve ficar entre 0 e 100.000.',
+  commissionMinimum: 'O mínimo da comissão não pode ser negativo.',
+  commissionMaximum: 'O teto da comissão não pode ser negativo nem menor que o mínimo.',
   baseSalary: 'Salário, VA e VR não podem ser negativos.',
   vaAllowance: 'Salário, VA e VR não podem ser negativos.',
   vrAllowance: 'Salário, VA e VR não podem ser negativos.',

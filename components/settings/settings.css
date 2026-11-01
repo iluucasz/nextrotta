@@ -377,3 +377,10 @@
 .mg-dashboard .st-fields.one {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* three fields on one line (commission amount, minimum and cap) */
+@media (min-width: 761px) {
+  .mg-dashboard .st-fields.three {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}

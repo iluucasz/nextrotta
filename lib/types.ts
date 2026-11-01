@@ -30,6 +30,7 @@ export interface Technician {
   /** WhatsApp number for notifications. Optional — technicians without one are simply skipped. */
   phone?: string | null
   commission_percentage: number
+  commission_rate?: number
   base_salary: number
   va_allowance: number
   vr_allowance: number

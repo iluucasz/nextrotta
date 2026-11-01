@@ -21,7 +21,18 @@ Se o resultado for negativo, a comissão fica **R$ 0,00**.
 R$ 5.682,07 - R$ 3.452,00 - R$ 699,60 - R$ 249,00 = R$ 1.281,47
 ```
 
-> Este é o modo **sobre o excedente** (`excess`). Cada empresa pode usar também **percentual da produção** (comissão = % do bruto, somada ao salário) ou **sem comissão**: veja `docs/configuracoes.md`.
+> Este é o modo **sobre o excedente** (`excess`). Cada empresa escolhe como paga a comissão (Configurações → Pagamento); o cálculo é um só, em `lib/payroll-rules.ts` (`calculateCommissionValue`), usado pela API e pela tela da Folha:
+>
+> | Modo | Comissão |
+> |---|---|
+> | `excess` Sobre o excedente | `% × total das OS − salário − VR − VA`, nunca abaixo de zero |
+> | `percentage` Percentual da produção | `% × total das OS`, somada ao salário |
+> | `per_service` Valor fixo por OS | `valor por OS × nº de OS do mês` (o preço da OS não importa) |
+> | `per_hour` Valor por hora | `valor por hora × horas trabalhadas no mês` (apontamento: escala e Porto) |
+> | `per_day` Diária | `valor por dia × dias com horas > 0 no mês` |
+> | `none` Sem comissão | zero |
+>
+> O valor por OS/hora/dia (e o percentual) tem um padrão da empresa e pode ser sobrescrito no cadastro do técnico (vazio ou 0 usa o padrão). **Mínimo garantido** e **teto** valem para qualquer modo, menos `none`: o resultado do mês é levado para dentro deles (o teto vence o mínimo); 0 = não usa. Exemplo: 42 OS × R$ 30 = R$ 1.260; com teto de R$ 1.000, a comissão é R$ 1.000.
 
 ## Resultado
 
