@@ -1401,13 +1401,24 @@
 .nr-assistant.is-page .ai-composer > p {
   max-width: 860px;
 }
-/* the other tabs start at the menu's edge, like the list pages, instead of floating in the middle of a wide card */
+/* the other tabs start at the menu's edge, like the list pages. The scroll area stays the full width of the card (its bar
+   belongs at the card's edge); what is inside is held to a readable width. */
 .nr-assistant.is-page .ai-tab-content {
-  max-width: 1320px;
+  width: 100%;
+  max-width: none;
   margin-inline: 0;
 }
-.nr-assistant.is-page .ai-tab-content:not(.ai-consumption) {
+.nr-assistant.is-page .ai-tab-content > * {
   max-width: 920px;
+}
+.nr-assistant.is-page .ai-consumption > * {
+  max-width: none;
+}
+@media (min-width: 1100px) {
+  /* the same four columns as the figures above them, so the cards line up */
+  .nr-assistant.is-page .ai-packages {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
 }
 .nr-assistant.is-page .ai-welcome {
   max-width: 780px;
