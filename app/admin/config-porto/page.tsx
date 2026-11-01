@@ -7,8 +7,9 @@ import { AccountDialog } from '@/components/porto/account-dialog';
 import { Activity } from '@/components/porto/activity';
 import { JobDialog } from '@/components/porto/job-dialog';
 import { MatchDialog } from '@/components/porto/match-dialog';
-import { Advanced, AccountPanel, LiveConfirm, ModePanel, TechniciansPanel } from '@/components/porto/panels';
-import { Hero, Problems, Steps, type PortoAction } from '@/components/porto/status';
+import { Advanced, LiveConfirm } from '@/components/porto/panels';
+import { Settings } from '@/components/porto/settings';
+import { Hero, Problems, type PortoAction } from '@/components/porto/status';
 import { usePorto } from '@/components/porto/use-porto';
 import '@/components/porto/porto.css';
 import '../dashboard-gerencial/management-dashboard.css';
@@ -125,7 +126,7 @@ export default function ConfigPortoPage() {
             <h1>
               Porto<span>.</span>
             </h1>
-            <p>Suas horas e sua escala vêm do Portal do Prestador sozinhas, todo dia.</p>
+            <p>Horas e escala do Portal do Prestador, todo dia.</p>
           </div>
           <div className="mg-header-actions po-header-actions">
             <PortoRunWizard openSignal={wizardSignal} />
@@ -153,22 +154,27 @@ export default function ConfigPortoPage() {
         ) : null}
 
         {loaded ? (
-          <div aria-busy={loading}>
+          <div className="po-stack" aria-busy={loading}>
             <Hero status={status} hasCredentials={hasCredentials} loginFailed={loginFailed} onAction={act} />
             <Problems problems={listed} onAction={act} />
-            {!status.setupComplete && mode !== 'live' ? <Steps steps={status.steps} hasCredentials={hasCredentials} loginFailed={loginFailed} busy={busy || testingLogin} onAction={act} /> : null}
-
-            <div className="po-columns">
+            <Settings
+              api={api}
+              status={status}
+              mode={mode}
+              times={times}
+              now={now}
+              saving={savingMode}
+              testing={testingLogin}
+              onMode={(next) => (next === 'live' ? setDialog('live') : void changeMode(next))}
+              onAccount={() => setDialog('account')}
+              onTest={() => void testLogin()}
+              onMatch={() => setDialog('match')}
+            />
+            {logs.length ? (
               <div id="atividade">
                 <Activity status={status} logs={logs} running={busy} onOpen={api.openRun} />
               </div>
-              <div className="po-side">
-                <ModePanel mode={mode} enabled={hasCredentials} times={times} saving={savingMode} onChange={(next) => (next === 'live' ? setDialog('live') : void changeMode(next))} />
-                <TechniciansPanel status={status} enabled={hasCredentials} onMatch={() => setDialog('match')} />
-                <AccountPanel api={api} now={now} onEdit={() => setDialog('account')} onTest={() => void testLogin()} testing={testingLogin} />
-              </div>
-            </div>
-
+            ) : null}
             <Advanced busy={busy} onSimulate={(job, range) => void api.simulate(job, range)} />
           </div>
         ) : null}

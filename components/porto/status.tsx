@@ -1,9 +1,8 @@
 'use client';
 
-import { AlertTriangle, ArrowRight, CheckCircle2, Circle, FlaskConical, PlugZap, Power, XCircle, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, ArrowRight, CheckCircle2, FlaskConical, PlugZap, Power, XCircle, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { HelpDot } from '@/components/modal-kit';
-import type { PortoStatus, Problem, ProblemAction, Step, Tone } from '@/lib/porto-status';
+import type { PortoStatus, Problem, ProblemAction, Tone } from '@/lib/porto-status';
 import { cn } from '@/lib/utils';
 
 export type PortoAction = ProblemAction | 'connect' | 'test-login' | 'simulate' | 'mode-test' | 'mode-live';
@@ -22,6 +21,8 @@ export function Hero({ status, hasCredentials, loginFailed, onAction }: { status
   else if (first?.action) cta = { label: first.actionLabel ?? 'Resolver', action: first.action };
   else if (hasCredentials && !loginFailed && status.overall === 'ok') cta = null;
 
+  const next = status.nextRun.hours || status.nextRun.schedule ? `Próximas: ${[status.nextRun.hours && `horas ${status.nextRun.hours}`, status.nextRun.schedule && `escala ${status.nextRun.schedule}`].filter(Boolean).join(' · ')}` : null;
+
   return (
     <section className={cn('po-hero', status.tone)} aria-live="polite">
       <span className="po-hero-icon" aria-hidden="true">
@@ -30,31 +31,14 @@ export function Hero({ status, hasCredentials, loginFailed, onAction }: { status
       <div className="po-hero-text">
         <h2>{status.headline}</h2>
         <p>{status.detail}</p>
+        {next ? <small>{next}</small> : null}
       </div>
-      <div className="po-hero-side">
-        {status.nextRun.hours || status.nextRun.schedule ? (
-          <dl className="po-facts">
-            {status.nextRun.hours ? (
-              <div>
-                <dt>Próxima importação de horas</dt>
-                <dd>{status.nextRun.hours}</dd>
-              </div>
-            ) : null}
-            {status.nextRun.schedule ? (
-              <div>
-                <dt>Próxima da escala</dt>
-                <dd>{status.nextRun.schedule}</dd>
-              </div>
-            ) : null}
-          </dl>
-        ) : null}
-        {cta ? (
-          <Button type="button" onClick={() => onAction(cta.action)} className="po-hero-cta">
-            {cta.label}
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        ) : null}
-      </div>
+      {cta ? (
+        <Button type="button" onClick={() => onAction(cta.action)} className="po-hero-cta">
+          {cta.label}
+          <ArrowRight className="h-4 w-4" />
+        </Button>
+      ) : null}
     </section>
   );
 }
@@ -70,10 +54,7 @@ export function Problems({ problems, onAction }: { problems: Problem[]; onAction
           <span className="po-problem-icon" aria-hidden="true">
             {problem.tone === 'danger' ? <XCircle size={18} /> : <AlertTriangle size={18} />}
           </span>
-          <div className="po-problem-text">
-            <strong>{problem.title}</strong>
-            <p>{problem.detail}</p>
-          </div>
+          <strong className="po-problem-text">{problem.title}</strong>
           {problem.action ? (
             <Button type="button" size="sm" variant="outline" onClick={() => onAction(problem.action!)}>
               {problem.actionLabel ?? 'Resolver'}
@@ -82,55 +63,5 @@ export function Problems({ problems, onAction }: { problems: Problem[]; onAction
         </div>
       ))}
     </section>
-  );
-}
-
-/** The path from nothing to "importing for real": four steps, the one in front highlighted and doable. */
-export function Steps({ steps, hasCredentials, loginFailed, busy, onAction }: { steps: Step[]; hasCredentials: boolean; loginFailed: boolean; busy: boolean; onAction: (action: PortoAction) => void }) {
-  const accountDone = steps[0].done;
-
-  const button = (step: Step): { label: string; action: PortoAction; enabled: boolean } | null => {
-    if (step.done) return null;
-    // The hero already holds this button while there is no account at all.
-    if (step.key === 'account' && !hasCredentials) return null;
-    switch (step.key) {
-      case 'account':
-        return { label: !hasCredentials ? 'Conectar a conta' : loginFailed ? 'Atualizar a senha' : 'Testar o login', action: hasCredentials && !loginFailed ? 'test-login' : 'connect', enabled: true };
-      case 'technicians':
-        return { label: 'Vincular técnicos', action: 'match', enabled: accountDone };
-      case 'simulation':
-        return { label: 'Simular agora', action: 'simulate', enabled: accountDone };
-      case 'live':
-        return { label: 'Gravar de verdade', action: 'mode-live', enabled: accountDone };
-    }
-  };
-
-  return (
-    <ol className="po-steps">
-      {steps.map((step, index) => {
-        const action = button(step);
-        return (
-          <li key={step.key} className={cn(step.done && 'done', step.current && 'current')}>
-            <span className="po-step-mark" aria-hidden="true">
-              {step.done ? <CheckCircle2 size={22} /> : <Circle size={22} />}
-              <b>{index + 1}</b>
-            </span>
-            <div>
-              <strong className="po-step-title">
-                {step.title}
-                <HelpDot text={step.description} label={step.title} />
-              </strong>
-            </div>
-            {action ? (
-              <Button type="button" size="sm" variant={step.current ? 'default' : 'outline'} disabled={!action.enabled || busy} onClick={() => onAction(action.action)}>
-                {action.label}
-              </Button>
-            ) : step.done ? (
-              <span className="po-step-done">Pronto</span>
-            ) : null}
-          </li>
-        );
-      })}
-    </ol>
   );
 }
