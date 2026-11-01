@@ -111,6 +111,14 @@ const toolLabels: Record<string, string> = {
 const number = (value: number) => value.toLocaleString('pt-BR');
 const money = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+/** Cents are too coarse for a price per credit: show the digits that matter (R$ 0,002). */
+const perCredit = (value: number) =>
+  new Intl.NumberFormat('pt-BR', {
+    style: 'currency',
+    currency: 'BRL',
+    minimumFractionDigits: value < 0.01 ? 3 : 2,
+    maximumFractionDigits: value < 0.01 ? 4 : 2,
+  }).format(value);
 const monthName = (key: string) => {
   const [year, month] = key.split('-').map(Number);
   const label = new Intl.DateTimeFormat('pt-BR', { month: 'short', timeZone: 'UTC' })
@@ -935,7 +943,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                                 {number(item.credits)} <small>créditos</small>
                               </strong>
                               <small>
-                                {money(item.price)} · {money(item.price / item.credits)} por crédito
+                                {money(item.price)} · {perCredit(item.price / item.credits)} por crédito
                               </small>
                               <button
                                 type="button"
