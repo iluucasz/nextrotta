@@ -455,43 +455,12 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
               <h1>
                 Assistente IA<span>.</span>
               </h1>
-              <p>Pergunte sobre a sua operação e receba a resposta com os dados da empresa.</p>
-            </div>
-            <div className="mg-header-actions ai-header-actions">
-              <span className="ai-balance">
-                <button type="button" className="ai-balance-main" onClick={() => setTab('credits')} title="Ver consumo">
-                  <Sparkles size={16} />
-                  {status ? (status.impersonating ? 'Sem débito' : `${number(status.balance)} créditos`) : '—'}
-                </button>
-                <HelpDot label="Créditos" text={creditsHelp} />
-              </span>
-              <button type="button" className="mg-button mg-button-dark" disabled={asking || opening} onClick={startNew}>
-                <Plus size={16} /> Nova conversa
-              </button>
             </div>
           </header>
-          <nav className="mg-section-nav ai-tabs" aria-label="Seções do assistente">
-            {tabs.map(({ id, label, icon: Icon }) => (
-              <button
-                key={id}
-                type="button"
-                className={tab === id ? 'active' : ''}
-                aria-current={tab === id ? 'page' : undefined}
-                onClick={() => {
-                  setTab(id);
-                  setNotice('');
-                }}
-              >
-                <Icon size={15} />
-                {label}
-              </button>
-            ))}
-          </nav>
         </>
       )}
       {compact && summary}
       <div className={`ai-workspace ${compact ? '' : 'is-page'}`}>
-        {compact ? (
         <aside className="ai-navigation">
           <button
             className="ai-primary ai-new"
@@ -515,8 +484,19 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
               </button>
             ))}
           </nav>
+          {!compact && (
+            <div className="ai-rail-balance">
+              <button type="button" onClick={() => setTab('credits')} title="Ver consumo">
+                <Sparkles size={17} />
+                <span>
+                  <small>Créditos</small>
+                  <strong>{status ? (status.impersonating ? 'Sem débito' : number(status.balance)) : '—'}</strong>
+                </span>
+              </button>
+              <HelpDot label="Créditos" text={creditsHelp} />
+            </div>
+          )}
         </aside>
-        ) : null}
         <div className="ai-main">
           {compact || (tab === 'chat' && messages.length > 0) ? (
           <header className="ai-panel-heading">

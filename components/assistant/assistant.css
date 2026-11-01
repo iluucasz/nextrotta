@@ -1232,69 +1232,58 @@
 }
 
 /* ---- the full page (/admin/assistente): the management layout, one wide chat, tabs on top ---- */
-.nr-assistant.is-page .ai-header-actions {
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-}
-.nr-assistant.is-page .ai-balance {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 44px;
-  padding: 0 14px 0 4px;
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--card);
-}
-.nr-assistant.is-page .ai-balance-main {
-  flex: none;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 100%;
-  padding: 0 8px;
-  font-size: 15px;
-  font-weight: 600;
-  color: var(--ai-ink);
-}
-.nr-assistant.is-page .ai-balance-main svg {
-  color: var(--ai-green);
-}
-.nr-assistant.is-page .ai-tabs {
-  margin-top: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-  white-space: nowrap;
-}
-.nr-assistant.is-page .ai-tabs::-webkit-scrollbar {
-  display: none;
-}
-.nr-assistant.is-page .ai-tabs button {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 12px 0 15px;
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  color: var(--muted-foreground);
-  font-size: 16px;
-}
-.nr-assistant.is-page .ai-tabs button:hover,
-.nr-assistant.is-page .ai-tabs button.active {
-  color: var(--primary);
-  border-color: var(--primary);
+/* a slim title so the chat gets the room */
+.nr-assistant.is-page .mg-page-heading {
+  padding: 0 0 18px;
 }
 .nr-assistant.is-page .ai-workspace {
-  grid-template-columns: minmax(0, 1fr);
-  margin-top: 22px;
+  grid-template-columns: 232px minmax(0, 1fr);
   border-radius: 18px;
   box-shadow: none;
 }
+.nr-assistant.is-page .ai-navigation {
+  padding: 16px 12px;
+}
+.nr-assistant.is-page .ai-navigation nav {
+  margin-top: 16px;
+}
+.nr-assistant.is-page .ai-navigation nav button {
+  min-height: 42px;
+  font-size: 15px;
+}
+.nr-assistant.is-page .ai-rail-balance {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+  padding: 10px 10px 10px 12px;
+  border: 1px solid var(--ai-line);
+  border-radius: 12px;
+  background: var(--card);
+}
+.nr-assistant.is-page .ai-rail-balance > button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  text-align: left;
+  color: var(--ai-green);
+}
+.nr-assistant.is-page .ai-rail-balance span {
+  display: grid;
+  line-height: 1.2;
+}
+.nr-assistant.is-page .ai-rail-balance small {
+  font-size: 12px;
+  color: var(--muted-foreground);
+}
+.nr-assistant.is-page .ai-rail-balance strong {
+  font-size: 17px;
+  color: var(--ai-ink);
+}
 .nr-assistant.is-page .ai-main {
-  height: clamp(500px, calc(100dvh - 390px), 900px);
+  height: clamp(520px, calc(100dvh - 268px), 980px);
 }
 .nr-assistant.is-page .ai-panel-heading {
   padding: 12px 24px 12px 28px;
@@ -1362,7 +1351,7 @@
 }
 .nr-assistant.is-page .ai-tab-content {
   width: 100%;
-  max-width: 980px;
+  max-width: 900px;
   margin-inline: auto;
   padding: 26px 28px 32px;
 }
@@ -1396,4 +1385,10 @@
 
 .nr-assistant.is-page .ai-composer {
   flex: none;
+}
+
+@media (max-width: 760px) {
+  .nr-assistant.is-page .ai-rail-balance {
+    display: none;
+  }
 }
