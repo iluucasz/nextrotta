@@ -26,6 +26,8 @@ import {
   Wallet,
 } from 'lucide-react';
 import { Markdown } from '@/components/markdown';
+import { HelpDot } from '@/components/modal-kit';
+import '../../app/admin/dashboard-gerencial/management-dashboard.css';
 import './assistant.css';
 
 type Status = {
@@ -433,28 +435,63 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
       </div>
   );
 
+  const headline = tab === 'chat' ? (messages.length ? title : 'Nova conversa') : (tabs.find((item) => item.id === tab)?.label ?? '');
+  const creditsHelp = status?.impersonating
+    ? 'Acesso do dono: suas consultas não descontam créditos da empresa.'
+    : `Cada resposta usa ${status?.creditsPerUse ?? '—'} crédito(s). A cota do plano renova todo mês e não acumula; créditos comprados não expiram.`;
+
   return (
     <section
-      className={`nr-assistant ${compact ? 'is-compact' : ''} ${prefs.largeText ? 'is-large-text' : ''}`}
+      className={`nr-assistant ${compact ? 'is-compact' : 'mg-dashboard is-page'} ${prefs.largeText ? 'is-large-text' : ''}`}
       aria-label="Assistente de IA"
     >
       {!compact && (
-        <header className="ai-page-heading">
-          <div>
-            <span className="ai-eyebrow">NEXTROTTA / INTELIGÊNCIA</span>
-            <h1>Sua operação, em uma conversa.</h1>
-            <p>
-              Consulte os dados da empresa, encontre respostas e acompanhe seu
-              uso de IA.
-            </p>
-          </div>
-          <span className="ai-brand-icon">
-            <Sparkles size={30} />
-          </span>
-        </header>
+        <>
+          <header className="mg-page-heading">
+            <div>
+              <div className="mg-eyebrow">
+                <span /> FERRAMENTAS <span className="mg-eyebrow-divider">/</span> NEXTROTTA
+              </div>
+              <h1>
+                Assistente IA<span>.</span>
+              </h1>
+              <p>Pergunte sobre a sua operação e receba a resposta com os dados da empresa.</p>
+            </div>
+            <div className="mg-header-actions ai-header-actions">
+              <span className="ai-balance">
+                <button type="button" className="ai-balance-main" onClick={() => setTab('credits')} title="Ver consumo">
+                  <Sparkles size={16} />
+                  {status ? (status.impersonating ? 'Sem débito' : `${number(status.balance)} créditos`) : '—'}
+                </button>
+                <HelpDot label="Créditos" text={creditsHelp} />
+              </span>
+              <button type="button" className="mg-button mg-button-dark" disabled={asking || opening} onClick={startNew}>
+                <Plus size={16} /> Nova conversa
+              </button>
+            </div>
+          </header>
+          <nav className="mg-section-nav ai-tabs" aria-label="Seções do assistente">
+            {tabs.map(({ id, label, icon: Icon }) => (
+              <button
+                key={id}
+                type="button"
+                className={tab === id ? 'active' : ''}
+                aria-current={tab === id ? 'page' : undefined}
+                onClick={() => {
+                  setTab(id);
+                  setNotice('');
+                }}
+              >
+                <Icon size={15} />
+                {label}
+              </button>
+            ))}
+          </nav>
+        </>
       )}
       {compact && summary}
-      <div className="ai-workspace">
+      <div className={`ai-workspace ${compact ? '' : 'is-page'}`}>
+        {compact ? (
         <aside className="ai-navigation">
           <button
             className="ai-primary ai-new"
@@ -479,23 +516,23 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
             ))}
           </nav>
         </aside>
+        ) : null}
         <div className="ai-main">
+          {compact || (tab === 'chat' && messages.length > 0) ? (
           <header className="ai-panel-heading">
             <div>
-              <h2>
-                {tab === 'chat'
-                  ? title
-                  : tabs.find((item) => item.id === tab)?.label}
-              </h2>
-              <p>
-                {tab === 'chat'
-                  ? 'Assistente NextRotta'
-                  : tab === 'history'
-                    ? 'Retome suas últimas 50 conversas.'
-                    : tab === 'credits'
-                      ? 'Saldo e movimentações da empresa.'
-                      : 'Deixe o assistente do seu jeito.'}
-              </p>
+              <h2>{headline}</h2>
+              {compact ? (
+                <p>
+                  {tab === 'chat'
+                    ? 'Assistente NextRotta'
+                    : tab === 'history'
+                      ? 'Retome suas últimas 50 conversas.'
+                      : tab === 'credits'
+                        ? 'Saldo e movimentações da empresa.'
+                        : 'Deixe o assistente do seu jeito.'}
+                </p>
+              ) : null}
             </div>
             <div className="ai-heading-actions">
               {compact && (
@@ -540,6 +577,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
               </button>
             </div>
           </header>
+          ) : null}
           {error && (
             <div role="alert" className="ai-error">
               {error}
@@ -553,7 +591,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
               </button>
             </div>
           )}
-          {status?.impersonating && (
+          {compact && status?.impersonating && (
             <p className="ai-notice">
               Acesso do dono: suas consultas não descontam créditos da empresa.
             </p>
@@ -591,15 +629,14 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                     </p>
                     <div className="ai-suggestions">
                       {(status?.suggestions?.length ? status.suggestions : FALLBACK_SUGGESTIONS)
-                        .slice(0, compact ? 4 : 6)
-                        .map((text, index) => (
+                        .slice(0, 4)
+                        .map((text) => (
                           <button
                             key={text}
                             type="button"
                             disabled={!status?.available || asking}
                             onClick={() => void send(text)}
                           >
-                            <span>0{index + 1}</span>
                             {text}
                             <ArrowUpRight size={17} />
                           </button>
@@ -607,6 +644,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                     </div>
                   </div>
                 )}
+                <div className="ai-thread">
                 {messages.map((message, index) => (
                   <article
                     key={message.id}
@@ -688,6 +726,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                     os dados da empresa…
                   </p>
                 )}
+                </div>
               </div>
               <form
                 className="ai-composer"
@@ -745,13 +784,10 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                     {status?.impersonating
                       ? 'Sem consumo de créditos neste acesso'
                       : `${status?.creditsPerUse ?? '—'} crédito(s) por resposta`}
+                    <HelpDot label="Sobre as respostas" text="O assistente consulta os dados da empresa, sem alterá-los. Confira as informações importantes no sistema." />
                   </span>
-                  <span>{question.length}/2000</span>
+                  {question.length >= 1500 ? <span>{question.length}/2000</span> : null}
                 </p>
-                <small>
-                  O assistente consulta dados, sem alterá-los. Confira
-                  informações importantes no sistema.
-                </small>
               </form>
             </>
           )}
@@ -896,8 +932,8 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                         >
                           <i style={{ width: `${quotaPercent}%` }} />
                         </div>
-                        <p className="ai-muted">
-                          A cota é usada primeiro. O que sobrar no fim do mês expira; créditos comprados não expiram.
+                        <p className="ai-muted ai-help-line">
+                          A cota é usada primeiro. O que sobrar no fim do mês expira.
                         </p>
                       </section>
                     )}
@@ -1019,10 +1055,10 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
           )}
           {tab === 'settings' && (
             <div className="ai-tab-content">
-              <h3>Preferências de conversa</h3>
-              <p className="ai-muted">
-                Estas opções ficam salvas apenas neste navegador.
-              </p>
+              <h3 className="ai-heading-help">
+                Preferências de conversa
+                <HelpDot label="Preferências" text="Estas opções ficam salvas apenas neste navegador." />
+              </h3>
               {(
                 [
                   {
@@ -1048,7 +1084,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                 <label key={item.key} className="ai-preference">
                   <span>
                     <strong>{item.title}</strong>
-                    <small>{item.description}</small>
+                    <HelpDot label={item.title} text={item.description} />
                   </span>
                   <input
                     type="checkbox"
