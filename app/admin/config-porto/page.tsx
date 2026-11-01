@@ -117,7 +117,7 @@ export default function ConfigPortoPage() {
 
   return (
     <AppShell role="admin" userName={user.name || user.email}>
-      <div className="mg-dashboard">
+      <div className="mg-dashboard po-page">
         <header className="mg-page-heading">
           <div>
             <div className="mg-eyebrow">
@@ -170,11 +170,9 @@ export default function ConfigPortoPage() {
               onTest={() => void testLogin()}
               onMatch={() => setDialog('match')}
             />
-            {logs.length ? (
-              <div id="atividade">
-                <Activity status={status} logs={logs} running={busy} onOpen={api.openRun} />
-              </div>
-            ) : null}
+            <div id="atividade">
+              <Activity status={status} logs={logs} running={busy} onOpen={api.openRun} />
+            </div>
             <Advanced busy={busy} onSimulate={(job, range) => void api.simulate(job, range)} />
           </div>
         ) : null}

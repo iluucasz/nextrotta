@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { CheckCircle2, ChevronRight, Clock3, FlaskConical, Loader2, TriangleAlert, XCircle, type LucideIcon } from 'lucide-react';
-import { ChartEmpty, Panel } from '@/components/management-ui';
+import { Panel } from '@/components/management-ui';
 import type { PortoStatus, RunKind } from '@/lib/porto-status';
 import type { PortoSyncLog } from '@/lib/porto-ui-helpers';
 import { cn } from '@/lib/utils';
@@ -20,7 +20,7 @@ export function Activity({ status, logs, running, onOpen }: { status: PortoStatu
 
   return (
     <Panel
-      title="Últimas importações"
+      title="Histórico"
       help="O que o robô fez nas últimas vezes. Clique em uma execução para ver o que ela encontrou."
       badge={
         problems ? (
@@ -56,7 +56,7 @@ export function Activity({ status, logs, running, onOpen }: { status: PortoStatu
           })}
         </ul>
       ) : (
-        <ChartEmpty message={onlyProblems ? 'Nenhuma importação com problema.' : 'Nenhuma importação ainda.'} hint="" />
+        <p className="po-empty">{onlyProblems ? 'Nenhuma importação com problema.' : 'Nenhuma importação ainda.'}</p>
       )}
     </Panel>
   );

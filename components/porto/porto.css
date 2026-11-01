@@ -7,12 +7,21 @@
   align-items: center;
 }
 
-/* one calm column */
+/* one calm column, centred on wide screens */
+.mg-dashboard.po-page {
+  max-width: 980px;
+  margin-inline: auto;
+}
 .mg-dashboard .po-stack {
   display: grid;
   gap: 14px;
-  max-width: 940px;
   margin-top: 8px;
+}
+.mg-dashboard .po-empty {
+  padding: 18px 0 6px;
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+  color: var(--muted-foreground);
 }
 
 /* the status card */
