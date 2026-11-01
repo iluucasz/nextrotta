@@ -5,6 +5,7 @@
 // management-dashboard.css and only apply inside an element with the `mg-dashboard` class.
 import type { ReactNode } from 'react';
 import { ArrowDownRight, ArrowUpRight, ChartNoAxesCombined, ChevronDown, type LucideIcon } from 'lucide-react';
+import { HelpDot } from '@/components/modal-kit';
 import { formatPercent } from '@/lib/formatters';
 import { variation } from '@/lib/management-dashboard';
 
@@ -99,12 +100,15 @@ export function Metric({
 export function Panel({
   title,
   description,
+  help,
   badge,
   children,
   className = '',
 }: {
   title: string;
-  description: string;
+  /** A visible subtitle. Prefer `help`: explanations belong behind the "?", not on the page. */
+  description?: string;
+  help?: string;
   badge?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -113,8 +117,11 @@ export function Panel({
     <section className={`mg-panel ${className}`}>
       <header className="mg-panel-heading">
         <div>
-          <h3>{title}</h3>
-          <p>{description}</p>
+          <h3 className={help ? 'mg-panel-title-help' : undefined}>
+            {title}
+            {help ? <HelpDot text={help} label={title} /> : null}
+          </h3>
+          {description ? <p>{description}</p> : null}
         </div>
         {badge}
       </header>
@@ -136,12 +143,12 @@ export function Legend({ items }: { items: { color: string; label: string }[] })
   );
 }
 
-export function ChartEmpty({ message = 'Nenhum registro neste recorte.' }: { message?: string }) {
+export function ChartEmpty({ message = 'Nenhum registro neste recorte.', hint = 'Selecione outro período ou ajuste os filtros.' }: { message?: string; hint?: string }) {
   return (
     <div className="mg-chart-empty">
       <ChartNoAxesCombined size={26} />
       <p>{message}</p>
-      <span>Selecione outro período ou ajuste os filtros.</span>
+      {hint ? <span>{hint}</span> : null}
     </div>
   );
 }

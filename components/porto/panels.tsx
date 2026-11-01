@@ -6,21 +6,21 @@ import { CheckCircle2, ChevronDown, FlaskConical, KeyRound, Loader2, Users, XCir
 import { Panel } from '@/components/management-ui';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS } from '@/components/modal-kit';
+import { HelpDot, MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS } from '@/components/modal-kit';
 import { whenLabel, type PortoMode, type PortoStatus } from '@/lib/porto-status';
 import { cn } from '@/lib/utils';
 import type { PortoApi } from './use-porto';
 
 const MODES: Array<{ value: PortoMode; title: string; text: string }> = [
-  { value: 'off', title: 'Desligado', text: 'O robô não importa nada.' },
-  { value: 'test', title: 'Teste', text: 'Roda todo dia e mostra o que faria, sem gravar nada. Bom para começar.' },
-  { value: 'live', title: 'Valendo', text: 'Importa as horas e a escala de verdade, todo dia.' },
+  { value: 'off', title: 'Desligado', text: '' },
+  { value: 'test', title: 'Teste', text: 'Não grava nada' },
+  { value: 'live', title: 'Valendo', text: 'Grava todo dia' },
 ];
 
 /** Off, test or live: one choice, said in words. Going live asks first; the others apply at once. */
 export function ModePanel({ mode, enabled, times, saving, onChange }: { mode: PortoMode; enabled: boolean; times: { hours: string; schedule: string }; saving: boolean; onChange: (mode: PortoMode) => void }) {
   return (
-    <Panel title="Importação automática" description="O que o robô faz sozinho todo dia.">
+    <Panel title="Importação automática" help={'Desligado: o robô não importa nada.\nTeste: roda todo dia e mostra o que faria, sem gravar. Bom para começar.\nValendo: importa as horas e a escala de verdade, todo dia. Os dias lançados à mão nunca são sobrescritos.'}>
       <div role="radiogroup" aria-label="Modo da importação" className="po-modes">
         {MODES.map((item) => (
           <button
@@ -35,12 +35,11 @@ export function ModePanel({ mode, enabled, times, saving, onChange }: { mode: Po
             <span className="po-mode-dot" aria-hidden="true" />
             <span>
               <strong>{item.title}</strong>
-              <small>{item.text}</small>
+              {item.text ? <small>{item.text}</small> : null}
             </span>
           </button>
         ))}
       </div>
-      {!enabled ? <p className="po-note">Conecte a conta do Porto para poder ligar.</p> : null}
       <p className="po-note">
         Horas: todo dia às <strong>{times.hours}</strong> · Escala: todo dia às <strong>{times.schedule}</strong>.{' '}
         <Link href="/admin/configuracoes" className="po-link">
@@ -57,7 +56,7 @@ export function TechniciansPanel({ status, enabled, onMatch }: { status: PortoSt
   const share = active ? Math.round((linked / active) * 100) : 0;
 
   return (
-    <Panel title="Técnicos" description="O robô acha as horas de cada um pelo QRA do Porto.">
+    <Panel title="Técnicos" help="O robô acha as horas de cada técnico pelo QRA dele no Porto. Quem não tem o QRA vinculado fica de fora da importação.">
       {active ? (
         <>
           <p className="po-count">
@@ -73,9 +72,7 @@ export function TechniciansPanel({ status, enabled, onMatch }: { status: PortoSt
               ))}
               {unlinked.length > 5 ? <li className="more">e mais {unlinked.length - 5}</li> : null}
             </ul>
-          ) : (
-            <p className="po-note ok">Todos os técnicos ativos estão vinculados.</p>
-          )}
+          ) : null}
         </>
       ) : (
         <p className="po-note">Nenhum técnico ativo cadastrado ainda.</p>
@@ -97,7 +94,7 @@ export function AccountPanel({ api, now, onEdit, onTest, testing }: { api: Porto
   const tested = config.last_login_test_ok;
 
   return (
-    <Panel title="Conta do Porto" description="O acesso que o robô usa no Portal do Prestador.">
+    <Panel title="Conta do Porto" help="O acesso que o robô usa para entrar no Portal do Prestador. A senha fica guardada com criptografia.">
       {has ? (
         <dl className="po-account">
           <div>
@@ -149,8 +146,9 @@ export function Advanced({ busy, onSimulate }: { busy: boolean; onSimulate: (job
       </button>
       {open ? (
         <div className="po-advanced-body">
-          <p>
-            Simule uma importação sem gravar nada, para ver o que o robô faria. Não conta no limite do plano. Para as horas, você pode escolher o período (em branco é o mês inteiro até hoje).
+          <p className="po-adv-title">
+            Simular sem gravar
+            <HelpDot label="Simular" text={'Mostra o que o robô faria, sem gravar nada. Não conta no limite do plano.\nPara as horas, escolha o período; em branco é o mês inteiro até hoje.'} />
           </p>
           <div className="po-range">
             <label>

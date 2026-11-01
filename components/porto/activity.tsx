@@ -31,7 +31,7 @@ function JobCard({ title, last, next }: { title: string; last: RunSummary | null
       ) : (
         <>
           <p className="po-job-main">Ainda não rodou</p>
-          <p className="po-job-sub">O resultado aparece aqui depois da primeira importação.</p>
+
         </>
       )}
       {next ? <p className="po-job-next">Próxima: {next}</p> : null}
@@ -51,7 +51,7 @@ export function Activity({ status, logs, running, onOpen }: { status: PortoStatu
   return (
     <Panel
       title="Atividade"
-      description="O que o robô fez nas últimas vezes."
+      help="O que o robô fez nas últimas vezes. Clique em uma execução para ver o que ela encontrou."
       badge={
         problems ? (
           <button type="button" className={cn('po-filter', onlyProblems && 'on')} aria-pressed={onlyProblems} onClick={() => setOnlyProblems((value) => !value)}>
@@ -91,7 +91,7 @@ export function Activity({ status, logs, running, onOpen }: { status: PortoStatu
           })}
         </ul>
       ) : (
-        <ChartEmpty message={onlyProblems ? 'Nenhuma importação com problema.' : 'Nenhuma importação ainda.'} />
+        <ChartEmpty message={onlyProblems ? 'Nenhuma importação com problema.' : 'Nenhuma importação ainda.'} hint="" />
       )}
     </Panel>
   );

@@ -56,7 +56,7 @@ export function AccountDialog({ api, onClose, onSaved }: { api: PortoApi; onClos
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
         <DialogHeader className={MODAL_HEADER_CLASS}>
           <DialogTitle className={MODAL_TITLE_CLASS}>{hasPassword ? 'Conta do Porto' : 'Conectar a conta do Porto'}</DialogTitle>
-          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>O CPF e a senha que você usa para entrar no Portal do Prestador. A senha fica guardada com criptografia.</DialogDescription>
+          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>O mesmo acesso do Portal do Prestador.</DialogDescription>
         </DialogHeader>
 
         <div className={cn(MODAL_BODY_CLASS, 'space-y-4')}>

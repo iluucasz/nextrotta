@@ -201,7 +201,7 @@ export function buildPortoStatus(input: {
   const simulationDone = logs.some((log) => log.status === 'dry_run' || log.status === 'success' || log.status === 'partial');
 
   const steps: Step[] = [
-    { key: 'account', title: 'Conectar a conta do Porto', description: 'O CPF e a senha que você usa no Portal do Prestador.', done: accountDone, current: false },
+    { key: 'account', title: 'Conectar a conta do Porto', description: 'O mesmo CPF e senha que você usa no Portal do Prestador.', done: accountDone, current: false },
     { key: 'technicians', title: 'Vincular os técnicos', description: 'Cada técnico precisa do QRA dele no Porto para o robô achar as horas.', done: technicianDone, current: false },
     { key: 'simulation', title: 'Simular uma importação', description: 'Roda tudo como se fosse valendo, mas não grava nada. Leva alguns minutos.', done: simulationDone, current: false },
     { key: 'live', title: 'Gravar de verdade', description: 'Liga a importação automática: todo dia as horas e a escala entram sozinhas.', done: mode === 'live', current: false },
@@ -212,32 +212,32 @@ export function buildPortoStatus(input: {
   // What needs attention, most serious first.
   const problems: Problem[] = [];
   if (hasCredentials && config.last_login_test_ok === false) {
-    problems.push({ key: 'login', tone: 'danger', title: 'O Porto recusou o login', detail: 'Confira o CPF e a senha do Portal do Prestador. Se você trocou a senha lá, troque aqui também.', action: 'account', actionLabel: 'Atualizar a senha' });
+    problems.push({ key: 'login', tone: 'danger', title: 'O Porto recusou o login', detail: 'Confira o CPF e a senha. Se trocou a senha no Porto, troque aqui também.', action: 'account', actionLabel: 'Atualizar a senha' });
   }
   if (input.serverDown) {
-    problems.push({ key: 'server', tone: 'warning', title: 'O servidor do robô está em manutenção', detail: 'As importações ficam paradas até ele voltar. O resto do sistema funciona normalmente.' });
+    problems.push({ key: 'server', tone: 'warning', title: 'O servidor do robô está em manutenção', detail: 'As importações ficam paradas até ele voltar.' });
   }
   for (const job of ['hours', 'schedule'] as const) {
     const log = latest(job);
     if (!log || mode === 'off') continue;
     const name = job === 'hours' ? 'das horas' : 'da escala';
     if (log.layout_suspect) {
-      problems.push({ key: `layout-${job}`, tone: 'danger', title: 'O Portal do Porto parece ter mudado de tela', detail: `A importação ${name} não leu o portal como esperado. A equipe do NextRotta foi avisada e vai ajustar o robô. Até lá, confira os dados à mão.`, action: 'logs', actionLabel: 'Ver o que aconteceu' });
+      problems.push({ key: `layout-${job}`, tone: 'danger', title: 'O Portal do Porto parece ter mudado de tela', detail: 'O robô não leu o portal como esperado. A equipe já foi avisada.', action: 'logs', actionLabel: 'Ver o que aconteceu' });
     } else if (log.status === 'error') {
       problems.push({ key: `error-${job}`, tone: 'danger', title: `A última importação ${name} falhou`, detail: log.error_message ?? 'Sem detalhe do erro.', action: 'logs', actionLabel: 'Ver detalhes' });
     } else if (log.status === 'partial') {
-      problems.push({ key: `partial-${job}`, tone: 'warning', title: `A importação ${name} terminou com avisos`, detail: 'Parte dos dados não entrou. Veja quais.', action: 'logs', actionLabel: 'Ver avisos' });
+      problems.push({ key: `partial-${job}`, tone: 'warning', title: `A importação ${name} terminou com avisos`, detail: 'Parte dos dados não entrou.', action: 'logs', actionLabel: 'Ver avisos' });
     }
   }
   if (technicians.active > 0 && unlinked.length > 0) {
     const names = unlinked.slice(0, 3).map((technician) => technician.name).join(', ');
-    problems.push({ key: 'unlinked', tone: 'warning', title: unlinked.length === 1 ? '1 técnico sem QRA do Porto' : `${unlinked.length} técnicos sem QRA do Porto`, detail: `O robô não importa as horas de quem não tem o QRA vinculado: ${names}${unlinked.length > 3 ? ' e outros' : ''}.`, action: 'match', actionLabel: 'Vincular técnicos' });
+    problems.push({ key: 'unlinked', tone: 'warning', title: unlinked.length === 1 ? '1 técnico sem QRA do Porto' : `${unlinked.length} técnicos sem QRA do Porto`, detail: `${names}${unlinked.length > 3 ? ' e outros' : ''}.`, action: 'match', actionLabel: 'Vincular técnicos' });
   }
   if (mode !== 'off') {
     const lastAt = [lastHours, lastSchedule].filter(Boolean).map((log) => new Date(log!.started_at).getTime());
     const newest = lastAt.length ? Math.max(...lastAt) : 0;
     if (hasCredentials && lastAt.length && now.getTime() - newest > 2 * 86_400_000) {
-      problems.push({ key: 'stale', tone: 'warning', title: 'Nenhuma importação nos últimos 2 dias', detail: 'A importação deveria rodar todo dia. Se o servidor estiver no ar, rode uma vez à mão e veja se aparece algum erro.', action: 'wizard', actionLabel: 'Importar agora' });
+      problems.push({ key: 'stale', tone: 'warning', title: 'Nenhuma importação nos últimos 2 dias', detail: 'Deveria rodar todo dia.', action: 'wizard', actionLabel: 'Importar agora' });
     }
   }
 
@@ -245,7 +245,7 @@ export function buildPortoStatus(input: {
   const details = [lastHours, lastSchedule].flatMap((log) => log?.details ?? []);
   const withoutTechnician = details.filter((detail) => detail.action === 'skipped_no_match').length;
   if (withoutTechnician > 0 && !problems.some((problem) => problem.key === 'unlinked')) {
-    problems.push({ key: 'no-match', tone: 'warning', title: plural(withoutTechnician, 'socorrista do Porto sem técnico no sistema', 'socorristas do Porto sem técnico no sistema'), detail: 'Eles aparecem no Porto, mas nenhum técnico seu tem o QRA deles.', action: 'match', actionLabel: 'Vincular técnicos' });
+    problems.push({ key: 'no-match', tone: 'warning', title: plural(withoutTechnician, 'socorrista do Porto sem técnico no sistema', 'socorristas do Porto sem técnico no sistema'), detail: 'Nenhum técnico seu tem o QRA deles.', action: 'match', actionLabel: 'Vincular técnicos' });
   }
   const notInPorto = details.filter((detail) => detail.action === 'technician_not_in_porto_list');
   if (notInPorto.length) {
@@ -266,17 +266,17 @@ export function buildPortoStatus(input: {
     overall = 'not_set_up';
     tone = 'neutral';
     headline = 'Conecte a sua conta do Porto';
-    detail = 'Informe o CPF e a senha do Portal do Prestador, o mesmo acesso que você usa no site do Porto. É a única coisa que o robô precisa para começar.';
+    detail = 'Informe o CPF e a senha do Portal do Prestador.';
   } else if (mode === 'off') {
     overall = 'off';
     tone = 'neutral';
     headline = 'A importação está desligada';
-    detail = 'Nada é importado do Porto. As horas e a escala só mudam se você lançar à mão.';
+    detail = 'Nada é importado do Porto.';
   } else if (mode === 'test') {
     overall = 'testing';
     tone = 'warning';
     headline = 'Em teste: nada está sendo gravado';
-    detail = 'O robô roda todo dia como se fosse valendo e só mostra o que faria. Quando o resultado estiver certo, passe para "Valendo".';
+    detail = 'O robô só mostra o que faria.';
   } else if (serious) {
     overall = 'attention';
     tone = 'danger';
@@ -291,7 +291,7 @@ export function buildPortoStatus(input: {
     overall = 'ok';
     tone = 'success';
     headline = 'Funcionando';
-    detail = lastRun.hours ? `Última importação de horas ${lastRun.hours.when}: ${lastRun.hours.summary || lastRun.hours.label.toLowerCase()}.` : 'Ligada de verdade. A primeira importação acontece no próximo horário.';
+    detail = lastRun.hours ? `Última importação de horas ${lastRun.hours.when}: ${lastRun.hours.summary || lastRun.hours.label.toLowerCase()}.` : 'Ligada. A primeira importação é no próximo horário.';
   }
 
   return {

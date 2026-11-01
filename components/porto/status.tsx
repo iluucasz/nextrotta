@@ -2,6 +2,7 @@
 
 import { AlertTriangle, ArrowRight, CheckCircle2, Circle, FlaskConical, PlugZap, Power, XCircle, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { HelpDot } from '@/components/modal-kit';
 import type { PortoStatus, Problem, ProblemAction, Step, Tone } from '@/lib/porto-status';
 import { cn } from '@/lib/utils';
 
@@ -115,8 +116,10 @@ export function Steps({ steps, hasCredentials, loginFailed, busy, onAction }: { 
               <b>{index + 1}</b>
             </span>
             <div>
-              <strong>{step.title}</strong>
-              <p>{step.description}</p>
+              <strong className="po-step-title">
+                {step.title}
+                <HelpDot text={step.description} label={step.title} />
+              </strong>
             </div>
             {action ? (
               <Button type="button" size="sm" variant={step.current ? 'default' : 'outline'} disabled={!action.enabled || busy} onClick={() => onAction(action.action)}>

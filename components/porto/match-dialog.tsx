@@ -136,7 +136,7 @@ export function MatchDialog({ onClose, onSaved }: { onClose: () => void; onSaved
       <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-h-[calc(100dvh-2rem)] sm:max-w-3xl">
         <DialogHeader className={MODAL_HEADER_CLASS}>
           <DialogTitle className={MODAL_TITLE_CLASS}>Vincular técnicos ao Porto</DialogTitle>
-          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Para cada socorrista do Porto, escolha qual dos seus técnicos é ele. O robô usa o QRA para achar as horas e a escala de cada um.</DialogDescription>
+          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Escolha quem é cada socorrista do Porto.</DialogDescription>
         </DialogHeader>
 
         <div className={cn(MODAL_BODY_CLASS, 'space-y-4')}>

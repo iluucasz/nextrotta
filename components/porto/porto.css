@@ -626,3 +626,17 @@
 .mg-dashboard .po-toast.bad {
   background: #7a271a;
 }
+
+.mg-dashboard .po-step-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mg-dashboard .po-adv-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font-weight: 600;
+}

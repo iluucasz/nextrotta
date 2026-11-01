@@ -176,6 +176,19 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/faturamento.md` — relatório de Faturamento (mesmo visual e critérios do dashboard, sem despesas gerais).
 - `docs/calculo-folha.md` — exemplo do cálculo da folha.
 
+## Padrão de design das telas (admin e técnico)
+
+Aprovado pelo dono em Folha, Faturamento, Despesas e Config. Porto. Vale para tela nova e para redesenho.
+
+- **Pouco texto.** A tela mostra títulos, rótulos curtos e uma frase de estado. Toda explicação, regra ou exemplo vai atrás de um **"?" clicável** (`HelpDot`, `components/modal-kit.tsx`; `Panel` e `Metric` aceitam `help`). Nunca parágrafo sob título nem subtítulo de painel explicando. Estado vazio: uma linha.
+- **Poucos números.** Só o que muda uma decisão; o resto vai para o detalhe.
+- **Base visual:** página dentro de `.mg-dashboard` (`app/admin/dashboard-gerencial/management-dashboard.css`), cabeçalho com eyebrow, título e uma linha; blocos de `components/management-ui.tsx` (`Metric`, `Panel`, `Delta`, `Legend`, `ChartEmpty`); janelas com `components/modal-kit.tsx` (`MODAL_*`, `ModalSection`, `SummaryBand`, `SegmentedControl`, `ModalNotice`). CSS próprio da tela em arquivo com prefixo (`po-*`, `ex-*`), sempre sob `.mg-dashboard`.
+- **Layout:** duas colunas no desktop que empilham no celular; o estado em uma frase no topo (hero) e os problemas como cartões, cada um com o botão que resolve.
+- **Confirmação** em janela antes de qualquer ação irreversível ou que grava de verdade (fechar folha, ligar o robô valendo). Nada de `DELETE`: exclusão lógica.
+- **Regra fora da tela:** cálculo e decisão em `lib/*.ts` sem dependências, com `scripts/test-*.cjs`; a tela só desenha.
+- **Verificar como o usuário:** abrir no Chrome real (harness do Playwright com `/api/**` simulado por estado, e com os dados reais da `kappa`), desktop e celular, olhar as capturas e corrigir antes de dizer que terminou; `npx tsc --noEmit -p tsconfig.claude-check.json`; commit e push.
+- **Processo:** usar as skills `frontend-design` e `ui-ux-pro-max` nos redesenhos; sem telas "em construção".
+
 ## Convenções
 
 - UI e mensagens ao usuário em português; código e comentários em inglês.

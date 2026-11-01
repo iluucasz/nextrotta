@@ -1569,3 +1569,10 @@
     flex-wrap: wrap;
   }
 }
+
+/* A panel title with the "?" beside it. */
+.mg-dashboard .mg-panel-title-help {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
