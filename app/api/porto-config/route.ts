@@ -31,6 +31,9 @@ function serializeConfigRow(row: Record<string, unknown> | undefined) {
       last_schedule_import_month: null,
       last_schedule_import_status: null,
       last_error: null,
+      last_login_test_at: null,
+      last_login_test_ok: null,
+      last_login_test_message: null,
       updated_at: null,
     };
   }
@@ -46,6 +49,9 @@ function serializeConfigRow(row: Record<string, unknown> | undefined) {
     last_schedule_import_month: row.last_schedule_import_month ?? null,
     last_schedule_import_status: row.last_schedule_import_status ?? null,
     last_error: row.last_error ?? null,
+    last_login_test_at: row.last_login_test_at ?? null,
+    last_login_test_ok: row.last_login_test_ok ?? null,
+    last_login_test_message: row.last_login_test_message ?? null,
     updated_at: row.updated_at ?? null,
   };
 }
@@ -64,7 +70,7 @@ export async function GET(request: NextRequest) {
       sql`SELECT * FROM porto_config WHERE organization_id = ${auth.organizationId}`,
       sql`
         SELECT id, job_type, started_at, finished_at, status, technicians_processed, rows_written,
-               error_message, details, range_start, range_end, layout_suspect
+               error_message, details, range_start, range_end, layout_suspect, run_trigger
         FROM porto_sync_log
         WHERE organization_id = ${auth.organizationId}
         ORDER BY started_at DESC
@@ -104,6 +110,14 @@ export async function PUT(request: NextRequest) {
 
     const encryptedPassword = password ? encryptPortoPassword(password) : null;
 
+    // Turning the robot on without a password saved would only make it fail every night.
+    if (automationEnabled && !encryptedPassword) {
+      const existing = await sql`SELECT encrypted_password FROM porto_config WHERE organization_id = ${auth.organizationId}`;
+      if (!existing[0]?.encrypted_password) {
+        return NextResponse.json({ error: 'Salve a senha do Porto antes de ligar a importação.' }, { status: 400 });
+      }
+    }
+
     const rows = await sql`
       INSERT INTO porto_config (organization_id, cpf, encrypted_password, automation_enabled, dry_run_only, updated_at, updated_by)
       VALUES (${auth.organizationId}, ${cpf}, ${encryptedPassword}, ${automationEnabled}, ${dryRunOnly}, NOW(), ${auth.userId})
@@ -112,6 +126,10 @@ export async function PUT(request: NextRequest) {
         encrypted_password = COALESCE(EXCLUDED.encrypted_password, porto_config.encrypted_password),
         automation_enabled = EXCLUDED.automation_enabled,
         dry_run_only = EXCLUDED.dry_run_only,
+        -- New CPF or new password: the old login test says nothing about them.
+        last_login_test_at = CASE WHEN EXCLUDED.encrypted_password IS NOT NULL OR porto_config.cpf IS DISTINCT FROM EXCLUDED.cpf THEN NULL ELSE porto_config.last_login_test_at END,
+        last_login_test_ok = CASE WHEN EXCLUDED.encrypted_password IS NOT NULL OR porto_config.cpf IS DISTINCT FROM EXCLUDED.cpf THEN NULL ELSE porto_config.last_login_test_ok END,
+        last_login_test_message = CASE WHEN EXCLUDED.encrypted_password IS NOT NULL OR porto_config.cpf IS DISTINCT FROM EXCLUDED.cpf THEN NULL ELSE porto_config.last_login_test_message END,
         updated_at = NOW(),
         updated_by = EXCLUDED.updated_by
       RETURNING *

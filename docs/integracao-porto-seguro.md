@@ -520,3 +520,15 @@ Testes (`PW_CHANNEL=chrome` usa o Chrome instalado quando o Chromium do worker n
 `node scripts/test-porto-retry.cjs` (regras), `scripts/test-porto-queue-retry.cjs` (retentativa na fila
 com várias organizações), `scripts/test-porto-laudo.cjs` (prazo do laudo, configurações, dia do "Fim do
 expediente"), `scripts/test-porto-login.cjs` (~40s) e `scripts/test-porto-service-search.cjs` (~25s).
+
+## Tela Config. Porto redesenhada (01/11/2026)
+
+`/admin/config-porto` foi refeita para o administrador da empresa, sem termos técnicos e com poucos números.
+
+- **Estado em uma frase** (`lib/porto-status.ts`, puro, teste em `scripts/test-porto-status.cjs`): `buildPortoStatus` junta configuração, últimas execuções, técnicos e horários e devolve o estado geral (`setup`, `off`, `test`, `ok`, `attention`), os quatro passos (conta, técnicos, simulação, gravar de verdade), os problemas em ordem e o resumo de cada execução. A tela só desenha isso.
+- **Três modos** em vez de dois interruptores: Desligado, Teste (roda todo dia sem gravar) e Valendo (grava). Ligar o Valendo pede confirmação. Não dá para ligar sem senha salva (a API recusa com 400).
+- **Conta**: CPF e senha em uma janela; "Salvar e testar o login" grava e chama o worker. O resultado fica em `porto_config.last_login_test_at/ok/message` (migração `0032`) e é zerado quando a senha ou o CPF mudam.
+- **Vincular técnicos**: lista os socorristas do Porto, sugere o técnico pelo nome quando é único e grava o QRA (libera antes de atribuir, para trocas).
+- **Atividade**: cartão da última execução de horas e de escala, próxima execução, lista com filtro "Só com problema"; cada execução abre em linguagem simples (avisos em destaque, "Ver todos" para o técnico por técnico).
+- **Ferramentas avançadas**: simular horas (com período) ou escala, sempre sem gravar. "Importar agora" continua sendo o assistente em passos (`porto-run-wizard.tsx`), que grava de verdade.
+- Componentes em `components/porto/*`; o `GET /api/porto-config` manteve o formato (a tela de Escala e o assistente dependem dele) e só ganhou os campos do teste de login e `run_trigger` nos logs.

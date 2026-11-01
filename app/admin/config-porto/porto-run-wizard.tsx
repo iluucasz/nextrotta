@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, ChevronRight, Loader2, PlayCircle, Users, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
@@ -145,7 +145,8 @@ function JobResultView({ result }: { result: PortoJobResult }) {
   );
 }
 
-export function PortoRunWizard() {
+/** `openSignal` opens the window from outside: each new number opens it (the screen's "Importar agora" buttons). */
+export function PortoRunWizard({ openSignal = 0 }: { openSignal?: number }) {
   const { settings: organizationSettings } = useOrganizationSettings();
   const [open, setOpen] = useState(false);
   const [step, setStep] = useState<WizardStep>('intro');
@@ -168,6 +169,11 @@ export function PortoRunWizard() {
 
   const [hoursRunning, setHoursRunning] = useState(false);
   const [hoursResult, setHoursResult] = useState<PortoJobResult | null>(null);
+
+  useEffect(() => {
+    if (openSignal > 0) void handleOpen();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openSignal]);
 
   async function handleOpen() {
     setOpen(true);
@@ -322,7 +328,7 @@ export function PortoRunWizard() {
     <>
       <Button type="button" variant="outline" onClick={handleOpen}>
         <PlayCircle className="h-4 w-4" />
-        Rodar importação agora
+        Importar agora
       </Button>
 
       <Dialog
@@ -334,7 +340,7 @@ export function PortoRunWizard() {
       >
         <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Rodar importação do Porto agora</DialogTitle>
+            <DialogTitle>Importar do Porto agora</DialogTitle>
             <DialogDescription>
               {step === 'intro' && 'Passo 1 de 4 — antes de começar'}
               {step === 'match' && 'Passo 2 de 4 — confirmar técnicos'}
