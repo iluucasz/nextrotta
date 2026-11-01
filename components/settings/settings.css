@@ -303,3 +303,77 @@
 .mg-dashboard .st-stack .mg-metrics .mg-metric > strong {
   font-size: 26px;
 }
+
+/* ---- alignment pass ---- */
+/* tabs: scroll sideways on a narrow screen instead of wrapping */
+.mg-dashboard .st-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+  white-space: nowrap;
+}
+.mg-dashboard .st-tabs::-webkit-scrollbar {
+  display: none;
+}
+.mg-dashboard .st-body {
+  margin-top: 22px;
+}
+
+/* two panels side by side always end at the same height; the last panel of a column takes the spare room */
+.mg-dashboard .st-grid-two {
+  align-items: stretch;
+}
+.mg-dashboard .st-col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+.mg-dashboard .st-col > :last-child {
+  flex: 1;
+}
+
+/* fields always sit on the same two columns, so inputs line up from panel to panel */
+.mg-dashboard .st-fields {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 640px) {
+  .mg-dashboard .st-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* the commission rule: the choices and the percentage on one line */
+.mg-dashboard .st-commission {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(180px, 1fr);
+  align-items: end;
+  gap: 24px;
+}
+.mg-dashboard .st-commission .st-choice {
+  margin-bottom: 0;
+}
+@media (max-width: 900px) {
+  .mg-dashboard .st-commission {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mg-dashboard .st-choice {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+@media (max-width: 700px) {
+  .mg-dashboard .st-choice {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mg-dashboard .st-choice button {
+  align-content: start;
+  min-height: 78px;
+}
+
+.mg-dashboard .st-tabs {
+  margin-top: 14px;
+}
+/* a short list of fields (money values) reads best stacked */
+.mg-dashboard .st-fields.one {
+  grid-template-columns: minmax(0, 1fr);
+}

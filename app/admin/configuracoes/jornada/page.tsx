@@ -26,16 +26,19 @@ export default function JornadaPage() {
             <TimeField id="shift-end" label="Fim do turno" value={form.defaultShiftEnd} onChange={(value) => update('defaultShiftEnd', value)} />
             <NumberField id="fortnight" label="Último dia da Q1" unit="dia" value={form.fortnightSplitDay} onChange={(value) => update('fortnightSplitDay', value)} />
           </div>
-          <div className="st-toggles st-divider">
-            <Toggle
-              title="Serviço cancelado cobra as horas previstas"
-              help="Desligado: as horas apontadas contam e o previsto do dia não é cobrado no banco de horas. Ligado: o dia é tratado como normal (horas − previsto)."
-              checked={form.chargeCancelledServicePlanned}
-              onChange={(value) => update('chargeCancelledServicePlanned', value)}
-            />
-          </div>
         </Panel>
       </div>
+
+      <Panel title="Regras" help="Como o banco de horas trata os dias em que todos os serviços foram cancelados.">
+        <div className="st-toggles">
+          <Toggle
+            title="Serviço cancelado cobra as horas previstas"
+            help="Desligado: as horas apontadas contam e o previsto do dia não é cobrado no banco de horas. Ligado: o dia é tratado como normal (horas − previsto)."
+            checked={form.chargeCancelledServicePlanned}
+            onChange={(value) => update('chargeCancelledServicePlanned', value)}
+          />
+        </div>
+      </Panel>
     </SettingsPage>
   );
 }

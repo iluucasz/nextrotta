@@ -22,64 +22,64 @@ export default function PagamentoPage() {
 
   return (
     <SettingsPage api={api} title="Pagamento" description="Como a comissão e o prêmio dos técnicos são calculados.">
-      <div className="st-grid-two">
-        <Panel title="Comissão" help={COMMISSION_HELP}>
+      <Panel title="Comissão" help={COMMISSION_HELP}>
+        <div className={form.commissionMode !== 'none' ? 'st-commission' : undefined}>
           <Choice label="Como a comissão é paga" value={form.commissionMode} options={COMMISSION_OPTIONS} onChange={(value) => update('commissionMode', value)} />
           {form.commissionMode !== 'none' ? (
-            <div className="st-fields">
-              <NumberField id="commission" label="Percentual" unit="%" help="Percentual sobre o total das OS do técnico." value={form.commissionPercentage} onChange={(value) => update('commissionPercentage', value)} />
-            </div>
+            <NumberField id="commission" label="Percentual" unit="%" help="Percentual sobre o total das OS do técnico." value={form.commissionPercentage} onChange={(value) => update('commissionPercentage', value)} />
           ) : null}
-        </Panel>
+        </div>
+      </Panel>
 
+      <div className="st-grid-two">
         <Panel title="Valores padrão do técnico" help="Valem para o técnico que não tem valor próprio no cadastro e como valor inicial de um técnico novo. Deixe 0 no que a empresa não paga.">
-          <div className="st-fields">
+          <div className="st-fields one">
             <NumberField id="base-salary" label="Salário base" unit="R$" unitPosition="start" value={form.baseSalary} onChange={(value) => update('baseSalary', value)} />
             <NumberField id="va" label="Vale-alimentação" unit="R$" unitPosition="start" help="Deixe 0 se a empresa não paga." value={form.vaAllowance} onChange={(value) => update('vaAllowance', value)} />
             <NumberField id="vr" label="Vale-refeição" unit="R$" unitPosition="start" help="Deixe 0 se a empresa não paga." value={form.vrAllowance} onChange={(value) => update('vrAllowance', value)} />
           </div>
         </Panel>
-      </div>
 
-      <Panel
-        title="Prêmio por produção"
-        help="Valor pago na folha quando o técnico atinge a quantidade de OS no mês. Vale o prêmio da maior faixa atingida. As faixas também aparecem como metas no painel do técnico. Sem faixas, não há prêmio nem metas."
-        badge={
-          <Button type="button" variant="outline" size="sm" onClick={() => update('tiers', [...form.tiers, newTier()])}>
-            <Plus className="h-4 w-4" />
-            Adicionar faixa
-          </Button>
-        }
-      >
-        {form.tiers.length ? (
-          <div className="st-rows">
-            {form.tiers.map((tier, index) => (
-              <div key={tier.id} className="st-row">
-                <NumberField
-                  id={`tier-${tier.id}-min`}
-                  label={`Faixa ${index + 1}: a partir de`}
-                  unit="OS"
-                  value={tier.minServices}
-                  onChange={(value) => update('tiers', form.tiers.map((item) => (item.id === tier.id ? { ...item, minServices: value } : item)))}
-                />
-                <NumberField
-                  id={`tier-${tier.id}-amount`}
-                  label="Prêmio"
-                  unit="R$"
-                  unitPosition="start"
-                  value={tier.amount}
-                  onChange={(value) => update('tiers', form.tiers.map((item) => (item.id === tier.id ? { ...item, amount: value } : item)))}
-                />
-                <Button type="button" variant="outline" size="icon" aria-label={`Remover faixa ${index + 1}`} onClick={() => update('tiers', form.tiers.filter((item) => item.id !== tier.id))} className="h-11 w-11">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="st-empty">Nenhuma faixa de prêmio.</p>
-        )}
-      </Panel>
+        <Panel
+          title="Prêmio por produção"
+          help="Valor pago na folha quando o técnico atinge a quantidade de OS no mês. Vale o prêmio da maior faixa atingida. As faixas também aparecem como metas no painel do técnico. Sem faixas, não há prêmio nem metas."
+          badge={
+            <Button type="button" variant="outline" size="sm" onClick={() => update('tiers', [...form.tiers, newTier()])}>
+              <Plus className="h-4 w-4" />
+              Adicionar faixa
+            </Button>
+          }
+        >
+          {form.tiers.length ? (
+            <div className="st-rows">
+              {form.tiers.map((tier, index) => (
+                <div key={tier.id} className="st-row">
+                  <NumberField
+                    id={`tier-${tier.id}-min`}
+                    label={`Faixa ${index + 1}: a partir de`}
+                    unit="OS"
+                    value={tier.minServices}
+                    onChange={(value) => update('tiers', form.tiers.map((item) => (item.id === tier.id ? { ...item, minServices: value } : item)))}
+                  />
+                  <NumberField
+                    id={`tier-${tier.id}-amount`}
+                    label="Prêmio"
+                    unit="R$"
+                    unitPosition="start"
+                    value={tier.amount}
+                    onChange={(value) => update('tiers', form.tiers.map((item) => (item.id === tier.id ? { ...item, amount: value } : item)))}
+                  />
+                  <Button type="button" variant="outline" size="icon" aria-label={`Remover faixa ${index + 1}`} onClick={() => update('tiers', form.tiers.filter((item) => item.id !== tier.id))} className="h-11 w-11">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="st-empty">Nenhuma faixa de prêmio.</p>
+          )}
+        </Panel>
+      </div>
     </SettingsPage>
   );
 }

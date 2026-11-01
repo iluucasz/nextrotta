@@ -36,7 +36,7 @@ export default function PortoSettingsPage() {
       }
     >
       <div className="st-grid-two">
-        <div className="st-stack">
+        <div className="st-col">
           <Panel title="Horários" help="A conta do Porto e o liga/desliga da automação ficam na tela do robô (Config. Porto).">
             <div className="st-fields">
               <TimeField id="porto-hours-time" label="Importação de horas" help={hoursHelp} value={form.portoHoursImportTime} onChange={(value) => update('portoHoursImportTime', value)} />
@@ -60,31 +60,29 @@ export default function PortoSettingsPage() {
               <NumberField id="porto-lookahead" label="Escala do mês seguinte" unit="dias" help="Nos últimos N dias do mês, também importa o mês seguinte, se já estiver publicado (0 = não importa)." value={form.portoNextMonthLookaheadDays} onChange={(value) => update('portoNextMonthLookaheadDays', value)} />
               <NumberField id="porto-day-off" label="Folga integral a partir de" unit="%" help="Quanto do turno uma indisponibilidade precisa cobrir para o dia contar como folga." value={form.portoFullDayOffPercent} onChange={(value) => update('portoFullDayOffPercent', value)} />
             </div>
-            <div className="st-toggles st-divider">
-              <Toggle
-                title="Usar a conclusão do laudo sem assinatura"
-                help="Ligado: sem assinatura, o fim do dia é a data de conclusão do laudo. Desligado: vai direto para o horário de Concluído."
-                checked={form.portoUseLaudoConclusion}
-                onChange={(value) => update('portoUseLaudoConclusion', value)}
-              />
-              <Toggle
-                title="Registrar dias de serviço cancelado"
-                help="O dia em que todos os serviços foram cancelados entra como “Serviço cancelado”. Desligado, o dia fica sem apontamento."
-                checked={form.portoRecordCancelledDays}
-                onChange={(value) => update('portoRecordCancelledDays', value)}
-              />
-            </div>
           </Panel>
         </div>
 
-        <Panel title="Advertência por laudo" help="Quando o laudo do último serviço do dia não foi preenchido, o fim do dia vem do Concluído e o apontamento recebe a advertência. Uma advertência dada nunca é retirada pelo robô.">
+        <Panel title="Laudo e advertência" help="Quando o laudo do último serviço do dia não foi preenchido, o fim do dia vem do Concluído e o apontamento recebe a advertência. Uma advertência dada nunca é retirada pelo robô.">
           <div className="st-toggles">
-            <Toggle title="Dar advertência" checked={form.portoWarningEnabled} onChange={(value) => update('portoWarningEnabled', value)} />
+            <Toggle
+              title="Usar a conclusão do laudo sem assinatura"
+              help="Ligado: sem assinatura, o fim do dia é a data de conclusão do laudo. Desligado: vai direto para o horário de Concluído."
+              checked={form.portoUseLaudoConclusion}
+              onChange={(value) => update('portoUseLaudoConclusion', value)}
+            />
+            <Toggle
+              title="Registrar dias de serviço cancelado"
+              help="O dia em que todos os serviços foram cancelados entra como “Serviço cancelado”. Desligado, o dia fica sem apontamento."
+              checked={form.portoRecordCancelledDays}
+              onChange={(value) => update('portoRecordCancelledDays', value)}
+            />
+            <Toggle title="Dar advertência por laudo não preenchido" checked={form.portoWarningEnabled} onChange={(value) => update('portoWarningEnabled', value)} />
           </div>
           <div className="st-fields st-divider">
             <NumberField
               id="porto-laudo-grace"
-              label="Prazo para preencher o laudo"
+              label="Prazo do laudo"
               unit="horas"
               help={`Contado do Concluído. Se o robô passar antes, o dia fica como "${PORTO_LAUDO_PENDING_MARKER}" e é conferido de novo na próxima execução; a advertência só é dada se o prazo vencer sem laudo. 0 = advertência na hora.`}
               value={form.portoLaudoGraceHours}

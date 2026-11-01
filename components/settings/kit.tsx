@@ -1,7 +1,9 @@
 'use client';
 
 import type { ReactNode } from 'react';
-import { CheckCircle2, CircleHelp, Loader2 } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { Banknote, Bot, CheckCircle2, CircleHelp, Clock3, CreditCard, Loader2, Tags, type LucideIcon } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { Panel } from '@/components/management-ui';
 import { HelpDot } from '@/components/modal-kit';
@@ -15,8 +17,17 @@ import './settings.css';
 
 export type SettingsApi = ReturnType<typeof useSettingsForm>;
 
+const SECTIONS: Array<{ href: string; label: string; icon: LucideIcon }> = [
+  { href: '/admin/configuracoes/pagamento', label: 'Pagamento', icon: Banknote },
+  { href: '/admin/configuracoes/jornada', label: 'Jornada e horas', icon: Clock3 },
+  { href: '/admin/configuracoes/porto', label: 'Robô do Porto', icon: Bot },
+  { href: '/admin/configuracoes/financeiro', label: 'Financeiro', icon: Tags },
+  { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
+];
+
 /** Header and page frame shared by every screen under Configurações (including Assinatura). */
 export function Frame({ userName, title, description, actions, children }: { userName: string; title: string; description: string; actions?: ReactNode; children: ReactNode }) {
+  const pathname = usePathname();
   return (
     <AppShell role="admin" userName={userName}>
       <div className="mg-dashboard st-page">
@@ -33,7 +44,15 @@ export function Frame({ userName, title, description, actions, children }: { use
           </div>
           {actions ? <div className="mg-header-actions st-header-actions">{actions}</div> : null}
         </header>
-        {children}
+        <nav className="mg-section-nav st-tabs" aria-label="Seções das configurações">
+          {SECTIONS.map((section) => (
+            <Link key={section.href} href={section.href} className={pathname === section.href ? 'active' : ''} aria-current={pathname === section.href ? 'page' : undefined}>
+              <section.icon size={15} />
+              {section.label}
+            </Link>
+          ))}
+        </nav>
+        <div className="st-body">{children}</div>
       </div>
     </AppShell>
   );
