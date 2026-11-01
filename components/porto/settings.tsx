@@ -114,15 +114,18 @@ export function Settings({
           )
         }
       >
-        <Button type="button" size="sm" variant={has ? 'outline' : 'default'} onClick={onAccount}>
-          <KeyRound className="h-4 w-4" />
-          {has ? 'Alterar' : 'Conectar a conta'}
-        </Button>
+        {/* Without an account the status card above already holds the "Conectar a conta" button. */}
         {has ? (
-          <Button type="button" size="sm" variant="outline" onClick={onTest} disabled={testing}>
-            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            {testing ? 'Testando…' : 'Testar'}
-          </Button>
+          <>
+            <Button type="button" size="sm" variant="outline" onClick={onAccount}>
+              <KeyRound className="h-4 w-4" />
+              Alterar
+            </Button>
+            <Button type="button" size="sm" variant="outline" onClick={onTest} disabled={testing}>
+              {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+              {testing ? 'Testando…' : 'Testar'}
+            </Button>
+          </>
         ) : null}
       </Row>
 
