@@ -2,11 +2,16 @@ import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { createToken } from '@/lib/auth';
 import { createLoginHandoff } from '@/lib/auth-handoff';
+import { recordAudit } from '@/lib/audit';
 import { sql } from '@/lib/db';
+import { clearFailures, clientIp, lockedSeconds, loginRules, recordFailure, waitMessage } from '@/lib/security/throttle';
 import { PREVIEW_FLAG_COOKIE, PREVIEW_ORIGIN_COOKIE } from '@/lib/preview-mode';
 import { organizationUrl, resolveHost } from '@/lib/tenant-host';
 
 const INVALID_CREDENTIALS = 'E-mail ou senha inválidos.';
+
+// Compared when the e-mail does not exist, so a wrong e-mail takes as long as a wrong password and does not give itself away.
+const DUMMY_HASH = '$2b$12$cL7oFCSMsCPOj8QCOrhS.e/pss.U8m/X0BpbmCBngf/eGczO7GkWS';
 
 /**
  * Login always happens on the root domain. The e-mail identifies the organization: organization
@@ -19,6 +24,13 @@ export async function POST(request: NextRequest) {
 
     if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
       return NextResponse.json({ error: 'Informe e-mail e senha.' }, { status: 400 });
+    }
+
+    const ip = clientIp(request.headers);
+    const rules = loginRules(email, ip);
+    const wait = await lockedSeconds(rules);
+    if (wait > 0) {
+      return NextResponse.json({ error: waitMessage(wait) }, { status: 429, headers: { 'Retry-After': String(wait) } });
     }
 
     const users = await sql`
@@ -36,9 +48,24 @@ export async function POST(request: NextRequest) {
 
     const user = users[0];
 
-    if (!user || !(await bcrypt.compare(password, user.password_hash))) {
+    const passwordMatches = await bcrypt.compare(password, user?.password_hash ?? DUMMY_HASH);
+    if (!user || !passwordMatches) {
+      await recordFailure(rules);
+      const lockedNow = await lockedSeconds(rules);
+      if (lockedNow > 0) {
+        await recordAudit({
+          organizationId: (user?.organization_id as string | null) ?? null,
+          actorId: null,
+          actorRole: null,
+          action: 'auth.login_locked',
+          targetType: 'user',
+          targetId: user ? String(user.id) : null,
+          details: { ip, seconds: lockedNow },
+        });
+      }
       return NextResponse.json({ error: INVALID_CREDENTIALS }, { status: 401 });
     }
+    await clearFailures(rules);
 
     if (user.status !== 'active') {
       return NextResponse.json({ error: 'Acesso inativo. Fale com o administrador.' }, { status: 403 });
