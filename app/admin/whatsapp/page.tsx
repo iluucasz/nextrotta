@@ -4,14 +4,15 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, History, Loader2, MessageCircle, Power, Settings2, TriangleAlert } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { LoadingShell } from '@/components/page-skeleton';
-import { PageHeader } from '@/components/page-header';
+import { HelpDot } from '@/components/modal-kit';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAppSession } from '@/hooks/use-app-session';
 import { createDefaultNotificationSettings, NOTIFICATION_TYPES, type NotificationType } from '@/lib/whatsapp/notification-types';
 import { validatePhone } from '@/lib/whatsapp/phone';
+import '../dashboard-gerencial/management-dashboard.css';
+import './whatsapp.css';
 import { ConnectionPanel } from './connection-panel';
 import { EnableAutomationDialog } from './enable-automation-dialog';
 import { HistoryPanel } from './history-panel';
@@ -25,8 +26,17 @@ const emptyForm: WhatsAppConfigForm = {
   notifications: createDefaultNotificationSettings(),
 };
 
+type Tab = 'connection' | 'notifications' | 'history';
+
+const TABS: Array<{ id: Tab; label: string; icon: typeof Settings2 }> = [
+  { id: 'connection', label: 'Conexão', icon: Settings2 },
+  { id: 'notifications', label: 'Notificações', icon: MessageCircle },
+  { id: 'history', label: 'Histórico', icon: History },
+];
+
 export default function AdminWhatsAppPage() {
   const { user, loading } = useAppSession();
+  const [tab, setTab] = useState<Tab>('connection');
   const [form, setForm] = useState<WhatsAppConfigForm>(emptyForm);
   const [technicians, setTechnicians] = useState<TechnicianOption[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -182,76 +192,68 @@ export default function AdminWhatsAppPage() {
 
   return (
     <AppShell role="admin" userName={user.name || user.email}>
-      <PageHeader
-        eyebrow="Integrações"
-        title="WhatsApp"
-        description="WhatsApp da empresa, notificações automáticas para os técnicos e histórico de envios."
-      >
-        {form.testPhone ? <StatusBadge tone="warning">Modo teste: envios desviados</StatusBadge> : null}
-        {/* The master switch: every automatic notification depends on it. */}
-        <label
-          className={`flex cursor-pointer items-center gap-3 rounded-xl border px-4 py-2.5 transition-colors ${
-            form.enabled ? 'border-emerald-300 bg-emerald-50' : 'border-border bg-card'
-          } ${isLoading ? 'pointer-events-none opacity-60' : ''}`}
-        >
-          <span
-            className={`grid h-9 w-9 place-items-center rounded-lg ${form.enabled ? 'bg-emerald-600 text-white' : 'bg-secondary text-muted-foreground'}`}
-            aria-hidden="true"
-          >
-            <Power className="h-4 w-4" />
-          </span>
-          <span className="text-sm leading-tight">
-            <span className="block font-semibold">{form.enabled ? 'Automação ligada' : 'Automação desligada'}</span>
-            <span className="block text-xs text-muted-foreground">
-              {form.enabled ? 'Notificações automáticas ativas' : 'Nenhuma notificação automática sai'}
-            </span>
-          </span>
-          <Switch
-            checked={form.enabled}
-            onCheckedChange={(enabled) => (enabled ? setAskNotifications(true) : updateForm({ enabled: false }))}
-            disabled={isLoading}
-            aria-label="Ligar ou desligar a automação do WhatsApp"
-          />
-        </label>
-      </PageHeader>
+      <div className="mg-dashboard wa-page">
+        <header className="mg-page-heading">
+          <div>
+            <div className="mg-eyebrow">
+              <span /> INTEGRAÇÕES <span className="mg-eyebrow-divider">/</span> NEXTROTTA
+            </div>
+            <h1>
+              WhatsApp<span>.</span>
+            </h1>
+          </div>
+          <div className="mg-header-actions wa-header-actions">
+            {form.testPhone ? <span className="wa-test-badge">Modo teste: envios desviados</span> : null}
+            {/* The master switch: every automatic notification depends on it. */}
+            <label className={`wa-master ${form.enabled ? 'on' : ''} ${isLoading ? 'busy' : ''}`}>
+              <span className="wa-master-icon" aria-hidden="true">
+                <Power size={18} />
+              </span>
+              <span className="wa-master-text">
+                {form.enabled ? 'Automação ligada' : 'Automação desligada'}
+                <HelpDot
+                  label="Automação"
+                  text="É a chave geral: com ela desligada, nenhuma notificação automática sai. Cada notificação ainda tem a sua própria chave na aba Notificações."
+                />
+              </span>
+              <Switch
+                checked={form.enabled}
+                onCheckedChange={(enabled) => (enabled ? setAskNotifications(true) : updateForm({ enabled: false }))}
+                disabled={isLoading}
+                aria-label="Ligar ou desligar a automação do WhatsApp"
+              />
+            </label>
+          </div>
+        </header>
 
-      {loadError ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{loadError}</div> : null}
+        <nav className="wa-tabs" aria-label="Seções do WhatsApp">
+          {TABS.map(({ id, label, icon: Icon }) => (
+            <button key={id} type="button" className={tab === id ? 'active' : ''} aria-current={tab === id ? 'page' : undefined} onClick={() => setTab(id)}>
+              <Icon size={20} />
+              {label}
+            </button>
+          ))}
+        </nav>
 
-      {isLoading ? (
-        <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Carregando...
-        </div>
-      ) : (
-        <Tabs defaultValue="connection" className="gap-5">
-          <TabsList>
-            <TabsTrigger value="connection">
-              <Settings2 className="h-4 w-4" />
-              Conexão
-            </TabsTrigger>
-            <TabsTrigger value="notifications">
-              <MessageCircle className="h-4 w-4" />
-              Notificações
-            </TabsTrigger>
-            <TabsTrigger value="history">
-              <History className="h-4 w-4" />
-              Histórico
-            </TabsTrigger>
-          </TabsList>
+        {loadError ? <div className="mg-error" role="alert"><div><strong>Não foi possível carregar</strong><p>{loadError}</p></div></div> : null}
 
-          <TabsContent value="connection" className="space-y-5">
-            <ConnectionPanel form={form} onChange={updateForm} technicians={technicians} unsaved={unsaved} />
-          </TabsContent>
-
-          <TabsContent value="notifications" className="space-y-5">
-            <NotificationsPanel form={form} onChange={updateForm} unsaved={unsaved} />
-          </TabsContent>
-
-          <TabsContent value="history">
-            <HistoryPanel technicians={technicians} />
-          </TabsContent>
-        </Tabs>
-      )}
+        {isLoading ? (
+          <div className="flex items-center justify-center gap-2 py-16 text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            Carregando...
+          </div>
+        ) : (
+          <div className="wa-body">
+            {tab === 'connection' ? <ConnectionPanel form={form} onChange={updateForm} technicians={technicians} unsaved={unsaved} /> : null}
+            {tab === 'notifications' ? (
+              <div className="space-y-5">
+                <NotificationsPanel form={form} onChange={updateForm} unsaved={unsaved} />
+              </div>
+            ) : null}
+            {tab === 'history' ? <HistoryPanel technicians={technicians} /> : null}
+          </div>
+        )}
+      </div>
 
       <EnableAutomationDialog
         open={askNotifications}

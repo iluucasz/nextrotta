@@ -2,13 +2,15 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
-import { CheckCircle2, FlaskConical, Loader2, Send, UserX, XCircle } from 'lucide-react';
-import { DataPanel } from '@/components/data-panel';
+import { CheckCircle2, Loader2, Send, TriangleAlert, XCircle } from 'lucide-react';
+import { Panel } from '@/components/management-ui';
+import { HelpDot } from '@/components/modal-kit';
 import { PhoneInput } from '@/components/phone-input';
+import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { validatePhone } from '@/lib/whatsapp/phone';
-import { InstanceCard } from './instance-card';
+import { InstanceCard, STATE_LABELS, type InstanceStatus } from './instance-card';
 import { inputClassName, type TechnicianOption, type WhatsAppConfigForm } from './types';
 
 interface ConnectionPanelProps {
@@ -21,20 +23,8 @@ interface ConnectionPanelProps {
 
 type Feedback = { tone: 'success' | 'error'; text: string } | null;
 
-function FeedbackLine({ feedback }: { feedback: Feedback }) {
-  if (!feedback) return null;
-
-  const Icon = feedback.tone === 'success' ? CheckCircle2 : XCircle;
-  return (
-    <p className={`flex items-start gap-2 text-sm ${feedback.tone === 'success' ? 'text-emerald-700' : 'text-rose-700'}`}>
-      <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-      {feedback.text}
-    </p>
-  );
-}
-
 export function ConnectionPanel({ form, onChange, technicians, unsaved }: ConnectionPanelProps) {
-  const [connected, setConnected] = useState(false);
+  const [state, setState] = useState<InstanceStatus['state'] | null>(null);
   // Test mode = a saved test number: every notification goes to it. The number typed here is kept
   // while the mode is off, so it can still receive a one-off test message.
   const [testMode, setTestMode] = useState(Boolean(form.testPhone));
@@ -43,6 +33,7 @@ export function ConnectionPanel({ form, onChange, technicians, unsaved }: Connec
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testFeedback, setTestFeedback] = useState<Feedback>(null);
 
+  const connected = state === 'connected';
   const withoutPhone = technicians.filter((technician) => technician.status === 'active' && !technician.phone);
   const numberReady = validatePhone(testNumber).status === 'valid';
 
@@ -78,90 +69,70 @@ export function ConnectionPanel({ form, onChange, technicians, unsaved }: Connec
     }
   }
 
+  const label = state ? STATE_LABELS[state] : null;
+
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] xl:items-start">
-      <div className="space-y-5">
-        <DataPanel title="Conexão" description="O WhatsApp da empresa, que envia as notificações para os técnicos.">
-          <InstanceCard onStatus={(status) => setConnected(status.state === 'connected')} />
-        </DataPanel>
-
-        <DataPanel
-          title="Técnicos sem WhatsApp"
-          description={withoutPhone.length ? 'Técnicos ativos que não recebem notificações por falta de número.' : 'Todos os técnicos ativos têm número cadastrado.'}
+    <div className="wa-stack">
+      <div className="wa-grid">
+        <Panel
+          title="WhatsApp da empresa"
+          help="O número que envia as notificações para os técnicos. Cada empresa tem o seu, e só um número fica conectado por vez."
+          badge={label ? <StatusBadge tone={label.tone}>{label.text}</StatusBadge> : undefined}
         >
-          {withoutPhone.length ? (
-            <div className="space-y-2">
-              <ul className="space-y-1.5 text-sm">
-                {withoutPhone.map((technician) => (
-                  <li key={technician.id} className="flex items-center gap-2">
-                    <UserX className="h-4 w-4 text-amber-600" />
-                    {technician.name}
-                  </li>
-                ))}
-              </ul>
-              <Link href="/admin/technicians" className="inline-block text-sm font-medium text-primary hover:underline">
-                Cadastrar números em Técnicos →
-              </Link>
-            </div>
-          ) : (
-            <p className="flex items-center gap-2 text-sm text-emerald-700">
-              <CheckCircle2 className="h-4 w-4" />
-              Tudo certo.
-            </p>
-          )}
-        </DataPanel>
-      </div>
+          <InstanceCard onStatus={(status) => setState(status.state)} />
+        </Panel>
 
-      <DataPanel title="Área de teste" description="Confira as mensagens antes de liberar para os técnicos.">
-        <div className="space-y-4">
-          <div
-            className={`flex items-center justify-between gap-4 rounded-md border px-3 py-3 ${
-              testMode ? 'border-amber-300 bg-amber-50' : 'border-border bg-background'
-            }`}
-          >
-            <div className="flex items-start gap-3">
-              <FlaskConical className={`mt-0.5 h-5 w-5 shrink-0 ${testMode ? 'text-amber-600' : 'text-muted-foreground'}`} />
-              <div>
-                <p className="text-sm font-medium">Modo teste {testMode ? 'ligado' : 'desligado'}</p>
-                <p className="text-xs text-muted-foreground">
-                  {testMode
-                    ? 'Todas as notificações vão para o número de teste. Nenhum técnico recebe.'
-                    : 'As notificações vão para os técnicos normalmente.'}
-                </p>
-              </div>
-            </div>
+        <Panel title="Teste" help="Confira as mensagens antes de liberar para os técnicos. Com o modo teste ligado, todas as notificações vão para o número de teste e nenhum técnico recebe.">
+          <div className="wa-toggle">
+            <span>
+              Modo teste
+              <HelpDot label="Modo teste" text="Desvia todas as notificações para o número de teste. Desligado, elas vão para os técnicos normalmente." />
+            </span>
             <Switch checked={testMode} onCheckedChange={toggleTestMode} aria-label="Modo teste" />
           </div>
 
-          <label className="block text-sm">
-            <span className="mb-1.5 block font-medium">Número de teste</span>
+          <label className="wa-field">
+            <span>Número de teste</span>
             <PhoneInput
               value={testNumber}
               onChange={changeTestNumber}
               className={inputClassName}
               checkWhatsApp={connected}
-              hint={testMode && !numberReady ? <span className="text-amber-700">Informe o número para o modo teste valer.</span> : 'Recebe as notificações no modo teste e a mensagem de teste abaixo.'}
+              hint={testMode && !numberReady ? <span className="text-amber-700">Informe o número para o modo teste valer.</span> : null}
             />
           </label>
 
-          <div className="space-y-3 border-t border-border pt-4">
-            <p className="text-sm font-medium">Mensagem de teste</p>
-            <textarea
-              value={testText}
-              onChange={(event) => setTestText(event.target.value)}
-              rows={3}
-              className={`${inputClassName} py-2`}
-              aria-label="Mensagem de teste"
-            />
+          <div className="wa-test-send">
+            <input value={testText} onChange={(event) => setTestText(event.target.value)} className={inputClassName} aria-label="Mensagem de teste" />
             <Button type="button" onClick={handleSendTest} disabled={isSendingTest || unsaved || !connected || !numberReady || !testText.trim()}>
               {isSendingTest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-              Enviar teste agora
+              Enviar teste
             </Button>
-            {!connected ? <p className="text-xs text-muted-foreground">Conecte o WhatsApp da empresa para enviar um teste.</p> : null}
-            <FeedbackLine feedback={testFeedback} />
           </div>
+          {!connected ? <p className="wa-hint">Conecte o WhatsApp da empresa para enviar um teste.</p> : null}
+          {testFeedback ? (
+            <p className={`wa-feedback ${testFeedback.tone}`}>
+              {testFeedback.tone === 'success' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}
+              {testFeedback.text}
+            </p>
+          ) : null}
+        </Panel>
+      </div>
+
+      {withoutPhone.length ? (
+        <div className="wa-warning" role="status">
+          <TriangleAlert size={18} />
+          <span>
+            <strong>{withoutPhone.length === 1 ? '1 técnico' : `${withoutPhone.length} técnicos`} sem número</strong> não recebem notificações:{' '}
+            {withoutPhone
+              .slice(0, 4)
+              .map((technician) => technician.name)
+              .join(', ')}
+            {withoutPhone.length > 4 ? ` e mais ${withoutPhone.length - 4}` : ''}.
+          </span>
+          <Link href="/admin/technicians">Cadastrar números</Link>
         </div>
-      </DataPanel>
+      ) : null}
     </div>
   );
 }

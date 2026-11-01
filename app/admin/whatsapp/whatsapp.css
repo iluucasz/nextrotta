@@ -1,0 +1,340 @@
+/* WhatsApp: what the management look (.mg-*) does not already have. Everything lives under .mg-dashboard. */
+
+.mg-dashboard .wa-header-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+.mg-dashboard .wa-test-badge {
+  padding: 6px 12px;
+  border: 1px solid #f0d9a4;
+  border-radius: 10px;
+  background: #fffaf0;
+  color: #8a5a00;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* the master switch */
+.mg-dashboard .wa-master {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  height: 52px;
+  padding: 0 16px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+  cursor: pointer;
+}
+.mg-dashboard .wa-master.on {
+  border-color: #b7e3cc;
+  background: #f3fbf7;
+}
+.mg-dashboard .wa-master.busy {
+  pointer-events: none;
+  opacity: 0.6;
+}
+.mg-dashboard .wa-master-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+.mg-dashboard .wa-master.on .wa-master-icon {
+  background: #1f9d6a;
+  color: #fff;
+}
+.mg-dashboard .wa-master-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* the section menu: big and easy to hit */
+.mg-dashboard .wa-tabs {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 6px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.mg-dashboard .wa-tabs::-webkit-scrollbar {
+  display: none;
+}
+.mg-dashboard .wa-tabs button {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-width: 150px;
+  height: 56px;
+  padding: 0 22px;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+.mg-dashboard .wa-tabs button:hover {
+  background: var(--secondary);
+  color: var(--foreground);
+}
+.mg-dashboard .wa-tabs button.active {
+  background: var(--primary);
+  color: var(--primary-foreground, #fff);
+  box-shadow: 0 6px 18px #6c5ce733;
+}
+.mg-dashboard .wa-body {
+  margin-top: 20px;
+}
+
+/* connection */
+.mg-dashboard .wa-stack {
+  display: grid;
+  gap: 18px;
+}
+.mg-dashboard .wa-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+@media (max-width: 1100px) {
+  .mg-dashboard .wa-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.mg-dashboard .wa-instance {
+  display: grid;
+  gap: 18px;
+}
+.mg-dashboard .wa-wait {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+.mg-dashboard .wa-number {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+.mg-dashboard .wa-number > div {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+}
+.mg-dashboard .wa-number strong {
+  font-size: 20px;
+  letter-spacing: -0.3px;
+}
+.mg-dashboard .wa-number small {
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .wa-connect {
+  flex-basis: 100%;
+  width: 100%;
+}
+.mg-dashboard .wa-tile {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+.mg-dashboard .wa-tile.ok {
+  background: #dcf3e7;
+  color: #166a45;
+}
+.mg-dashboard .wa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mg-dashboard .wa-confirm {
+  display: grid;
+  gap: 10px;
+  font-size: 15px;
+}
+.mg-dashboard .wa-confirm > div {
+  display: flex;
+  gap: 8px;
+}
+.mg-dashboard .wa-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: #b42318;
+  font-size: 15px;
+}
+.mg-dashboard .wa-qr {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 22px;
+}
+@media (max-width: 640px) {
+  .mg-dashboard .wa-qr {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+    text-align: center;
+  }
+}
+.mg-dashboard .wa-qr-box {
+  display: grid;
+  place-items: center;
+  width: 220px;
+  height: 220px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: #fff;
+}
+.mg-dashboard .wa-qr-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.mg-dashboard .wa-qr-side {
+  display: grid;
+  gap: 10px;
+  justify-items: start;
+}
+.mg-dashboard .wa-qr-side h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 18px;
+}
+.mg-dashboard .wa-qr-side p {
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .wa-qr-side .wa-waiting {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* test */
+.mg-dashboard .wa-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border);
+}
+.mg-dashboard .wa-toggle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mg-dashboard .wa-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+.mg-dashboard .wa-field > span {
+  font-size: 15px;
+  font-weight: 600;
+}
+.mg-dashboard .wa-test-send {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.mg-dashboard .wa-test-send input {
+  flex: 1;
+  min-width: 0;
+}
+.mg-dashboard .wa-hint {
+  margin-top: 8px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .wa-feedback {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 15px;
+}
+.mg-dashboard .wa-feedback.success {
+  color: #166a45;
+}
+.mg-dashboard .wa-feedback.error {
+  color: #b42318;
+}
+
+/* technicians without a number */
+.mg-dashboard .wa-warning {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #f0d9a4;
+  border-radius: 14px;
+  background: #fffaf0;
+  color: #6b4a00;
+  font-size: 15px;
+}
+.mg-dashboard .wa-warning svg {
+  flex: none;
+  color: #8a5a00;
+}
+.mg-dashboard .wa-warning a {
+  margin-left: auto;
+  flex: none;
+  font-weight: 600;
+  color: var(--primary);
+}
+.mg-dashboard .wa-warning a:hover {
+  text-decoration: underline;
+}
+@media (max-width: 640px) {
+  .mg-dashboard .wa-warning {
+    flex-wrap: wrap;
+  }
+  .mg-dashboard .wa-warning a {
+    margin-left: 30px;
+  }
+}
+
+@media (max-width: 520px) {
+  .mg-dashboard .wa-tabs {
+    gap: 4px;
+  }
+  .mg-dashboard .wa-tabs button {
+    min-width: 0;
+    padding: 0 8px;
+    gap: 0;
+    font-size: 16px;
+  }
+  .mg-dashboard .wa-tabs button svg {
+    display: none;
+  }
+}
