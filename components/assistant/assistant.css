@@ -1392,3 +1392,105 @@
     display: none;
   }
 }
+
+/* ---- polish after looking at every tab: one content width, the title lined up with it, softer answers ---- */
+.nr-assistant.is-page .ai-thread,
+.nr-assistant.is-page .ai-composer > div,
+.nr-assistant.is-page .ai-composer > p {
+  max-width: 860px;
+}
+.nr-assistant.is-page .ai-tab-content {
+  max-width: 860px;
+}
+.nr-assistant.is-page .ai-welcome {
+  max-width: 780px;
+}
+/* the conversation title and its buttons sit on the same edges as the messages below */
+.nr-assistant.is-page .ai-panel-heading {
+  padding-inline: max(28px, calc((100% - 860px) / 2));
+}
+
+/* the assistant's answer is a soft block, so the chat is not one flat sheet */
+.nr-assistant.is-page .from-assistant .ai-message-body {
+  padding: 16px 20px;
+  border: 1px solid var(--ai-line);
+  border-radius: 6px 18px 18px 18px;
+  background: #fbfbfe;
+}
+.nr-assistant.is-page .ai-message-body {
+  font-size: 16px;
+  line-height: 1.75;
+}
+.nr-assistant.is-page .from-user .ai-message-body {
+  border-radius: 18px 18px 6px 18px;
+}
+.nr-assistant.is-page .ai-message footer {
+  gap: 6px 14px;
+  margin-top: 8px;
+  padding-inline: 4px;
+}
+.nr-assistant.is-page .ai-message footer .ai-sources {
+  margin: 0;
+}
+.nr-assistant.is-page .ai-message footer button {
+  margin-left: auto;
+}
+.nr-assistant.is-page .ai-followups {
+  margin-top: 12px;
+  padding-inline: 4px;
+}
+
+/* history: rows that read as items */
+.nr-assistant.is-page .ai-history > div {
+  gap: 4px;
+  padding: 4px;
+  margin-bottom: 8px;
+  border: 1px solid var(--ai-line);
+  border-radius: 14px;
+  background: var(--card);
+  transition: border-color 0.15s, background 0.15s;
+}
+.nr-assistant.is-page .ai-history > div:hover {
+  border-color: #cfc8f7;
+  background: #fbfbfe;
+}
+.nr-assistant.is-page .ai-history button:first-child {
+  padding: 8px 10px;
+  border-radius: 10px;
+}
+.nr-assistant.is-page .ai-history-icon {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: var(--ai-soft);
+  color: var(--ai-green);
+}
+.nr-assistant.is-page .ai-history strong {
+  font-size: 15px;
+}
+.nr-assistant.is-page .ai-history button:last-child {
+  border-radius: 10px;
+}
+.nr-assistant.is-page .ai-search {
+  margin-bottom: 16px;
+  background: var(--card);
+}
+
+/* preferences: one group, real switches */
+.nr-assistant .ai-pref-list {
+  border: 1px solid var(--ai-line);
+  border-radius: 14px;
+  background: var(--card);
+}
+.nr-assistant .ai-pref-list .ai-preference {
+  padding: 16px 20px;
+}
+.nr-assistant .ai-pref-list .ai-preference:last-child {
+  border-bottom: 0;
+}
+.nr-assistant .ai-preference strong {
+  font-size: 16px;
+}

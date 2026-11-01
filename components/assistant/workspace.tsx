@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { Markdown } from '@/components/markdown';
 import { HelpDot } from '@/components/modal-kit';
+import { Switch } from '@/components/ui/switch';
 import '../../app/admin/dashboard-gerencial/management-dashboard.css';
 import './assistant.css';
 
@@ -654,6 +655,18 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                           ? ` · ${message.credits} crédito(s)`
                           : ''}
                       </span>
+                      {prefs.showSources && message.toolsUsed.length > 0 && (
+                        <span className="ai-sources">
+                          Consultou:{' '}
+                          {[
+                            ...new Set(
+                              message.toolsUsed.map(
+                                (tool) => toolLabels[tool] ?? tool,
+                              ),
+                            ),
+                          ].join(' · ')}
+                        </span>
+                      )}
                       {message.role === 'assistant' && (
                         <button
                           onClick={() => void copy(message)}
@@ -668,18 +681,6 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                         </button>
                       )}
                     </footer>
-                    {prefs.showSources && message.toolsUsed.length > 0 && (
-                      <div className="ai-sources">
-                        Consultou:{' '}
-                        {[
-                          ...new Set(
-                            message.toolsUsed.map(
-                              (tool) => toolLabels[tool] ?? tool,
-                            ),
-                          ),
-                        ].join(' · ')}
-                      </div>
-                    )}
                     {message.role === 'assistant' &&
                       index === messages.length - 1 &&
                       !asking &&
@@ -796,7 +797,9 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                         disabled={asking || opening}
                         onClick={() => void open(item.id)}
                       >
-                        <MessageCircle size={21} />
+                        <span className="ai-history-icon">
+                          <MessageCircle size={18} />
+                        </span>
                         <span>
                           <strong>{item.title}</strong>
                           <small>
@@ -927,7 +930,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                         <div className="ai-packages">
                           {credits.packages.map((item) => (
                             <div key={item.id}>
-                              <span>{item.name}</span>
+                              {item.name.replace(/\D/g, '') !== String(item.credits) ? <span>{item.name}</span> : null}
                               <strong>
                                 {number(item.credits)} <small>créditos</small>
                               </strong>
@@ -1039,6 +1042,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                 Preferências de conversa
                 <HelpDot label="Preferências" text="Estas opções ficam salvas apenas neste navegador." />
               </h3>
+              <div className="ai-pref-list">
               {(
                 [
                   {
@@ -1066,30 +1070,19 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                     <strong>{item.title}</strong>
                     <HelpDot label={item.title} text={item.description} />
                   </span>
-                  <input
-                    type="checkbox"
+                  <Switch
                     checked={prefs[item.key]}
-                    onChange={(event) =>
-                      preference(item.key, event.target.checked)
-                    }
+                    onCheckedChange={(checked) => preference(item.key, checked)}
+                    aria-label={item.title}
                   />
                 </label>
               ))}
+              </div>
               {notice && (
                 <p role="status" className="ai-notice">
                   {notice}
                 </p>
               )}
-              <div className="ai-settings-links">
-                <Link href="/admin/assinatura">
-                  <Wallet size={20} /> Gerenciar assinatura e créditos{' '}
-                  <ArrowUpRight size={18} />
-                </Link>
-                <button onClick={() => setTab('history')}>
-                  <History size={20} /> Consultar histórico de conversas{' '}
-                  <ArrowUpRight size={18} />
-                </button>
-              </div>
             </div>
           )}
         </div>
