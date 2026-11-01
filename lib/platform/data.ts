@@ -1,22 +1,17 @@
 import { recordAudit } from '../audit';
+import { BACKUP_SECRET_COLUMNS, BACKUP_TABLES } from '../backup/tables';
 import { sql } from '../db';
 import { PlatformError } from './errors';
 
 /**
  * An organization's own data, as exported: every table it owns (archived rows included, marked by
- * deleted_at). Platform-internal tables (the owner's notes, impersonation sessions, provisioning,
- * leads) stay out.
+ * deleted_at), the same list the daily backups keep (lib/backup/tables.ts). Platform-internal tables (the
+ * owner's notes, impersonation sessions, provisioning, leads) stay out.
  */
-const EXPORT_TABLES = [
-  'users', 'technicians', 'services', 'work_hours', 'schedule', 'payroll', 'discounts', 'financial_entries',
-  'library_documents', 'organization_settings', 'technician_visibility_settings', 'porto_config', 'porto_sync_log',
-  'whatsapp_config', 'whatsapp_messages', 'subscriptions', 'billing_charges', 'ai_credit_ledger', 'bug_reports', 'audit_events',
-  'parts', 'part_images', 'part_transfers', 'part_sales', 'part_sale_items', 'part_inventories', 'part_inventory_items', 'part_debts',
-  'part_movements', 'part_account_entries', 'parts_settings', 'mercadopago_accounts',
-] as const;
+const EXPORT_TABLES = BACKUP_TABLES;
 
 /** Secrets never leave the database, not even in the organization's own export. */
-const SECRET_COLUMNS = new Set(['password_hash', 'encrypted_password', 'access_token_enc', 'refresh_token_enc']);
+const SECRET_COLUMNS = new Set<string>(BACKUP_SECRET_COLUMNS);
 
 export async function exportOrganizationData(organizationId: string, actor: { id: string; role: string; impersonationId?: string | null }) {
   const organization = (await sql`SELECT * FROM organizations WHERE id = ${organizationId}`)[0];

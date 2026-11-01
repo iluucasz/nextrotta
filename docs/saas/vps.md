@@ -61,7 +61,7 @@ contra um Docker simulado (prévia, execução, permissões de restart).
 `worker/` (fila do Porto, WhatsApp, cobrança, métricas da VPS e limpeza automática). Detalhes da fila
 em `docs/integracao-porto-seguro.md` → "Fila do worker". Variáveis: as do `.env.example` (banco,
 `PORTO_CREDENTIALS_KEY`, `PORTO_WORKER_SECRET`, `PORTO_WORKER_PORT=8091`, `EVOLUTION_API_URL/KEY`,
-`VPS_AGENT_URL` = a URL pública (`https://evolution-whatsapp.duckdns.org/nextrotta-vps-agent`; dentro do container, `127.0.0.1` não é o host), `VPS_AGENT_SECRET`, `WORKER_ID`).
+`BLOB_READ_WRITE_TOKEN` (os backups diários das empresas, `docs/backups.md`), `VPS_AGENT_URL` = a URL pública (`https://evolution-whatsapp.duckdns.org/nextrotta-vps-agent`; dentro do container, `127.0.0.1` não é o host), `VPS_AGENT_SECRET`, `WORKER_ID`).
 
 A cada 5 minutos o worker grava `vps_metrics`/`vps_container_metrics` e alerta o dono (WhatsApp da
 plataforma, `platform_alerts`) quando:

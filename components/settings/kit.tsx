@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Banknote, Bot, CheckCircle2, CircleHelp, Clock3, CreditCard, Loader2, Tags, type LucideIcon } from 'lucide-react';
+import { Banknote, Bot, CheckCircle2, CircleHelp, Clock3, CreditCard, DatabaseBackup, Loader2, Tags, type LucideIcon } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { Panel } from '@/components/management-ui';
 import { HelpDot } from '@/components/modal-kit';
@@ -22,6 +22,7 @@ const SECTIONS: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: '/admin/configuracoes/jornada', label: 'Jornada e horas', icon: Clock3 },
   { href: '/admin/configuracoes/porto', label: 'Robô do Porto', icon: Bot },
   { href: '/admin/configuracoes/financeiro', label: 'Financeiro', icon: Tags },
+  { href: '/admin/configuracoes/backups', label: 'Backups', icon: DatabaseBackup },
   { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
 ];
 

@@ -1,5 +1,8 @@
 import cron from 'node-cron';
 import { isBalanceConfigured, recordBalance } from '../lib/ai/balance';
+import { brasiliaDay } from '../lib/backup/dates';
+import { cleanupExpiredBackups, runDailyBackups } from '../lib/backup/service';
+import { backupStorageConfigured } from '../lib/backup/storage';
 import { runBillingMaintenance } from '../lib/billing/billing';
 import { grantMonthlyCredits } from '../lib/platform/ai-credits';
 import { expireCoupons } from '../lib/platform/coupons';
@@ -85,6 +88,37 @@ async function runBilling() {
   }
 }
 
+/**
+ * Every night at 00:00 (Brasília): one backup of each organization that is being used, then the copies past their plan's
+ * retention are removed. Safe to call again: an organization that already has today's backup is skipped, and two runs never
+ * overlap in this process.
+ */
+let backupRunning = false;
+let lastBackupDay = '';
+async function runBackups() {
+  if (backupRunning) return;
+  if (!backupStorageConfigured()) {
+    log('Backups: BLOB_READ_WRITE_TOKEN não está configurado neste container; nenhum backup foi feito.');
+    return;
+  }
+  backupRunning = true;
+  try {
+    const result = await trackRun('backups', null, runDailyBackups);
+    log(`Backups: ${result.made} feito(s), ${result.failed} com falha.`);
+    if (!result.failed) lastBackupDay = brasiliaDay(new Date());
+  } catch (error) {
+    log('Rotina de backups falhou:', error);
+  }
+  try {
+    const removed = await trackRun('backup_cleanup', null, cleanupExpiredBackups);
+    if (removed) log(`Backups: ${removed} cópia(s) vencida(s) removida(s).`);
+  } catch (error) {
+    log('Limpeza dos backups vencidos falhou:', error);
+  } finally {
+    backupRunning = false;
+  }
+}
+
 async function heartbeat() {
   try {
     await recordHeartbeat();
@@ -119,6 +153,8 @@ async function maintenance() {
     await runAllWhatsApp(true);
   }
   if (isBalanceConfigured() && new Date().getMinutes() < 30) void readAiBalance();
+  // The nightly backups at 00:00 cover the normal case; this catches a day the worker was down at midnight.
+  if (lastBackupDay !== brasiliaDay(new Date())) void runBackups();
 }
 
 /** The daily VPS cleanup, once the owner switched it on (Configurações da plataforma → VPS). */
@@ -155,10 +191,11 @@ if (runArg) {
     hours: () => runAllNow(portoHooks, 'hours'),
     schedule: () => runAllNow(portoHooks, 'schedule'),
     billing: runBilling,
+    backups: runBackups,
   };
   const job = jobs[runArg] ?? null;
   if (!job) {
-    console.error(`--run inválido: "${runArg}" (use "hours", "schedule" ou "billing")`);
+    console.error(`--run inválido: "${runArg}" (use "hours", "schedule", "billing" ou "backups")`);
     process.exit(1);
   }
   job().then(() => process.exit(0));
@@ -170,6 +207,8 @@ if (runArg) {
   cron.schedule('* * * * *', () => void runPortoScheduler(portoHooks), { timezone: 'America/Sao_Paulo' });
   cron.schedule('0,30 * * * *', () => void maintenance(), { timezone: 'America/Sao_Paulo' });
   cron.schedule('0 6 * * *', runBilling, { timezone: 'America/Sao_Paulo' });
+  // Daily backup of each organization, at midnight Brasília time.
+  cron.schedule('0 0 * * *', () => void runBackups(), { timezone: 'America/Sao_Paulo' });
   // WhatsApp notification times are edited in the admin UI, so rather than one cron entry per
   // notification this checks every few minutes what is due. Each notification claims its day/month
   // before running, so it's once only.

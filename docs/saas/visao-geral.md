@@ -105,7 +105,7 @@ Estados da organização:
   - Organização `suspended`/`canceled`: os dados não mudam, então para de gerar backup novo e os existentes deixam de vencer.
   - Mudança de plano: a nova retenção vale a partir da próxima limpeza (Pro → Essencial descarta o que passar de 90 dias).
   - Registro em tabela `organization_backups`: organização, data, tamanho, local no storage, estado (gerando, concluído, falhou), data de vencimento.
-  - **Restauração** (só o dono): baixar o backup ou restaurar a organização inteira para aquela data. Antes de restaurar, um backup do estado atual é gerado automaticamente.
+  - **Restauração** (decidido em 01/11/2026: o **administrador** da empresa, não só o dono): baixar o backup ou restaurar a empresa para aquele ponto, na tela Configurações → Backups, digitando RESTAURAR. Antes de restaurar, um backup do estado atual é gerado automaticamente. Implementado: `docs/backups.md`.
 - **Backup da plataforma (segurança do dono):** além disso, restauração pontual do Neon (janela conforme o plano Neon) + backup diário completo do banco com retenção curta, para recuperar desastre. Independe dos planos.
 - **LGPD:** a única forma de remover dados é um processo manual do dono, a pedido formal do titular/cliente, com anonimização e registro em auditoria. Nunca automático.
 

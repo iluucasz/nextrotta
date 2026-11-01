@@ -9,6 +9,11 @@ import { DEFAULT_ORGANIZATION_SETTINGS, normalizeOrganizationSettings, type Orga
 const CACHE_TTL_MS = 30_000;
 const cache = new Map<string, { settings: OrganizationSettings; at: number }>();
 
+/** Forgets what was read for an organization (after something rewrote its settings outside saveOrganizationSettings, like a restore). */
+export function forgetOrganizationSettings(organizationId: string): void {
+  cache.delete(organizationId);
+}
+
 /** The organization's settings, or the defaults when it has no row yet. Columns are snake_case. */
 export async function getOrganizationSettings(organizationId: string): Promise<OrganizationSettings> {
   const hit = cache.get(organizationId);
