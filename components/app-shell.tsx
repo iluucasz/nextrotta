@@ -19,7 +19,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AssistantWidget } from '@/components/assistant/widget';
 import {
+  Banknote,
   BookOpen,
+  Bot,
   ChartNoAxesCombined,
   CreditCard,
   CalendarDays,
@@ -39,6 +41,7 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
+  Tags,
   TrendingUp,
   Users,
   WalletCards,
@@ -114,8 +117,18 @@ const adminSections: NavSection[] = [
   {
     label: 'Empresa',
     items: [
-      { href: '/admin/configuracoes', label: 'Configurações', icon: Settings },
-      { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
+      {
+        href: '/admin/configuracoes',
+        label: 'Configurações',
+        icon: Settings,
+        children: [
+          { href: '/admin/configuracoes/pagamento', label: 'Pagamento', icon: Banknote },
+          { href: '/admin/configuracoes/jornada', label: 'Jornada e horas', icon: Clock3 },
+          { href: '/admin/configuracoes/porto', label: 'Robô do Porto', icon: Bot },
+          { href: '/admin/configuracoes/financeiro', label: 'Financeiro', icon: Tags },
+          { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
+        ],
+      },
     ],
   },
 ];
@@ -129,6 +142,8 @@ const LINK_FEATURES: Record<string, string> = {
   '/admin/library': 'library',
   '/admin/whatsapp': 'whatsapp',
   '/admin/config-porto': 'porto',
+  '/admin/configuracoes/porto': 'porto',
+  '/admin/configuracoes/financeiro': 'finance',
   '/dashboard/library': 'library',
   '/admin/pecas': 'parts',
   '/dashboard/pecas': 'parts',

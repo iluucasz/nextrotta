@@ -1,11 +1,25 @@
-# Configurações da organização (`/admin/configuracoes`)
+# Configurações da organização (`/admin/configuracoes/*`)
 
 Regras de negócio de cada organização, editadas pelo admin dela (e pelo dono, no painel). Nenhum
 número do cliente original fica no código: todos os pontos abaixo leem as configurações da organização.
 
+## Telas (submenu Configurações)
+
+As configurações são divididas por assunto, cada uma uma página no padrão do Dashboard Gerencial (painéis, explicações atrás do "?"):
+
+| Página | O que tem |
+|---|---|
+| `/admin/configuracoes/pagamento` (`/admin/configuracoes` redireciona para ela) | Como a comissão é paga, percentual, salário/VA/VR padrão, prêmio por produção. |
+| `/admin/configuracoes/jornada` | Jornada mensal, hora extra, intervalo, alerta de horas, turno padrão, último dia da Q1, serviço cancelado cobra o previsto. |
+| `/admin/configuracoes/porto` (só com o recurso `porto`) | Horários das importações, WhatsApp dos alertas, leitura do Porto, advertência por laudo. |
+| `/admin/configuracoes/financeiro` (só com o recurso `finance`) | Aviso de vencimento e categorias de despesa. |
+| `/admin/assinatura` | Plano, cobranças, créditos de IA, exportação dos dados (também filho de Configurações no menu). |
+
+Código: `components/settings/form.ts` (`useSettingsForm(grupo)` carrega tudo, mas cada página salva **só os campos dela**; a API mantém o resto), `components/settings/kit.tsx` (`SettingsPage`, `Frame`, `Field`/`NumberField`/`TimeField`/`TextField`, `Toggle`, `Choice`, `SectionPanel`) e `settings.css` (`st-*`). A barra "Alterações não salvas" (Descartar / Salvar) só aparece quando algo mudou. Teste de navegador: abrir cada página, editar um campo e conferir que o `PUT` leva só os campos da página.
+
 ## Como a comissão é paga (`commissionMode`, migração `0030`)
 
-Cada empresa escolhe uma das três regras em Configurações → Padrões dos técnicos. O cálculo é um só
+Cada empresa escolhe uma das três regras em Configurações → Pagamento. O cálculo é um só
 (`lib/payroll-rules.ts`), usado pela API (`/api/payroll/preview`) e pela tela da Folha:
 
 - `excess` (padrão, regra do cliente original): comissão = `% da produção − salário − VR − VA`, nunca abaixo de zero.

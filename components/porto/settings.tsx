@@ -74,7 +74,7 @@ export function Settings({
         sub={
           <>
             Horas {times.hours} · Escala {times.schedule}{' '}
-            <Link href="/admin/configuracoes" className="po-link">
+            <Link href="/admin/configuracoes/porto" className="po-link">
               Mudar
             </Link>
           </>

@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ExternalLink } from 'lucide-react';
-import { AppShell } from '@/components/app-shell';
-import { DataPanel } from '@/components/data-panel';
+import { CalendarClock, ExternalLink, Layers, Users, WalletCards } from 'lucide-react';
 import { LoadingShell } from '@/components/page-skeleton';
-import { PageHeader } from '@/components/page-header';
+import { Frame, SectionPanel } from '@/components/settings/kit';
+import '@/components/settings/settings.css';
 import { useAppSession } from '@/hooks/use-app-session';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { AiCreditsPanel, ExportPanel } from './credits-panel';
@@ -99,139 +98,142 @@ export default function SubscriptionPage() {
   }
 
   const cycleLabel = subscription?.cycle === 'annual' ? 'ano' : 'mês';
+  const discount = subscription
+    ? [subscription.discountPercent ? `${subscription.discountPercent}%` : null, subscription.discountAmount ? formatCurrency(subscription.discountAmount) : null].filter(Boolean).join(' + ')
+    : '';
+  const metrics = subscription
+    ? [
+        { title: 'Plano', value: subscription.plan.name, hint: subscription.cycle === 'annual' ? 'Cobrança anual' : 'Cobrança mensal', icon: Layers },
+        { title: `Valor por ${cycleLabel}`, value: formatCurrency(subscription.value), hint: discount ? `Com desconto de ${discount}` : 'Sem desconto', icon: WalletCards },
+        { title: 'Próximo vencimento', value: subscription.nextDueDate ? formatDate(subscription.nextDueDate) : '—', hint: `Implantação: ${SETUP_LABELS[subscription.setupFeeStatus].toLowerCase()}`, icon: CalendarClock },
+        { title: 'Técnicos ativos', value: String(subscription.activeTechnicians), hint: `${subscription.includedTechnicians} incluídos${subscription.extraTechnicians ? ` · ${subscription.extraTechnicians} extras` : ''}`, icon: Users },
+      ]
+    : [];
 
   return (
-    <AppShell role="admin" userName={user.name || user.email}>
-      <PageHeader eyebrow="Empresa" title="Assinatura" description="Plano contratado, valores, cobranças, créditos de IA e exportação dos dados." />
-
-      {error ? <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{error}</div> : null}
-
-      {!subscription && !error ? (
-        <p className="rounded-lg border border-dashed border-border px-3 py-6 text-center text-sm text-muted-foreground">
-          Nenhum plano contratado ainda. Fale com o suporte do NextRotta.
-        </p>
+    <Frame userName={user.name || user.email} title="Assinatura" description="Plano, cobranças, créditos de IA e seus dados.">
+      {error ? (
+        <div className="mg-error" role="alert">
+          <div>
+            <strong>Não foi possível carregar</strong>
+            <p>{error}</p>
+          </div>
+        </div>
       ) : null}
 
+      {!subscription && !error ? <p className="st-empty">Nenhum plano contratado ainda. Fale com o suporte do NextRotta.</p> : null}
+
       {subscription ? (
-        <div className="flex flex-col gap-4">
-          <div className="grid gap-4 lg:grid-cols-2">
-            <DataPanel title={`Plano ${subscription.plan.name}`} description={subscription.cycle === 'annual' ? 'Cobrança anual' : 'Cobrança mensal'}>
-              <dl className="grid gap-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">Valor do plano</dt>
-                  <dd>{formatCurrency(subscription.basePrice)}/{cycleLabel}</dd>
+        <div className="st-stack">
+          <div className="mg-metrics">
+            {metrics.map((metric) => (
+              <article key={metric.title} className="mg-metric">
+                <div className="mg-metric-top">
+                  <span>{metric.title}</span>
+                  <span className="mg-icon">
+                    <metric.icon size={18} />
+                  </span>
                 </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">
-                    Técnicos ativos ({subscription.activeTechnicians} de {subscription.includedTechnicians} incluídos)
-                  </dt>
+                <strong>{metric.value}</strong>
+                <div className="mg-metric-bottom">
+                  <span>{metric.hint}</span>
+                </div>
+              </article>
+            ))}
+          </div>
+
+          <div className="mg-grid-finance st-billing">
+            <SectionPanel title="Cobranças" description="Pague pelo link de cada cobrança (Pix, boleto ou cartão).">
+              {charges.length ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[520px] text-sm">
+                    <thead>
+                      <tr className="border-b border-border text-left text-xs text-muted-foreground">
+                        <th className="py-2 pr-3 font-medium">Vencimento</th>
+                        <th className="py-2 pr-3 font-medium">Tipo</th>
+                        <th className="py-2 pr-3 font-medium">Valor</th>
+                        <th className="py-2 pr-3 font-medium">Situação</th>
+                        <th className="py-2 font-medium" />
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {charges.map((charge) => {
+                        const status = chargeStatus(charge.status);
+                        const payable = !PAID.includes(charge.status) && charge.invoiceUrl && ['PENDING', 'OVERDUE'].includes(charge.status);
+                        return (
+                          <tr key={charge.id} className="border-b border-border last:border-0">
+                            <td className="py-2.5 pr-3">{formatDate(charge.dueDate)}</td>
+                            <td className="py-2.5 pr-3">{CHARGE_KIND_LABELS[charge.kind] ?? charge.kind}</td>
+                            <td className="py-2.5 pr-3">{formatCurrency(charge.value)}</td>
+                            <td className="py-2.5 pr-3">
+                              <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${status.className}`}>{status.label}</span>
+                            </td>
+                            <td className="py-2.5 text-right">
+                              {charge.invoiceUrl ? (
+                                <a href={charge.invoiceUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline">
+                                  {payable ? 'Pagar' : 'Ver fatura'}
+                                  <ExternalLink className="h-3.5 w-3.5" />
+                                </a>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="st-empty">Nenhuma cobrança gerada ainda.</p>
+              )}
+            </SectionPanel>
+
+            <SectionPanel
+              title="Como o valor é calculado"
+              description="Novos recursos chegam sem custo extra. Se um pagamento atrasar, nada é apagado: o acesso fica em modo somente leitura até a regularização."
+            >
+              <dl className="st-summary">
+                <div>
+                  <dt>Valor do plano</dt>
                   <dd>
-                    {subscription.extraTechnicians
-                      ? `+ ${subscription.extraTechnicians} × ${formatCurrency(subscription.extraTechnicianPrice)}/mês`
-                      : 'Sem extras'}
+                    {formatCurrency(subscription.basePrice)}/{cycleLabel}
                   </dd>
                 </div>
-                {subscription.discountPercent || subscription.discountAmount ? (
-                  <div className="flex justify-between gap-4">
-                    <dt className="text-muted-foreground">Desconto</dt>
+                <div>
+                  <dt>Técnicos extras</dt>
+                  <dd>{subscription.extraTechnicians ? `${subscription.extraTechnicians} × ${formatCurrency(subscription.extraTechnicianPrice)}/mês` : 'Nenhum'}</dd>
+                </div>
+                {discount ? (
+                  <div>
+                    <dt>Desconto</dt>
+                    <dd>{discount}</dd>
+                  </div>
+                ) : null}
+                {subscription.setupFee ? (
+                  <div>
+                    <dt>Implantação</dt>
                     <dd>
-                      {[
-                        subscription.discountPercent ? `${subscription.discountPercent}%` : null,
-                        subscription.discountAmount ? formatCurrency(subscription.discountAmount) : null,
-                      ]
-                        .filter(Boolean)
-                        .join(' + ')}
+                      {formatCurrency(subscription.setupFee)} · {SETUP_LABELS[subscription.setupFeeStatus]}
                     </dd>
                   </div>
                 ) : null}
-                <div className="mt-1 flex justify-between gap-4 border-t border-border pt-2 font-semibold">
+                <div className="total">
                   <dt>Total</dt>
-                  <dd>{formatCurrency(subscription.value)}/{cycleLabel}</dd>
-                </div>
-              </dl>
-            </DataPanel>
-
-            <DataPanel title="Próximos passos">
-              <dl className="grid gap-2 text-sm">
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">Próximo vencimento</dt>
-                  <dd>{subscription.nextDueDate ? formatDate(subscription.nextDueDate) : '—'}</dd>
-                </div>
-                <div className="flex justify-between gap-4">
-                  <dt className="text-muted-foreground">Implantação</dt>
                   <dd>
-                    {subscription.setupFee ? `${formatCurrency(subscription.setupFee)} · ` : ''}
-                    {SETUP_LABELS[subscription.setupFeeStatus]}
+                    {formatCurrency(subscription.value)}/{cycleLabel}
                   </dd>
                 </div>
               </dl>
-              <p className="mt-3 text-xs text-muted-foreground">
-                Novos recursos chegam sem custo extra. Se um pagamento atrasar, nada é apagado: o acesso fica em modo somente leitura até a regularização.
-              </p>
-            </DataPanel>
+            </SectionPanel>
           </div>
 
           <UpgradePanel />
-
-          <DataPanel title="Cobranças" description="Pague pelo link de cada cobrança (Pix, boleto ou cartão).">
-            {charges.length ? (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[560px] text-sm">
-                  <thead>
-                    <tr className="border-b border-border text-left text-xs text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">Vencimento</th>
-                      <th className="py-2 pr-3 font-medium">Tipo</th>
-                      <th className="py-2 pr-3 font-medium">Valor</th>
-                      <th className="py-2 pr-3 font-medium">Situação</th>
-                      <th className="py-2 font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {charges.map((charge) => {
-                      const status = chargeStatus(charge.status);
-                      const payable = !PAID.includes(charge.status) && charge.invoiceUrl && ['PENDING', 'OVERDUE'].includes(charge.status);
-                      return (
-                        <tr key={charge.id} className="border-b border-border last:border-0">
-                          <td className="py-2 pr-3">{formatDate(charge.dueDate)}</td>
-                          <td className="py-2 pr-3">{CHARGE_KIND_LABELS[charge.kind] ?? charge.kind}</td>
-                          <td className="py-2 pr-3">{formatCurrency(charge.value)}</td>
-                          <td className="py-2 pr-3">
-                            <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${status.className}`}>
-                              {status.label}
-                            </span>
-                          </td>
-                          <td className="py-2 text-right">
-                            {charge.invoiceUrl ? (
-                              <a
-                                href={charge.invoiceUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 text-sm font-medium text-primary hover:underline"
-                              >
-                                {payable ? 'Pagar' : 'Ver fatura'}
-                                <ExternalLink className="h-3.5 w-3.5" />
-                              </a>
-                            ) : null}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <p className="rounded-lg border border-dashed border-border px-3 py-3 text-sm text-muted-foreground">
-                Nenhuma cobrança gerada ainda.
-              </p>
-            )}
-          </DataPanel>
           <AiCreditsPanel />
         </div>
       ) : null}
 
-      <div className="mt-4">
+      <div className="st-stack st-after">
         <ExportPanel />
       </div>
-    </AppShell>
+    </Frame>
   );
 }

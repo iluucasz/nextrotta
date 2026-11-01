@@ -1,0 +1,305 @@
+/* Settings screens: what the management look (.mg-*) does not already have. Everything lives under .mg-dashboard. */
+
+.mg-dashboard .st-header-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.mg-dashboard .st-stack {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+}
+.mg-dashboard .st-grid-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+@media (max-width: 1100px) {
+  .mg-dashboard .st-grid-two {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* fields */
+.mg-dashboard .st-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 16px 18px;
+}
+.mg-dashboard .st-field {
+  min-width: 0;
+}
+.mg-dashboard .st-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.mg-dashboard .st-input {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card);
+  overflow: hidden;
+}
+.mg-dashboard .st-input:focus-within {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px #6c5ce71f;
+}
+.mg-dashboard .st-input input {
+  flex: 1;
+  min-width: 0;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 16px;
+}
+.mg-dashboard .st-input span {
+  display: grid;
+  place-items: center;
+  padding: 0 12px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  font-size: 15px;
+  white-space: nowrap;
+}
+.mg-dashboard .st-input span:first-child {
+  border-right: 1px solid var(--border);
+}
+.mg-dashboard .st-input input + span {
+  border-left: 1px solid var(--border);
+}
+.mg-dashboard .st-input textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--foreground);
+  font-size: 16px;
+  resize: vertical;
+}
+
+/* on/off rules */
+.mg-dashboard .st-toggles {
+  display: grid;
+  gap: 0;
+}
+.mg-dashboard .st-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--border);
+}
+.mg-dashboard .st-toggle:first-child {
+  border-top: 0;
+  padding-top: 4px;
+}
+.mg-dashboard .st-toggle-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mg-dashboard .st-divider {
+  margin: 16px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* a few choices side by side */
+.mg-dashboard .st-choice {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.mg-dashboard .st-choice button {
+  display: grid;
+  gap: 2px;
+  padding: 12px 14px;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.mg-dashboard .st-choice button strong {
+  font-size: 16px;
+}
+.mg-dashboard .st-choice button small {
+  font-size: 14px;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .st-choice button.selected {
+  border-color: var(--primary);
+  background: #f6f4ff;
+}
+
+/* a list of rows with a remove button (award tiers) */
+.mg-dashboard .st-rows {
+  display: grid;
+  gap: 12px;
+}
+.mg-dashboard .st-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 12px;
+}
+.mg-dashboard .st-empty {
+  margin: 0 0 12px;
+  font-size: 15px;
+  color: var(--muted-foreground);
+}
+
+/* categories */
+.mg-dashboard .st-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.mg-dashboard .st-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--secondary);
+  font-size: 15px;
+}
+.mg-dashboard .st-chip button {
+  display: grid;
+  place-items: center;
+  padding: 2px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .st-chip button:hover {
+  background: var(--card);
+  color: var(--foreground);
+}
+.mg-dashboard .st-add {
+  display: flex;
+  gap: 8px;
+  max-width: 420px;
+}
+.mg-dashboard .st-add .st-input {
+  flex: 1;
+}
+
+.mg-dashboard .st-preview {
+  margin-top: 10px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .st-preview strong {
+  color: var(--foreground);
+}
+
+/* the bar that shows up when something changed */
+.mg-dashboard .st-savebar {
+  position: sticky;
+  bottom: 16px;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding: 12px 16px 12px 20px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  box-shadow: 0 12px 34px #1b1a2e24;
+}
+.mg-dashboard .st-savebar-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mg-dashboard .st-savebar-actions {
+  display: flex;
+  gap: 8px;
+}
+.mg-dashboard .st-savebar.ok {
+  border-color: #b7e3cc;
+  background: #f3fbf7;
+  color: #166a45;
+}
+.mg-dashboard .st-savebar.bad {
+  border-color: #f2c4c0;
+  background: #fff6f5;
+  color: #b42318;
+}
+
+/* subscription summary */
+.mg-dashboard .st-summary {
+  display: grid;
+  gap: 0;
+  margin: 0;
+}
+.mg-dashboard .st-summary > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 0;
+  border-top: 1px solid var(--border);
+  font-size: 15px;
+}
+.mg-dashboard .st-summary > div:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+.mg-dashboard .st-summary dt {
+  color: var(--muted-foreground);
+}
+.mg-dashboard .st-summary dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: right;
+}
+.mg-dashboard .st-summary .total {
+  font-size: 17px;
+}
+.mg-dashboard .st-summary .total dt {
+  color: var(--foreground);
+  font-weight: 600;
+}
+.mg-dashboard .st-after {
+  margin-top: 18px;
+}
+.mg-dashboard .st-billing {
+  margin-bottom: 0;
+  align-items: start;
+}
+@media (min-width: 1151px) {
+  .mg-dashboard .st-stack .mg-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .mg-dashboard .st-billing {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+}
+.mg-dashboard .st-stack .mg-metrics .mg-metric > strong {
+  font-size: 26px;
+}

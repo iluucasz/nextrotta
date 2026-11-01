@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { ArrowRight, Check, Loader2, PartyPopper, Rocket, Sparkles, TrendingUp } from 'lucide-react';
-import { DataPanel } from '@/components/data-panel';
+import { SectionPanel } from '@/components/settings/kit';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatCurrency, formatDate } from '@/lib/formatters';
@@ -111,7 +111,7 @@ export function UpgradePanel() {
 
   return (
     <>
-      <DataPanel
+      <SectionPanel
         title="Mude de plano"
         description="Os recursos novos são liberados na hora. O novo valor só entra na cobrança do mês seguinte."
       >
@@ -149,10 +149,10 @@ export function UpgradePanel() {
             <Link href="/admin/suporte" className="font-medium text-primary hover:underline">
               Fale com a gente
             </Link>{' '}
-            sobre o plano Sob medida.
+            se precisar de algo a mais.
           </p>
         )}
-      </DataPanel>
+      </SectionPanel>
 
       <Dialog open={Boolean(choice)} onOpenChange={(open) => !open && !saving && setChoice(null)}>
         <DialogContent className="sm:max-w-lg">

@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { Download, ExternalLink, Sparkles } from 'lucide-react';
-import { DataPanel } from '@/components/data-panel';
+import { SectionPanel } from '@/components/settings/kit';
 import { Button } from '@/components/ui/button';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 
@@ -58,7 +58,7 @@ export function AiCreditsPanel() {
   }
 
   return (
-    <DataPanel
+    <SectionPanel
       title="Créditos de IA"
       description={
         credits.planIncludesAi
@@ -123,14 +123,14 @@ export function AiCreditsPanel() {
           </table>
         </div>
       ) : null}
-    </DataPanel>
+    </SectionPanel>
   );
 }
 
 /** Everything the organization has, as a JSON file — available even while suspended. */
 export function ExportPanel() {
   return (
-    <DataPanel
+    <SectionPanel
       title="Seus dados"
       description="Baixe todos os registros da empresa (técnicos, OS, horas, escala, folhas, financeiro, documentos e histórico) num arquivo. Disponível a qualquer momento, inclusive com o acesso pausado."
       action={
@@ -143,6 +143,6 @@ export function ExportPanel() {
       }
     >
       <p className="text-xs text-muted-foreground">Senhas e credenciais de integrações não entram no arquivo.</p>
-    </DataPanel>
+    </SectionPanel>
   );
 }
