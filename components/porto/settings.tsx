@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { CheckCircle2, KeyRound, Loader2, Users, XCircle } from 'lucide-react';
+import { Panel } from '@/components/management-ui';
 import { HelpDot } from '@/components/modal-kit';
 import { Button } from '@/components/ui/button';
 import { whenLabel, type PortoMode, type PortoStatus } from '@/lib/porto-status';
@@ -66,7 +67,7 @@ export function Settings({
   const { active, linked, unlinked } = status.technicians;
 
   return (
-    <section className="po-card">
+    <Panel title="Ajustes" className="po-settings">
       <Row
         title="Importação automática"
         help={MODE_HELP}
@@ -139,6 +140,6 @@ export function Settings({
           {unlinked.length ? 'Vincular' : 'Conferir'}
         </Button>
       </Row>
-    </section>
+    </Panel>
   );
 }

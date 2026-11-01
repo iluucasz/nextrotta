@@ -1,13 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleHelp, LoaderCircle } from 'lucide-react';
+import { CalendarClock, CircleHelp, Clock3, FlaskConical, History, LoaderCircle, Users } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { AccountDialog } from '@/components/porto/account-dialog';
 import { Activity } from '@/components/porto/activity';
 import { JobDialog } from '@/components/porto/job-dialog';
 import { MatchDialog } from '@/components/porto/match-dialog';
-import { Advanced, LiveConfirm } from '@/components/porto/panels';
+import { LiveConfirm, SimulateDialog } from '@/components/porto/panels';
 import { Settings } from '@/components/porto/settings';
 import { Hero, Problems, type PortoAction } from '@/components/porto/status';
 import { usePorto } from '@/components/porto/use-porto';
@@ -18,7 +18,7 @@ import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { buildPortoStatus, modeOf, type PortoMode } from '@/lib/porto-status';
 import { PortoRunWizard } from './porto-run-wizard';
 
-type Dialog = 'account' | 'match' | 'live' | null;
+type Dialog = 'account' | 'match' | 'live' | 'simulate' | null;
 
 export default function ConfigPortoPage() {
   const { user, loading: sessionLoading } = useAppSession();
@@ -55,6 +55,13 @@ export default function ConfigPortoPage() {
   const hasCredentials = Boolean(config.cpf) && config.has_password;
   const loginFailed = hasCredentials && config.last_login_test_ok === false;
   const mode = modeOf(config);
+  const lastRun = status.recent[0];
+  const metrics = [
+    { title: 'Próxima das horas', value: status.nextRun.hours ?? '—', hint: mode === 'off' ? 'Importação desligada' : `Todo dia às ${times.hours}`, icon: Clock3 },
+    { title: 'Próxima da escala', value: status.nextRun.schedule ?? '—', hint: mode === 'off' ? 'Importação desligada' : `Todo dia às ${times.schedule}`, icon: CalendarClock },
+    { title: 'Última importação', value: lastRun?.label ?? '—', hint: lastRun ? `${lastRun.title} · ${lastRun.when}` : 'Ainda não rodou', icon: History },
+    { title: 'Técnicos vinculados', value: status.technicians.active ? `${status.technicians.linked} de ${status.technicians.active}` : '—', hint: status.technicians.unlinked.length ? `${status.technicians.unlinked.length} sem QRA` : 'Todos com QRA', icon: Users },
+  ];
   const busy = api.running !== null;
 
   async function changeMode(next: PortoMode) {
@@ -117,7 +124,7 @@ export default function ConfigPortoPage() {
 
   return (
     <AppShell role="admin" userName={user.name || user.email}>
-      <div className="mg-dashboard po-page">
+      <div className="mg-dashboard">
         <header className="mg-page-heading">
           <div>
             <div className="mg-eyebrow">
@@ -129,6 +136,9 @@ export default function ConfigPortoPage() {
             <p>Horas e escala do Portal do Prestador, todo dia.</p>
           </div>
           <div className="mg-header-actions po-header-actions">
+            <button type="button" className="mg-button" onClick={() => setDialog('simulate')} disabled={!hasCredentials}>
+              <FlaskConical size={16} /> Simular
+            </button>
             <PortoRunWizard openSignal={wizardSignal} />
           </div>
         </header>
@@ -157,23 +167,41 @@ export default function ConfigPortoPage() {
           <div className="po-stack" aria-busy={loading}>
             <Hero status={status} hasCredentials={hasCredentials} loginFailed={loginFailed} onAction={act} />
             <Problems problems={listed} onAction={act} />
-            <Settings
-              api={api}
-              status={status}
-              mode={mode}
-              times={times}
-              now={now}
-              saving={savingMode}
-              testing={testingLogin}
-              onMode={(next) => (next === 'live' ? setDialog('live') : void changeMode(next))}
-              onAccount={() => setDialog('account')}
-              onTest={() => void testLogin()}
-              onMatch={() => setDialog('match')}
-            />
-            <div id="atividade">
-              <Activity status={status} logs={logs} running={busy} onOpen={api.openRun} />
+            <div className="mg-metrics po-metrics">
+              {metrics.map((metric) => (
+                <article key={metric.title} className="mg-metric">
+                  <div className="mg-metric-top">
+                    <span>{metric.title}</span>
+                    <span className="mg-icon">
+                      <metric.icon size={18} />
+                    </span>
+                  </div>
+                  <strong>{metric.value}</strong>
+                  <div className="mg-metric-bottom">
+                    <span>{metric.hint}</span>
+                  </div>
+                </article>
+              ))}
             </div>
-            <Advanced busy={busy} onSimulate={(job, range) => void api.simulate(job, range)} />
+
+            <div className="mg-grid-finance po-grid">
+              <div id="atividade">
+                <Activity status={status} logs={logs} running={busy} onOpen={api.openRun} />
+              </div>
+              <Settings
+                api={api}
+                status={status}
+                mode={mode}
+                times={times}
+                now={now}
+                saving={savingMode}
+                testing={testingLogin}
+                onMode={(next) => (next === 'live' ? setDialog('live') : void changeMode(next))}
+                onAccount={() => setDialog('account')}
+                onTest={() => void testLogin()}
+                onMatch={() => setDialog('match')}
+              />
+            </div>
           </div>
         ) : null}
 
@@ -197,6 +225,16 @@ export default function ConfigPortoPage() {
           onSaved={(message) => {
             notify(message);
             void api.load();
+          }}
+        />
+      ) : null}
+      {dialog === 'simulate' ? (
+        <SimulateDialog
+          busy={busy}
+          onClose={() => setDialog(null)}
+          onSimulate={(job, range) => {
+            setDialog(null);
+            void api.simulate(job, range);
           }}
         />
       ) : null}

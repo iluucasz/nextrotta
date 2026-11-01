@@ -7,11 +7,7 @@
   align-items: center;
 }
 
-/* one calm column, centred on wide screens */
-.mg-dashboard.po-page {
-  max-width: 980px;
-  margin-inline: auto;
-}
+/* the page follows the other management screens: full width */
 .mg-dashboard .po-stack {
   display: grid;
   gap: 14px;
@@ -132,21 +128,15 @@
 }
 
 /* the three settings, one row each */
-.mg-dashboard .po-card {
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  background: var(--card);
-}
 .mg-dashboard .po-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  padding: 16px 22px;
+  display: grid;
+  gap: 10px;
+  padding: 16px 0;
   border-top: 1px solid var(--border);
 }
-.mg-dashboard .po-row:first-child {
+.mg-dashboard .po-row:first-of-type {
   border-top: 0;
+  padding-top: 4px;
 }
 .mg-dashboard .po-row-main {
   display: grid;
@@ -165,19 +155,12 @@
 }
 .mg-dashboard .po-row-end {
   display: flex;
-  flex: none;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 8px;
 }
-@media (max-width: 640px) {
-  .mg-dashboard .po-row {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .mg-dashboard .po-row-end {
-    justify-content: flex-start;
-  }
+.mg-dashboard .po-grid {
+  margin-bottom: 0;
+  align-items: start;
 }
 .mg-dashboard .po-state {
   display: inline-flex;
@@ -194,27 +177,29 @@
 .mg-dashboard .po-state.bad {
   color: #b42318;
 }
-.mg-dashboard .po-link {
+.po-link {
   color: var(--primary);
   font-weight: 600;
   background: none;
   border: 0;
   padding: 0;
 }
-.mg-dashboard .po-link:hover {
+.po-link:hover {
   text-decoration: underline;
 }
 
 /* off / test / live */
 .mg-dashboard .po-seg {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   padding: 3px;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--secondary);
 }
 .mg-dashboard .po-seg button {
-  padding: 7px 16px;
+  flex: 1;
+  padding: 7px 12px;
   border: 0;
   border-radius: 9px;
   background: none;
@@ -347,47 +332,18 @@
   background: #f6f4ff;
 }
 
-/* advanced */
-.mg-dashboard .po-advanced {
-  border-top: 1px solid var(--border);
-}
-.mg-dashboard .po-advanced > button {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 14px 0;
-  background: none;
-  border: 0;
-  color: var(--muted-foreground);
-  font-size: 15px;
-  font-weight: 600;
-}
-.mg-dashboard .po-advanced-body {
-  max-width: 720px;
-  padding-bottom: 8px;
-  font-size: 15px;
-  color: var(--muted-foreground);
-}
-.mg-dashboard .po-adv-title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 12px;
-  font-weight: 600;
-}
-.mg-dashboard .po-range {
+.po-range {
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
   gap: 12px;
-  margin-bottom: 12px;
 }
-.mg-dashboard .po-range label {
+.po-range label {
   display: grid;
   gap: 4px;
   font-size: 14px;
 }
-.mg-dashboard .po-range input {
+.po-range input {
   height: 40px;
   padding: 0 10px;
   border: 1px solid var(--border);
@@ -418,4 +374,18 @@
 }
 .mg-dashboard .po-toast.bad {
   background: #7a271a;
+}
+
+/* the shared dashboard stacks everything below 1500px; this page is light enough to keep its columns down to 1150px */
+@media (min-width: 1151px) {
+  .mg-dashboard .po-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+  .mg-dashboard .po-grid {
+    grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  }
+}
+.mg-dashboard .po-metrics .mg-metric > strong {
+  font-size: 26px;
+  white-space: nowrap;
 }

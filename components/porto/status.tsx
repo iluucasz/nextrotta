@@ -21,8 +21,6 @@ export function Hero({ status, hasCredentials, loginFailed, onAction }: { status
   else if (first?.action) cta = { label: first.actionLabel ?? 'Resolver', action: first.action };
   else if (hasCredentials && !loginFailed && status.overall === 'ok') cta = null;
 
-  const next = status.nextRun.hours || status.nextRun.schedule ? `Próximas: ${[status.nextRun.hours && `horas ${status.nextRun.hours}`, status.nextRun.schedule && `escala ${status.nextRun.schedule}`].filter(Boolean).join(' · ')}` : null;
-
   return (
     <section className={cn('po-hero', status.tone)} aria-live="polite">
       <span className="po-hero-icon" aria-hidden="true">
@@ -31,7 +29,6 @@ export function Hero({ status, hasCredentials, loginFailed, onAction }: { status
       <div className="po-hero-text">
         <h2>{status.headline}</h2>
         <p>{status.detail}</p>
-        {next ? <small>{next}</small> : null}
       </div>
       {cta ? (
         <Button type="button" onClick={() => onAction(cta.action)} className="po-hero-cta">
