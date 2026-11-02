@@ -5,6 +5,7 @@ import { createLoginHandoff } from './auth-handoff';
 import { createCustomer, getPayment } from './billing/asaas';
 import { createSetupCharge, nextMonthDueDate, startSubscriptionAfterSetup, upsertCharge } from './billing/billing';
 import { sql } from './db';
+import { ACCOUNT_DOCUMENTS, LEGAL_DOCUMENTS } from './legal/versions';
 import { grantBonusCredits } from './platform/ai-credits';
 import { PlatformError } from './platform/errors';
 import { quoteBuilderSelection } from './platform/modules';
@@ -95,7 +96,7 @@ export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: 
   return { plan, cycle: billingCycle, billingDay: day, basePrice, setupFee, modules, moduleDetails, recurring, firstDueDate: nextMonthDueDate(day) };
 }
 
-export async function signUp(input: Record<string, unknown>, sourceIp: string | null) {
+export async function signUp(input: Record<string, unknown>, sourceIp: string | null, userAgent: string | null = null) {
   // Honeypot: bots fill every field.
   if (clip(input.website, 200)) throw new PlatformError('Não foi possível concluir.', 400);
 
@@ -175,6 +176,13 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
         INSERT INTO users (id, organization_id, email, name, password_hash, role)
         VALUES (${adminId}, ${organizationId}, ${adminEmail}, ${adminName}, ${passwordHash}, 'admin')
       `,
+      // The acceptance of the terms, the privacy policy and the data processing agreement, with the version, the moment and the origin.
+      ...ACCOUNT_DOCUMENTS.map(
+        (document) => sql`
+          INSERT INTO legal_acceptances (organization_id, user_id, document, version, ip, user_agent, source)
+          VALUES (${organizationId}, ${adminId}, ${document}, ${LEGAL_DOCUMENTS[document].version}, ${sourceIp}, ${(userAgent ?? '').slice(0, 300) || null}, 'signup')
+        `,
+      ),
       sql`
         INSERT INTO subscriptions (
           organization_id, plan_id, cycle, base_price, extra_technician_price, included_technicians,

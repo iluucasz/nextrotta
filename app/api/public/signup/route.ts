@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
 
   const sourceIp = request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() || request.headers.get('x-real-ip');
   try {
-    const result = await signUp(body as Record<string, unknown>, sourceIp ?? null);
+    const result = await signUp(body as Record<string, unknown>, sourceIp ?? null, request.headers.get('user-agent'));
     const response = NextResponse.json(
       { success: true, slug: result.slug, redirectTo: organizationUrl(result.slug, `/api/auth/handoff?code=${encodeURIComponent(result.code)}`, request) },
       { status: 201 },

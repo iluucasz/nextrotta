@@ -18,6 +18,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { AssistantWidget } from '@/components/assistant/widget';
+import { LegalGate } from '@/components/legal-gate';
 import {
   Banknote,
   BookOpen,
@@ -843,6 +844,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
         </div>
       </main>
       {role === 'admin' && !previewMode ? <AssistantWidget /> : null}
+      <LegalGate enabled={role === 'admin' && !previewMode && !impersonationMode} />
       </div>
     </>
   );
