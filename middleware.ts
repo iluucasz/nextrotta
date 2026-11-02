@@ -43,7 +43,7 @@ const platformRoutes = ['/plataforma'];
  * so the two can't share app/page.tsx.
  */
 const SITE_DIRECTORY = '/site';
-const marketingRoutes = ['/', '/planos', '/contato', '/contratar', '/sob-medida', '/termos', '/privacidade'];
+const marketingRoutes = ['/', '/planos', '/contato', '/contratar', '/sob-medida', '/termos', '/privacidade', '/dpa', '/cookies', '/titular'];
 const marketingPrefixes = ['/novidades'];
 
 function isMarketingPath(path: string) {

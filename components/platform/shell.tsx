@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, ArrowUpRight, Bell, Blocks, BookOpen, Building2, CircleDollarSign, CreditCard, Gauge, Globe, History, LayoutDashboard, Menu, MessageSquare, Sparkles, TicketPercent, X } from 'lucide-react';
+import { Activity, ArrowUpRight, Bell, Blocks, BookOpen, Building2, CircleDollarSign, CreditCard, Gauge, Globe, History, LayoutDashboard, Menu, MessageSquare, ShieldCheck, Sparkles, TicketPercent, X } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { NoticeProvider } from './notice';
 import { ScreenState } from './ui';
@@ -23,6 +23,7 @@ export const navigation = [
   { label: 'Notificações', path: '/notificacoes', icon: Bell },
   { label: 'Conteúdo do site', path: '/site', icon: Globe },
   { label: 'Operação', path: '/operacao', icon: Activity, group: 'PLATAFORMA' },
+  { label: 'Privacidade', path: '/privacidade', icon: ShieldCheck },
   { label: 'Auditoria', path: '/auditoria', icon: History },
 ];
 /** Pages reached from the header instead of the menu (they still need a breadcrumb label). */

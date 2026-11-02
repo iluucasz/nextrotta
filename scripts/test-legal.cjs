@@ -40,3 +40,23 @@ test('only known documents are accepted', () => {
   assert.equal(isLegalDocument('constructor'), false);
   assert.equal(isLegalDocument(42), false);
 });
+
+test('every request kind the database accepts has a label', () => {
+  const { REQUEST_KIND_LABELS } = require('../lib/privacy/labels.ts');
+  const migration = fs.readFileSync(require('node:path').join(__dirname, '..', 'db', 'migrations', '0035_security_lgpd.sql'), 'utf8');
+  const kinds = migration.match(/kind\s+VARCHAR\(16\) NOT NULL CHECK \(kind IN \(([^)]*)\)\)/)[1].match(/'([a-z_]+)'/g).map((item) => item.slice(1, -1));
+  assert.ok(kinds.length >= 9);
+  for (const kind of kinds) assert.ok(REQUEST_KIND_LABELS[kind], `missing label for ${kind}`);
+  assert.equal(Object.keys(REQUEST_KIND_LABELS).length, kinds.length);
+});
+
+test('the public texts name every document and carry the version', () => {
+  const { legalText } = require('../lib/legal/texts.ts');
+  const company = { legalName: '', cnpj: '', email: '' };
+  for (const document of ['terms', 'privacy', 'dpa']) {
+    const text = legalText(document, company);
+    assert.ok(text.includes(LEGAL_DOCUMENTS[document].version), `${document} shows its version`);
+    assert.ok(text.includes('[CNPJ a informar]') || document === 'privacy', `${document} never invents a CNPJ`);
+  }
+  assert.ok(legalText('privacy', company).includes('[e-mail de contato a informar]'));
+});

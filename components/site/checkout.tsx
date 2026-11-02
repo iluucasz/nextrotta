@@ -543,6 +543,10 @@ export function MarketingCheckout() {
                     <Link href="/privacidade" target="_blank" style={{ textDecoration: 'underline' }}>
                       política de privacidade
                     </Link>
+                    , e concordo, em nome da empresa, com o{' '}
+                    <Link href="/dpa" target="_blank" style={{ textDecoration: 'underline' }}>
+                      acordo de tratamento de dados
+                    </Link>
                     .
                   </span>
                 </label>

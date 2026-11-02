@@ -21,6 +21,8 @@ export const BACKUP_TABLES = [
 export const BACKUP_EXCLUDED = [
   'ai_request_locks', 'auth_handoffs', 'mercadopago_oauth_states', 'impersonation_sessions', 'leads',
   'organization_notes', 'organization_provisioning', 'worker_runs', 'organization_backups',
+  // Legal evidence: what was accepted and what was asked must never roll back with a restore.
+  'legal_acceptances', 'data_subject_requests',
 ] as const;
 
 /** Secrets never go into a backup file: it can be downloaded by the organization's admin. */

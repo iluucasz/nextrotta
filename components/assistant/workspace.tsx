@@ -26,6 +26,7 @@ import {
   Wallet,
 } from 'lucide-react';
 import { Markdown } from '@/components/markdown';
+import { AiConsent } from './consent';
 import { HelpDot } from '@/components/modal-kit';
 import { Switch } from '@/components/ui/switch';
 import '../../app/admin/dashboard-gerencial/management-dashboard.css';
@@ -34,6 +35,7 @@ import './assistant.css';
 type Status = {
   available: boolean;
   reason: string | null;
+  needsConsent?: boolean;
   balance: number;
   creditsPerUse: number;
   impersonating: boolean;
@@ -588,10 +590,14 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
           {tab === 'chat' && (
             <>
               {status && !status.available && (
-                <p className="ai-notice">
-                  {status.reason}{' '}
-                  <Link href="/admin/assinatura">Ver assinatura</Link>
-                </p>
+                status.needsConsent ? (
+                  <AiConsent reason={status.reason} onAccepted={() => void refresh()} />
+                ) : (
+                  <p className="ai-notice">
+                    {status.reason}{' '}
+                    <Link href="/admin/assinatura">Ver assinatura</Link>
+                  </p>
+                )
               )}
               <div
                 className="ai-messages"

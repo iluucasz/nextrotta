@@ -448,6 +448,24 @@
 .ai-notice a {
   text-decoration: underline;
 }
+.ai-notice p + p,
+.ai-notice p + button {
+  margin-top: 8px;
+}
+.ai-notice-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #745118;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+}
+.ai-notice-button:disabled {
+  opacity: 0.6;
+}
 .ai-tab-content {
   flex: 1;
   min-height: 0;

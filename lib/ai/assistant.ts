@@ -2,6 +2,7 @@ import { getEntitlements, hasFeature } from '../billing/entitlements';
 import { after } from 'next/server';
 import { isBalanceConfigured, recordBalance } from './balance';
 import { sql } from '../db';
+import { hasAccepted } from '../legal/acceptance';
 import { notifyOrganization } from '../notifications';
 import { isUuid, PlatformError } from '../platform/errors';
 import { getPlatformSettings } from '../platform/settings';
@@ -84,18 +85,24 @@ async function checkAvailability(user: AssistantUser) {
   const [entitlements, { settings, balance }] = await Promise.all([getEntitlements(user.organizationId), settingsAndBalance(user.organizationId)]);
   const creditsPerUse = settings.ai.creditsPerUse;
   let reason: string | null = null;
+  let needsConsent = false;
   if (!hasFeature(entitlements, 'ai')) reason = 'O assistente de IA faz parte do plano Pro. Fale com o suporte para mudar de plano.';
   else if (!isDeepSeekConfigured()) reason = 'O assistente está temporariamente indisponível. Tente mais tarde.';
-  else if (!user.impersonating && balance < creditsPerUse) reason = 'Seus créditos de IA acabaram. Compre um pacote em Assinatura ou aguarde a cota do próximo mês.';
-  return { entitlements, reason, balance, creditsPerUse };
+  // The questions and the data they consult go to a provider outside Brazil: the company agrees to that once, in writing.
+  else if (!user.impersonating && !(await hasAccepted(user.organizationId, 'ai_transfer'))) {
+    reason = 'Antes de usar o assistente, a empresa precisa concordar com o envio dos dados consultados ao provedor de IA.';
+    needsConsent = true;
+  } else if (!user.impersonating && balance < creditsPerUse) reason = 'Seus créditos de IA acabaram. Compre um pacote em Assinatura ou aguarde a cota do próximo mês.';
+  return { entitlements, reason, balance, creditsPerUse, needsConsent };
 }
 
 /** Whether the assistant can be used now, and why not. */
 export async function getAssistantStatus(user: AssistantUser) {
-  const { reason, balance, creditsPerUse } = await checkAvailability(user);
+  const { reason, balance, creditsPerUse, needsConsent } = await checkAvailability(user);
   return {
     available: reason === null,
     reason,
+    needsConsent,
     balance,
     creditsPerUse,
     impersonating: user.impersonating,

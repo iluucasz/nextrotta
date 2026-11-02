@@ -11,6 +11,7 @@ import { OperationsScreen } from './operations';
 import { Organizations, OrganizationWizard, OrganizationDetail, Provisioning } from './organizations';
 import { Dashboard, Finance } from './overview';
 import { Plans } from './plans';
+import { PrivacyRequests } from './privacy';
 import { PlatformSettings } from './settings';
 import { SiteEditor } from './site-editor';
 import { Empty } from './ui';
@@ -33,6 +34,7 @@ export function PlatformRouter({ segments = [] }: { segments?: string[] }) {
     case 'notificacoes': return <Notifications />;
     case 'site': return <SiteEditor preview={id === 'preview'} />;
     case 'operacao': return <OperationsScreen />;
+    case 'privacidade': return <PrivacyRequests />;
     case 'auditoria': return <AuditScreen />;
     case 'configuracoes': return <PlatformSettings />;
     default: return <Empty title="Página não encontrada" text="Use o menu ao lado para navegar pelo painel." />;

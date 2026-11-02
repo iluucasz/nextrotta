@@ -1,4 +1,5 @@
 'use client';
+import { legalText } from '@/lib/legal/texts';
 import Link from 'next/link';
 import { splitNewsBody, stripSceneMarkers } from '@/lib/news-scenes';
 import { NewsFigure } from './news-scenes';
@@ -267,6 +268,9 @@ function PublicShell({ children }: { children: ReactNode }) {
           <h3>Transparência</h3>
           <Link href="/termos">Termos de uso</Link>
           <Link href="/privacidade">Política de privacidade</Link>
+          <Link href="/dpa">Acordo de tratamento de dados</Link>
+          <Link href="/cookies">Política de cookies</Link>
+          <Link href="/titular">Privacidade e seus direitos</Link>
         </div>
         <div className="nr-public-footer-bottom">
           <span>
@@ -1466,11 +1470,13 @@ export function MarketingNews({ id }: { id?: string }) {
     </section>
   );
 }
-export function MarketingLegal({ privacy = false }: { privacy?: boolean }) {
+export function MarketingLegal({ privacy = false, document }: { privacy?: boolean; document?: 'terms' | 'privacy' | 'dpa' | 'cookies' }) {
   const content = useSiteContent();
+  // The text is fixed in code and tied to the version the companies accept (lib/legal); only the company data comes from the editor.
+  const text = legalText(document ?? (privacy ? 'privacy' : 'terms'), { legalName: content.legalName, cnpj: content.cnpj, email: content.email });
   return (
     <section className="nr-public-section nr-legal">
-      <RichText text={privacy ? content.privacy : content.terms} />
+      <RichText text={text} />
     </section>
   );
 }

@@ -1,7 +1,8 @@
 'use client';
 
+import { TechnicianPrivacyDialog } from '@/components/technician-privacy';
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, MoreHorizontal, Pencil, Power, Search, Trash2, UserPlus, Users, WalletCards } from 'lucide-react';
+import { Eye, MoreHorizontal, Pencil, Power, Search, ShieldCheck, Trash2, UserPlus, Users, WalletCards } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
 import { EmptyState } from '@/components/empty-state';
@@ -113,6 +114,7 @@ export default function TechniciansPage() {
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const [loadError, setLoadError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
+  const [privacyTechnician, setPrivacyTechnician] = useState<Technician | null>(null);
 
   useEffect(() => {
     async function loadTechnicians() {
@@ -659,6 +661,10 @@ export default function TechniciansPage() {
         </AlertDialogContent>
       </AlertDialog>
 
+      {privacyTechnician ? (
+        <TechnicianPrivacyDialog technician={privacyTechnician} onClose={() => setPrivacyTechnician(null)} onChanged={() => setReloadKey((value) => value + 1)} />
+      ) : null}
+
       <div className="mt-5">
         <DataPanel
           title="Lista de técnicos"
@@ -726,6 +732,10 @@ export default function TechniciansPage() {
                             >
                               <Eye className="h-4 w-4" />
                               Modo preview
+                            </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setPrivacyTechnician(technician)}>
+                              <ShieldCheck className="h-4 w-4" />
+                              Dados pessoais
                             </DropdownMenuItem>
                             <DropdownMenuSeparator />
                             <DropdownMenuItem
