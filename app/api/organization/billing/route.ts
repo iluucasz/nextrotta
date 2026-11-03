@@ -20,15 +20,16 @@ export async function GET(request: NextRequest) {
     const [subscription, charges, [organization]] = await Promise.all([
       getSubscription(auth.organizationId),
       listCharges(auth.organizationId),
-      sql`SELECT lifetime FROM organizations WHERE id = ${auth.organizationId}`,
+      sql`SELECT lifetime, is_test, unbilled FROM organizations WHERE id = ${auth.organizationId}`,
     ]);
     // Lifetime: the company uses the platform without paying, so there is no value or charge to show.
-    const lifetime = Boolean(organization?.lifetime);
-    if (!subscription) return NextResponse.json({ subscription: null, charges: [], lifetime });
+    const lifetime = Boolean(organization?.unbilled);
+    const mode = organization?.is_test ? 'test' : organization?.lifetime ? 'lifetime' : null;
+    if (!subscription) return NextResponse.json({ subscription: null, charges: [], lifetime, mode });
 
     // Gateway identifiers stay internal.
     const { asaas: _asaas, limitOverrides: _limits, ...visible } = subscription;
-    return NextResponse.json({ subscription: visible, charges: lifetime ? [] : charges, lifetime });
+    return NextResponse.json({ subscription: visible, charges: lifetime ? [] : charges, lifetime, mode });
   } catch (error) {
     console.error('[organization/billing] error:', error);
     return NextResponse.json({ error: 'Erro ao carregar a assinatura.' }, { status: 500 });

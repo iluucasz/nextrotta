@@ -65,6 +65,7 @@ type OrganizationListItem = {
   status: OrganizationStatusKey;
   onboardingStatus: OnboardingStatus | null;
   lifetime: boolean;
+  test: boolean;
   createdAt: string;
   activeTechnicians: number;
   activeUsers: number;
@@ -97,6 +98,9 @@ type Organization = {
   lifetime: boolean;
   lifetimeSince: string | null;
   lifetimeReason: string | null;
+  test: boolean;
+  testSince: string | null;
+  testReason: string | null;
 };
 
 type Subscription = {
@@ -280,7 +284,7 @@ export function Organizations() {
       />
       <div className="nr-metrics">
         {(['active', 'past_due', 'suspended', 'provisioning'] as OrganizationStatusKey[]).map((status) => (
-          <Metric key={status} label={statusLabel(status)} value={rows.filter((row) => row.status === status).length} detail="organizações" />
+          <Metric key={status} label={statusLabel(status)} value={rows.filter((row) => row.status === status && !row.test).length} detail="organizações" />
         ))}
       </div>
       <Panel title="Sua base de clientes">
@@ -321,6 +325,7 @@ export function Organizations() {
                   <span>
                     <Badge>{row.statusText}</Badge>
                     {row.lifetime ? <small className="block">Vitalícia</small> : null}
+                    {row.test ? <small className="block">Conta de teste</small> : null}
                     {row.onboardingStatus && row.onboardingStatus !== 'done' ? <small className="block">{ONBOARDING_LABELS[row.onboardingStatus]}</small> : null}
                   </span>
                 ),
@@ -341,8 +346,8 @@ export function Organizations() {
                   );
                 },
               },
-              { key: 'value', label: 'Valor do ciclo', render: (row) => (row.lifetime ? 'Vitalícia' : row.subscription ? money(row.value) : '—') },
-              { key: 'nextBilling', label: 'Próxima cobrança', render: (row) => (row.lifetime ? '—' : date(row.nextBilling)) },
+              { key: 'value', label: 'Valor do ciclo', render: (row) => (row.lifetime || row.test ? (row.test ? 'Teste' : 'Vitalícia') : row.subscription ? money(row.value) : '—') },
+              { key: 'nextBilling', label: 'Próxima cobrança', render: (row) => (row.lifetime || row.test ? '—' : date(row.nextBilling)) },
               { key: 'createdAt', label: 'Criada em', render: (row) => date(row.createdAt) },
             ]}
             actions={(row) => (
@@ -885,22 +890,25 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
     });
   }
 
-  function lifetimeAction() {
-    const turnOn = !organization.lifetime;
+  function unbilledAction(mode: 'lifetime' | 'test') {
+    const turnOn = mode === 'test' ? !organization.test : !organization.lifetime;
     const charging = Boolean(subscription?.asaas.subscriptionId);
+    const names = mode === 'test'
+      ? { on: 'Marcar como teste', off: 'Remover modo teste', done: 'Empresa marcada como conta de teste.', undone: 'Modo teste removido.' }
+      : { on: 'Tornar vitalícia', off: 'Remover modo vitalício', done: 'Empresa marcada como vitalícia.', undone: 'Modo vitalício removido.' };
     setEditor({
-      title: turnOn ? 'Tornar vitalícia' : 'Remover modo vitalício',
+      title: turnOn ? names.on : names.off,
       description: turnOn
-        ? `Usa a plataforma sem pagar: sai da receita, das cobranças e da inadimplência, mas o que consome continua nos custos.${charging ? ' A cobrança recorrente no Asaas será cancelada (cobranças já emitidas ficam como estão).' : ''}`
+        ? `${mode === 'test' ? 'Conta sua (demonstração, homologação, treino): não conta como cliente, ' : 'Usa a plataforma sem pagar: '}sai da receita, das cobranças e da inadimplência, mas o que consome continua nos custos.${charging ? ' A cobrança recorrente no Asaas será cancelada (cobranças já emitidas ficam como estão).' : ''}`
         : 'Volta a contar na receita. Nenhuma cobrança é criada sozinha: ative a cobrança na aba Assinatura quando quiser.',
       fields: [],
       initial: {},
       reason: turnOn,
-      submit: turnOn ? 'Tornar vitalícia' : 'Remover',
+      submit: turnOn ? names.on : 'Remover',
       save: (_, reason) =>
         act(
-          () => api(`/organizations/${id}/lifetime`, { body: turnOn ? { enabled: true, reason, ...(charging ? { cancelBilling: true } : {}) } : { enabled: false } }),
-          turnOn ? 'Empresa marcada como vitalícia.' : 'Modo vitalício removido.',
+          () => api(`/organizations/${id}/${mode}`, { body: turnOn ? { enabled: true, reason, ...(charging ? { cancelBilling: true } : {}) } : { enabled: false } }),
+          turnOn ? names.done : names.undone,
         ),
     });
   }
@@ -942,12 +950,18 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
             <div className="nr-actions">
               <Badge>{statusLabel(organization.status)}</Badge>
               {organization.lifetime && <Badge>Vitalícia</Badge>}
+              {organization.test && <Badge>Teste</Badge>}
               <button className="nr-btn" disabled={organization.status === 'provisioning'} onClick={() => setEnter(true)}>
                 Entrar na conta
               </button>
-              {organization.status !== 'provisioning' && (
-                <button className="nr-btn" onClick={lifetimeAction}>
+              {organization.status !== 'provisioning' && !organization.test && (
+                <button className="nr-btn" onClick={() => unbilledAction('lifetime')}>
                   {organization.lifetime ? 'Remover vitalício' : 'Tornar vitalícia'}
+                </button>
+              )}
+              {organization.status !== 'provisioning' && !organization.lifetime && (
+                <button className="nr-btn" onClick={() => unbilledAction('test')}>
+                  {organization.test ? 'Remover teste' : 'Marcar como teste'}
                 </button>
               )}
               {organization.status !== 'provisioning' && (
@@ -964,6 +978,12 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           </Link>
         )}
         {organization.statusReason && readOnly && <div className="nr-alert mb-4">Motivo: {organization.statusReason}</div>}
+        {organization.test && (
+          <div className="nr-alert mb-4">
+            <strong>Conta de teste</strong> desde {date(organization.testSince)}
+            {organization.testReason ? ` · ${organization.testReason}` : ''}. Não conta como cliente nem como receita; o consumo segue em Custos.
+          </div>
+        )}
         {organization.lifetime && (
           <div className="nr-alert mb-4">
             <strong>Empresa vitalícia</strong> desde {date(organization.lifetimeSince)}
@@ -1038,7 +1058,7 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           onSave={saveSubscription}
           onCancel={() => statusAction('cancel')}
           canCancel={organization.status !== 'canceled' && organization.status !== 'provisioning'}
-          lifetime={organization.lifetime}
+          lifetime={organization.lifetime || organization.test}
           onChanged={detail.reload}
         />
       )}
@@ -1341,7 +1361,7 @@ function SubscriptionTab({
               ['Valor do plano', money(subscription.basePrice)],
               ['Técnicos extras', subscription.extraTechnicians ? `${subscription.extraTechnicians} × ${money(subscription.extraTechnicianPrice)}/mês` : 'Nenhum'],
               ['Desconto', [subscription.discountPercent ? `${subscription.discountPercent}%` : '', subscription.discountAmount ? money(subscription.discountAmount) : ''].filter(Boolean).join(' + ') || 'Nenhum'],
-              ['Valor do ciclo', lifetime ? 'Vitalícia (sem cobrança)' : money(subscription.value)],
+              ['Valor do ciclo', lifetime ? 'Sem cobrança' : money(subscription.value)],
               ['Implantação', `${subscription.setupFee ? `${money(subscription.setupFee)} · ` : ''}${SETUP_LABELS[subscription.setupFeeStatus]}`],
               ['Próximo vencimento', date(subscription.nextDueDate)],
               ['Carência', `${subscription.graceDays} dias`],

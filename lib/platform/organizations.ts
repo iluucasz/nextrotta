@@ -56,7 +56,7 @@ export async function listOrganizations(filters: { status?: string | null; searc
       SELECT
         o.id, o.name, o.legal_name AS "legalName", o.slug, o.status, o.email, o.city, o.state,
         o.created_at AS "createdAt", o.activated_at AS "activatedAt", o.status_changed_at AS "statusChangedAt",
-        o.onboarding_status AS "onboardingStatus", o.signup_source AS "signupSource", o.lifetime,
+        o.onboarding_status AS "onboardingStatus", o.signup_source AS "signupSource", o.lifetime, o.is_test AS test,
         (SELECT COUNT(*)::int FROM technicians t
           WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS "activeTechnicians",
         (SELECT COUNT(*)::int FROM users u
@@ -184,6 +184,10 @@ function serializeOrganization(row: Record<string, unknown>) {
     lifetime: Boolean(row.lifetime),
     lifetimeSince: (row.lifetime_since as string | null) ?? null,
     lifetimeReason: (row.lifetime_reason as string | null) ?? null,
+    // Test: the owner's own account (demo, homologation): not a customer, never charged, consumption still costs.
+    test: Boolean(row.is_test),
+    testSince: (row.test_since as string | null) ?? null,
+    testReason: (row.test_reason as string | null) ?? null,
   };
 }
 
@@ -493,67 +497,85 @@ export async function updateOrganization(organizationId: string, input: Record<s
 }
 
 /**
- * Turns the lifetime mode on or off. A lifetime organization is never charged or suspended for
- * nonpayment and stays out of the revenue figures; its consumption still counts as cost. Turning it
- * on needs a reason and, when the gateway is charging the organization, the owner's confirmation
- * that the recurring charge is canceled (charges already issued stay as they are).
+ * Lifetime ("vitalício") and test organizations don't pay: they are never charged or suspended for
+ * nonpayment and stay out of the revenue figures, while their consumption still counts as cost. A test
+ * organization (the owner's own demo or homologation account) also doesn't count as a customer.
+ * Turning a mode on needs a reason and, when the gateway is charging the organization, the owner's
+ * confirmation that the recurring charge is canceled (charges already issued stay as they are).
+ * An organization is one or the other, never both.
  */
-export async function setLifetime(organizationId: string, input: Record<string, unknown>, actor: Actor) {
+const UNBILLED_MODES = {
+  lifetime: { flag: 'lifetime', since: 'lifetime_since', reason: 'lifetime_reason', label: 'vitalícia', audit: 'lifetime' },
+  test: { flag: 'is_test', since: 'test_since', reason: 'test_reason', label: 'de teste', audit: 'test' },
+} as const;
+
+async function setUnbilledMode(mode: keyof typeof UNBILLED_MODES, organizationId: string, input: Record<string, unknown>, actor: Actor) {
+  const { flag, since, reason: reasonColumn, label, audit } = UNBILLED_MODES[mode];
+  const other = UNBILLED_MODES[mode === 'lifetime' ? 'test' : 'lifetime'];
   const organization = await requireOrganization(organizationId);
   const enabled = input.enabled === true;
-  if (Boolean(organization.lifetime) === enabled) {
-    throw new PlatformError(enabled ? 'Esta empresa já é vitalícia.' : 'Esta empresa não é vitalícia.', 409);
+  if (Boolean(organization[flag]) === enabled) {
+    throw new PlatformError(enabled ? `Esta empresa já é ${label}.` : `Esta empresa não é ${label}.`, 409);
   }
 
   if (!enabled) {
-    const rows = await sql`
-      UPDATE organizations SET lifetime = FALSE, lifetime_since = NULL, lifetime_reason = NULL, updated_at = NOW()
-      WHERE id = ${organizationId} RETURNING *
-    `;
+    const rows = await sql.query(
+      `UPDATE organizations SET ${flag} = FALSE, ${since} = NULL, ${reasonColumn} = NULL, updated_at = NOW() WHERE id = $1 RETURNING *`,
+      [organizationId],
+    );
     await recordAudit({
       organizationId,
       actorId: actor.id,
       actorRole: 'platform_owner',
-      action: 'organization.lifetime_removed',
+      action: `organization.${audit}_removed`,
       targetType: 'organization',
       targetId: organizationId,
-      details: { reason: organization.lifetime_reason, since: organization.lifetime_since },
+      details: { reason: organization[reasonColumn], since: organization[since] },
     });
     return serializeOrganization(rows[0]);
   }
 
+  if (organization[other.flag]) throw new PlatformError(`Esta empresa é ${other.label}. Remova esse modo antes.`, 409);
   const reason = text(input.reason);
-  if (reason.length < 3) throw new PlatformError('Informe o motivo (por exemplo: parceiro, permuta, piloto).');
+  if (reason.length < 3) {
+    throw new PlatformError(mode === 'test' ? 'Informe o motivo (por exemplo: demonstração, homologação, treino).' : 'Informe o motivo (por exemplo: parceiro, permuta, piloto).');
+  }
 
   const [subscription] = await sql`SELECT asaas_subscription_id FROM subscriptions WHERE organization_id = ${organizationId}`;
   const charging = Boolean(subscription?.asaas_subscription_id);
   if (charging && input.cancelBilling !== true) {
-    throw new PlatformError('Esta empresa tem cobrança recorrente ativa no Asaas. Confirme o cancelamento da cobrança para torná-la vitalícia.', 409);
+    throw new PlatformError(`Esta empresa tem cobrança recorrente ativa no Asaas. Confirme o cancelamento da cobrança para torná-la ${label}.`, 409);
   }
   if (charging) await cancelBilling(organizationId, actor);
 
   // A hold that billing put on it no longer applies; one the owner chose stays.
   const releaseHold = organization.status === 'past_due' || (organization.status === 'suspended' && organization.status_source === 'billing');
-  const rows = await sql`
-    UPDATE organizations
-    SET lifetime = TRUE, lifetime_since = NOW(), lifetime_reason = ${reason}, updated_at = NOW(),
-        status = CASE WHEN ${releaseHold} THEN 'active' ELSE status END,
-        status_source = CASE WHEN ${releaseHold} THEN 'owner' ELSE status_source END,
-        status_reason = CASE WHEN ${releaseHold} THEN NULL ELSE status_reason END,
-        status_changed_at = CASE WHEN ${releaseHold} THEN NOW() ELSE status_changed_at END
-    WHERE id = ${organizationId} RETURNING *
-  `;
+  const rows = await sql.query(
+    `UPDATE organizations
+     SET ${flag} = TRUE, ${since} = NOW(), ${reasonColumn} = $2, updated_at = NOW(),
+         status = CASE WHEN $3::boolean THEN 'active' ELSE status END,
+         status_source = CASE WHEN $3::boolean THEN 'owner' ELSE status_source END,
+         status_reason = CASE WHEN $3::boolean THEN NULL ELSE status_reason END,
+         status_changed_at = CASE WHEN $3::boolean THEN NOW() ELSE status_changed_at END
+     WHERE id = $1 RETURNING *`,
+    [organizationId, reason, releaseHold],
+  );
   await recordAudit({
     organizationId,
     actorId: actor.id,
     actorRole: 'platform_owner',
-    action: 'organization.lifetime_enabled',
+    action: `organization.${audit}_enabled`,
     targetType: 'organization',
     targetId: organizationId,
     details: { reason, billingCanceled: charging, statusReleased: releaseHold },
   });
   return serializeOrganization(rows[0]);
 }
+
+export const setLifetime = (organizationId: string, input: Record<string, unknown>, actor: Actor) =>
+  setUnbilledMode('lifetime', organizationId, input, actor);
+export const setTestOrganization = (organizationId: string, input: Record<string, unknown>, actor: Actor) =>
+  setUnbilledMode('test', organizationId, input, actor);
 
 const STATUS_ACTIONS: Record<string, { to: OrganizationStatus; from: OrganizationStatus[]; needsReason: boolean }> = {
   suspend: { to: 'suspended', from: ['active', 'past_due'], needsReason: true },

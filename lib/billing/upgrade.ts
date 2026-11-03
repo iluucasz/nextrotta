@@ -136,10 +136,10 @@ async function firstChargeFromNextMonth(organizationId: string, billingDay: numb
 
 const dateKey = (value: unknown) => (value ? new Date(value as string).toISOString().slice(0, 10) : null);
 
-/** Lifetime organizations don't pay: the owner changes their plan, not the company. */
+/** Lifetime and test organizations don't pay: the owner changes their plan, not the company. */
 async function isLifetime(organizationId: string) {
-  const [row] = await sql`SELECT lifetime FROM organizations WHERE id = ${organizationId}`;
-  return Boolean(row?.lifetime);
+  const [row] = await sql`SELECT unbilled FROM organizations WHERE id = ${organizationId}`;
+  return Boolean(row?.unbilled);
 }
 
 export async function listUpgradeOptions(organizationId: string) {

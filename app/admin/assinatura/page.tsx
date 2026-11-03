@@ -69,6 +69,7 @@ export default function SubscriptionPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [lifetime, setLifetime] = useState(false);
+  const [mode, setMode] = useState<'lifetime' | 'test' | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -82,6 +83,7 @@ export default function SubscriptionPage() {
         setSubscription(data.subscription);
         setCharges(Array.isArray(data.charges) ? data.charges : []);
         setLifetime(Boolean(data.lifetime));
+        setMode(data.mode ?? null);
       })
       .catch((loadError) => {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a assinatura.');
@@ -105,7 +107,7 @@ export default function SubscriptionPage() {
     : '';
   const metrics = subscription && lifetime
     ? [
-        { title: 'Plano', value: subscription.plan.name, hint: 'Vitalício', icon: Layers },
+        { title: 'Plano', value: subscription.plan.name, hint: mode === 'test' ? 'Conta de teste' : 'Vitalício', icon: Layers },
         { title: 'Cobrança', value: 'Sem cobrança', hint: 'Seu acesso não tem mensalidade', icon: WalletCards },
         { title: 'Técnicos ativos', value: String(subscription.activeTechnicians), hint: `${subscription.includedTechnicians} incluídos`, icon: Users },
       ]

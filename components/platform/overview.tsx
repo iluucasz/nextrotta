@@ -31,6 +31,8 @@ type Overview = {
   newLeads: number;
   /** Lifetime organizations: left out of MRR, charges and forecast. */
   lifetimeOrganizations?: number;
+  /** The owner's own accounts: not customers, not revenue. */
+  testOrganizations?: number;
   alerts: Array<{ organizationId: string; organizationName: string; kind: string; message: string }>;
 };
 
@@ -174,7 +176,7 @@ export function Dashboard() {
       {period.control}
       <div className="nr-metrics">
         <Metric label="Receita recorrente mensal" value={money(data.mrr)} detail={`ARR ${money(data.arr)} · assinaturas atuais`} accent />
-        <Metric label="Organizações ativas" value={data.organizationsByStatus.active ?? 0} detail={`${data.newOrganizations} novas no período${data.lifetimeOrganizations ? ` · ${data.lifetimeOrganizations} vitalícia(s), fora da receita` : ''}`} />
+        <Metric label="Organizações ativas" value={data.organizationsByStatus.active ?? 0} detail={`${data.newOrganizations} novas no período${data.lifetimeOrganizations ? ` · ${data.lifetimeOrganizations} vitalícia(s), fora da receita` : ''}${data.testOrganizations ? ` · ${data.testOrganizations} de teste, fora das contas` : ''}`} />
         <Metric label="Valor em atraso" value={money(data.overdue.value)} detail={`${data.overdue.organizations} organização(ões) precisam de atenção`} />
         <Metric
           label="Cancelamentos no período"

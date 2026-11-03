@@ -45,7 +45,7 @@ function asPlatformError(error: unknown): never {
 
 async function loadContext(organizationId: string) {
   const rows = await sql`
-    SELECT o.id, o.name, o.legal_name, o.document, o.email, o.phone, o.status, o.status_source, o.lifetime,
+    SELECT o.id, o.name, o.legal_name, o.document, o.email, o.phone, o.status, o.status_source, o.unbilled,
            s.*, p.name AS plan_name,
            (SELECT COUNT(*)::int FROM technicians t
              WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS active_technicians
@@ -208,7 +208,7 @@ export async function refreshCharges(organizationId: string) {
  */
 export async function activateBilling(organizationId: string, input: { firstDueDate?: string | null }, actor: Actor) {
   const context = await loadContext(organizationId);
-  if (context.lifetime) throw new PlatformError('Esta empresa é vitalícia: não há cobrança. Remova o modo vitalício antes de cobrar.', 409);
+  if (context.unbilled) throw new PlatformError('Esta empresa é vitalícia ou de teste: não há cobrança. Remova esse modo antes de cobrar.', 409);
   if (!context.plan_id) throw new PlatformError('Escolha um plano antes de ativar a cobrança.');
   if (context.asaas_subscription_id) throw new PlatformError('A cobrança desta organização já está ativa.', 409);
 
@@ -470,9 +470,9 @@ export async function cancelBilling(organizationId: string, actor: Actor) {
  * billing did: a suspension applied by the owner is never lifted by a payment.
  */
 export async function evaluateBillingStatus(organizationId: string) {
-  const [organization] = await sql`SELECT status, status_source, lifetime FROM organizations WHERE id = ${organizationId}`;
-  // A lifetime organization isn't charged, so a stray charge never makes it past due.
-  if (!organization || organization.lifetime) return;
+  const [organization] = await sql`SELECT status, status_source, unbilled FROM organizations WHERE id = ${organizationId}`;
+  // A lifetime or test organization isn't charged, so a stray charge never makes it past due.
+  if (!organization || organization.unbilled) return;
 
   const [overdue] = await sql`
     SELECT COUNT(*)::int AS total, MIN(due_date) AS oldest
@@ -531,7 +531,7 @@ export async function runBillingMaintenance() {
     FROM organizations o
     JOIN subscriptions s ON s.organization_id = o.id
     JOIN billing_charges c ON c.organization_id = o.id AND c.status = 'OVERDUE'
-    WHERE o.status = 'past_due' AND o.deleted_at IS NULL AND NOT o.lifetime
+    WHERE o.status = 'past_due' AND o.deleted_at IS NULL AND NOT o.unbilled
     GROUP BY o.id, s.grace_days
     HAVING MIN(c.due_date) + s.grace_days < ${today}::date
   `;
