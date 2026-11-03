@@ -54,6 +54,7 @@ import {
   type ManagementFilters,
 } from '@/lib/management-dashboard';
 import { formatCurrency, formatHours, formatNumber, formatPercent, normalizeText } from '@/lib/formatters';
+import { TutorialVideoButton } from '@/components/tutorial-video';
 import './management-dashboard.css';
 import { CHART_COLORS as COLORS } from '@/lib/chart-theme';
 import {
@@ -275,6 +276,7 @@ export function ManagementDashboard({ userName, today }: { userName: string; tod
             <p>Os números da sua operação. A clareza para o próximo passo.</p>
           </div>
           <div className="mg-header-actions">
+            <TutorialVideoButton page="dashboard-gerencial" />
             <span className="mg-access">
               <ShieldCheck size={13} /> Exclusivo admin
             </span>

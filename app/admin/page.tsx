@@ -15,6 +15,7 @@ import { DataPanel } from '@/components/data-panel';
 import { LoadingShell } from '@/components/page-skeleton';
 import { MetricCard } from '@/components/metric-card';
 import { PageHeader } from '@/components/page-header';
+import { TutorialVideoButton } from '@/components/tutorial-video';
 import { StatusBadge } from '@/components/status-badge';
 import {
   compactName,
@@ -408,7 +409,9 @@ export default function AdminDashboard() {
           eyebrow="Painel administrativo"
           title="Visão geral"
           description="Acompanhe as ordens de serviço, os fechamentos e as prioridades da sua equipe."
-        />
+        >
+          <TutorialVideoButton page="operacao" />
+        </PageHeader>
         <section
           className="admin-overview-filters"
           aria-label="Filtros do painel"

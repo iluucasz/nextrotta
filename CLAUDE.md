@@ -204,6 +204,7 @@ Aprovado pelo dono em Folha, Faturamento, Despesas e Config. Porto. Vale para te
 - **Regra fora da tela:** cálculo e decisão em `lib/*.ts` sem dependências, com `scripts/test-*.cjs`; a tela só desenha.
 - **Verificar como o usuário:** abrir no Chrome real (harness do Playwright com `/api/**` simulado por estado, e com os dados reais da `kappa`), desktop e celular, olhar as capturas e corrigir antes de dizer que terminou; `npx tsc --noEmit -p tsconfig.claude-check.json`; commit e push.
 - **Processo:** usar as skills `frontend-design` e `ui-ux-pro-max` nos redesenhos; sem telas "em construção".
+- **Vídeo tutorial:** cada tela do sistema da empresa com vídeo publicado (série `tutoriais-do-sistema`, YouTube não listado) mostra o botão roxo "Vídeo tutorial" no cabeçalho (`TutorialVideoButton page="..."`, `components/tutorial-video.tsx`; o modal e o player são os de Venda de Peças, `components/parts/admin/tab-video.tsx`; estilo `.nr-tutorial-button` em `styles/design-system.css`). Sem vídeo cadastrado em `TUTORIAL_VIDEOS`, o botão não aparece: ao publicar um vídeo novo, é só somar o id ali e pôr o botão no `PageHeader` da tela. Já ligados: Operação, Dashboard Gerencial e Serviços (03/11/2026).
 
 ## Convenções
 

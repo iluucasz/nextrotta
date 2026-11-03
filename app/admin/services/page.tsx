@@ -8,6 +8,7 @@ import { DataPanel } from '@/components/data-panel';
 import { LoadingShell } from '@/components/page-skeleton';
 import { MetricCard } from '@/components/metric-card';
 import { PageHeader } from '@/components/page-header';
+import { TutorialVideoButton } from '@/components/tutorial-video';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -873,6 +874,7 @@ export default function AdminServicesPage() {
         description="Acompanhe todas as OS dos colaboradores, filtre por colaborador, tipo, competência e quinzena e faça ajustes pontuais no cadastro."
       >
         <div className="flex flex-wrap gap-2">
+          <TutorialVideoButton page="servicos" />
           <Button type="button" variant="outline" onClick={() => setIsImportDialogOpen(true)}>
             <UploadCloud className="h-4 w-4" />
             Importar

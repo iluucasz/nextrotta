@@ -341,11 +341,11 @@ function VideoPlayer({ videoId, vertical = false, onUnavailable }: { videoId: st
 const TECHNICIAN_VIDEO = { desktop: 'ugExX4-YM9s', mobile: 'IszisQ8-rDY' };
 
 /**
- * A "Ver vídeo" button that opens a tutorial in a modal. The player is only created while the modal is open, so
+ * The "Vídeo tutorial" button that opens a tutorial in a modal. The player is only created while the modal is open, so
  * nothing is loaded from YouTube until someone asks for it, and closing the modal stops the video.
  * With a `mobile` video, phones (narrow screens) get that one, in a vertical player.
  */
-function VideoModalButton({ title, description, desktop, mobile }: { title: string; description: string; desktop: string; mobile?: string }) {
+export function VideoModalButton({ title, description, desktop, mobile }: { title: string; description: string; desktop: string; mobile?: string }) {
   const [open, setOpen] = useState(false);
   const [vertical, setVertical] = useState(false);
 
@@ -356,9 +356,17 @@ function VideoModalButton({ title, description, desktop, mobile }: { title: stri
 
   return (
     <>
-      <Button type="button" variant="outline" size="lg" onClick={show}>
-        <Play className="h-4 w-4" />
-        Ver vídeo
+      <Button
+        type="button"
+        variant="outline"
+        size="lg"
+        onClick={show}
+        className="nr-tutorial-button"
+      >
+        <span className="nr-tutorial-button-icon">
+          <Play className="h-3 w-3 fill-current" />
+        </span>
+        Vídeo tutorial
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent showCloseButton={false} className={cn('w-full grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden border-0 bg-black p-0', vertical ? 'sm:max-w-md' : 'sm:max-w-4xl')}>
@@ -378,7 +386,7 @@ function VideoModalButton({ title, description, desktop, mobile }: { title: stri
 }
 
 /**
- * The "Ver vídeo" button for the title bar of Venda de Peças (administrator): the tutorial of the current tab.
+ * The "Vídeo tutorial" button for the title bar of Venda de Peças (administrator): the tutorial of the current tab.
  * Render it with `key={tab}`.
  */
 export function TabVideoButton({ tab }: { tab: string }) {
@@ -393,7 +401,7 @@ export function TabVideoButton({ tab }: { tab: string }) {
   );
 }
 
-/** The "Ver vídeo" button for the title bar of the technician's "Minhas peças". */
+/** The "Vídeo tutorial" button for the title bar of the technician's "Minhas peças". */
 export function TechnicianVideoButton() {
   if (!TECHNICIAN_VIDEO.desktop) return null;
   return (
