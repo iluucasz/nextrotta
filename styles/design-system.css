@@ -154,24 +154,20 @@
 
 /* "Vídeo tutorial" button (components/parts/admin/tab-video.tsx): tinted in the brand purple so it reads as help, not as an action. */
 .nr-tutorial-button {
-  border: 1px solid rgb(113 97 239 / 0.4);
-  background: rgb(113 97 239 / 0.1);
+  border: 1px solid rgb(113 97 239 / 0.28);
+  background: #fff;
   color: #5646d8;
-  font-weight: 600;
+  font-weight: 500;
 }
 .nr-tutorial-button:hover {
-  border-color: rgb(113 97 239 / 0.6);
-  background: rgb(113 97 239 / 0.2);
+  border-color: rgb(113 97 239 / 0.45);
+  background: rgb(113 97 239 / 0.07);
   color: #4a3bc4;
 }
 .nr-tutorial-button-icon {
   display: grid;
   place-content: center;
-  width: 20px;
-  height: 20px;
-  border-radius: 9999px;
-  background: #7161ef;
-  color: #fff;
+  color: #7161ef;
 }
 
 /* Component-layer defaults let explicit sizing, status colors and scroll rules win. */
