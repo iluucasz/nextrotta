@@ -14,6 +14,7 @@ Implementação: `lib/platform/organizations.ts` (regras), `lib/platform/route.t
 | `GET /organizations/:id` | — | `{ organization, usage: { activeTechnicians, activeUsers, storageBytes, whatsappSentThisMonth, portoRunsThisMonth }, integrations: { porto, whatsapp }, settings, provisioning }` |
 | `PATCH /organizations/:id` | qualquer um de `name, legalName, document, email, phone, city, state` | `{ organization }` (o subdomínio nunca muda) |
 | `POST /organizations/:id/status` | `{ action: "suspend" \| "reactivate" \| "cancel", reason }` (motivo obrigatório para suspender/cancelar) | `{ organization }` |
+| `POST /organizations/:id/lifetime` | `{ enabled, reason?, cancelBilling? }` — **vitalícia**: usa a plataforma sem pagar. Motivo obrigatório ao ligar; `cancelBilling: true` quando há cobrança recorrente ativa no Asaas (sem isso, 409). Sai da receita (MRR, cobranças, previsão, atraso), nunca vai a `past_due`/`suspended` por cobrança e não faz upgrade pela tela do cliente; o consumo continua nos custos | `{ organization }` (com `lifetime`, `lifetimeSince`, `lifetimeReason`) |
 | `POST /organizations/:id/onboarding` | `{ action: "release" }` — libera o sistema para uma empresa que contratou pelo site (`organization.onboardingStatus`: `awaiting_payment` → `setup` → `done`). Liberar antes de a implantação ser paga já cria a assinatura no Asaas (1ª cobrança no mês seguinte, no dia escolhido). | `{ organization }` |
 | `PUT /organizations/:id/settings` | as mesmas configurações de `/api/organization-settings` | `{ settings }` |
 

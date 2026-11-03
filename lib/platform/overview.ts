@@ -17,7 +17,10 @@ export function parsePeriod(start: string | null, end: string | null) {
   return { from, to };
 }
 
-/** Monthly recurring revenue: every active/past-due subscription's value, annual ones divided by 12. */
+/**
+ * Monthly recurring revenue: every active/past-due subscription's value, annual ones divided by 12.
+ * Lifetime organizations (they don't pay) stay out of this and of every revenue figure below.
+ */
 async function monthlyRecurringRevenue() {
   const rows = await sql`
     SELECT s.cycle, s.base_price, s.extra_technician_price, s.included_technicians, s.discount_percent, s.discount_amount,
@@ -25,7 +28,7 @@ async function monthlyRecurringRevenue() {
         WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS active_technicians
     FROM subscriptions s
     JOIN organizations o ON o.id = s.organization_id
-    WHERE s.canceled_at IS NULL AND o.deleted_at IS NULL AND o.status IN ('active', 'past_due')
+    WHERE s.canceled_at IS NULL AND o.deleted_at IS NULL AND NOT o.lifetime AND o.status IN ('active', 'past_due')
   `;
   const total = rows.reduce((sum, row) => {
     const { value } = calculateSubscriptionValue(
@@ -46,7 +49,7 @@ async function monthlyRecurringRevenue() {
 
 export async function getOverview(period: { from: string; to: string }) {
   const today = brasiliaToday();
-  const [statusRows, mrr, movement, overdue, revenueByKind, history, forecast, provisioningErrors, alerts, newLeads] = await Promise.all([
+  const [statusRows, mrr, movement, overdue, revenueByKind, history, forecast, provisioningErrors, alerts, newLeads, lifetime] = await Promise.all([
     sql`SELECT status, COUNT(*)::int AS total FROM organizations WHERE deleted_at IS NULL GROUP BY status`,
     monthlyRecurringRevenue(),
     sql`
@@ -60,11 +63,12 @@ export async function getOverview(period: { from: string; to: string }) {
     `,
     sql`
       SELECT COALESCE(SUM(value), 0)::float AS value, COUNT(DISTINCT organization_id)::int AS organizations
-      FROM billing_charges WHERE status = 'OVERDUE'
+      FROM billing_charges WHERE status = 'OVERDUE' AND organization_id NOT IN (SELECT id FROM organizations WHERE lifetime)
     `,
     sql.query(
       `SELECT kind, COALESCE(SUM(value), 0)::float AS value FROM billing_charges
        WHERE status IN ${PAID} AND paid_at::date BETWEEN $1::date AND $2::date
+         AND organization_id NOT IN (SELECT id FROM organizations WHERE lifetime)
        GROUP BY kind`,
       [period.from, period.to],
     ),
@@ -73,6 +77,7 @@ export async function getOverview(period: { from: string; to: string }) {
               COALESCE(SUM(value), 0)::float AS value
        FROM billing_charges
        WHERE status IN ${PAID} AND paid_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
+         AND organization_id NOT IN (SELECT id FROM organizations WHERE lifetime)
        GROUP BY 1 ORDER BY 1`,
       [],
     ),
@@ -81,7 +86,7 @@ export async function getOverview(period: { from: string; to: string }) {
         COALESCE(SUM(value) FILTER (WHERE due_date <= ${today}::date + 30), 0)::float AS d30,
         COALESCE(SUM(value) FILTER (WHERE due_date <= ${today}::date + 60), 0)::float AS d60,
         COALESCE(SUM(value) FILTER (WHERE due_date <= ${today}::date + 90), 0)::float AS d90
-      FROM billing_charges WHERE status = 'PENDING' AND due_date >= ${today}::date
+      FROM billing_charges WHERE status = 'PENDING' AND due_date >= ${today}::date AND organization_id NOT IN (SELECT id FROM organizations WHERE lifetime)
     `,
     sql`SELECT COUNT(*)::int AS total FROM organization_provisioning WHERE steps @> '[{"status": "error"}]'::jsonb`,
     sql`
@@ -94,6 +99,7 @@ export async function getOverview(period: { from: string; to: string }) {
       LIMIT 10
     `,
     sql`SELECT COUNT(*)::int AS total FROM leads WHERE status = 'new' AND deleted_at IS NULL`,
+    sql`SELECT COUNT(*)::int AS total FROM organizations WHERE lifetime AND deleted_at IS NULL`,
   ]);
 
   // Every month of the last year, including those without revenue.
@@ -120,6 +126,8 @@ export async function getOverview(period: { from: string; to: string }) {
     forecast: { days30: Number(forecast[0].d30), days60: Number(forecast[0].d60), days90: Number(forecast[0].d90) },
     provisioningErrors: Number(provisioningErrors[0].total),
     newLeads: Number(newLeads[0].total),
+    /** Organizations that use the platform without paying: left out of MRR, charges and forecast. */
+    lifetimeOrganizations: Number(lifetime[0].total),
     alerts: alerts.map((row) => ({
       organizationId: String(row.id),
       organizationName: String(row.name),
@@ -143,7 +151,7 @@ export async function listAllCharges(period: { from: string; to: string }) {
            GREATEST(0, ${today}::date - c.due_date) AS "daysLate"
     FROM billing_charges c
     JOIN organizations o ON o.id = c.organization_id
-    WHERE c.due_date BETWEEN ${period.from}::date AND ${period.to}::date OR c.status = 'OVERDUE'
+    WHERE (c.due_date BETWEEN ${period.from}::date AND ${period.to}::date OR c.status = 'OVERDUE') AND NOT o.lifetime
     ORDER BY c.due_date DESC, c.created_at DESC
   `;
 }

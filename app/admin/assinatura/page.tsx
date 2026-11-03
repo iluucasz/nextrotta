@@ -68,6 +68,7 @@ export default function SubscriptionPage() {
   const [charges, setCharges] = useState<Charge[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [lifetime, setLifetime] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -80,6 +81,7 @@ export default function SubscriptionPage() {
         if (!active) return;
         setSubscription(data.subscription);
         setCharges(Array.isArray(data.charges) ? data.charges : []);
+        setLifetime(Boolean(data.lifetime));
       })
       .catch((loadError) => {
         if (active) setError(loadError instanceof Error ? loadError.message : 'Não foi possível carregar a assinatura.');
@@ -101,7 +103,13 @@ export default function SubscriptionPage() {
   const discount = subscription
     ? [subscription.discountPercent ? `${subscription.discountPercent}%` : null, subscription.discountAmount ? formatCurrency(subscription.discountAmount) : null].filter(Boolean).join(' + ')
     : '';
-  const metrics = subscription
+  const metrics = subscription && lifetime
+    ? [
+        { title: 'Plano', value: subscription.plan.name, hint: 'Vitalício', icon: Layers },
+        { title: 'Cobrança', value: 'Sem cobrança', hint: 'Seu acesso não tem mensalidade', icon: WalletCards },
+        { title: 'Técnicos ativos', value: String(subscription.activeTechnicians), hint: `${subscription.includedTechnicians} incluídos`, icon: Users },
+      ]
+    : subscription
     ? [
         { title: 'Plano', value: subscription.plan.name, hint: subscription.cycle === 'annual' ? 'Cobrança anual' : 'Cobrança mensal', icon: Layers },
         { title: `Valor por ${cycleLabel}`, value: formatCurrency(subscription.value), hint: discount ? `Com desconto de ${discount}` : 'Sem desconto', icon: WalletCards },
@@ -142,6 +150,7 @@ export default function SubscriptionPage() {
             ))}
           </div>
 
+          {!lifetime ? (
           <div className="mg-grid-finance st-billing">
             <SectionPanel title="Cobranças" description="Pague pelo link de cada cobrança (Pix, boleto ou cartão).">
               {charges.length ? (
@@ -225,8 +234,9 @@ export default function SubscriptionPage() {
               </dl>
             </SectionPanel>
           </div>
+          ) : null}
 
-          <UpgradePanel />
+          {!lifetime ? <UpgradePanel /> : null}
           <AiCreditsPanel />
         </div>
       ) : null}

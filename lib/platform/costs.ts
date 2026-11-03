@@ -13,6 +13,8 @@ import { PlatformError } from './errors';
  * - AI: the provider cost recorded per answer (ai_credit_ledger);
  * - the rest (hosting, domain, e-mail, others): evenly.
  * When nobody used a measured resource in the month, it's split evenly. An estimate, not accounting.
+ * Lifetime organizations (they don't pay) take their part of every cost like any other, but their
+ * revenue is zero: the margin shows what they cost the platform.
  */
 
 export const INFRA_COST_CATEGORIES = {
@@ -100,7 +102,7 @@ export async function getCostAllocation(month: string) {
   const [costs, organizations, browser, messages, storage, ai, databaseBytes] = await Promise.all([
     sql`SELECT category, SUM(amount)::float AS total FROM infra_costs WHERE deleted_at IS NULL AND month = ${month} GROUP BY category`,
     sql`
-      SELECT o.id, o.name, o.slug, o.status,
+      SELECT o.id, o.name, o.slug, o.status, o.lifetime,
              s.cycle, s.base_price, s.extra_technician_price, s.included_technicians, s.discount_percent, s.discount_amount,
              (SELECT COUNT(*)::int FROM technicians t WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS active_technicians
       FROM organizations o
@@ -189,7 +191,7 @@ export async function getCostAllocation(month: string) {
       };
     });
     const cost = cents(lines.reduce((sum, line) => sum + line.amount, 0));
-    const revenue = row.cycle
+    const revenue = row.cycle && !row.lifetime
       ? (() => {
           const { value } = calculateSubscriptionValue(
             {
@@ -211,6 +213,7 @@ export async function getCostAllocation(month: string) {
       name: String(row.name),
       slug: String(row.slug),
       status: String(row.status),
+      lifetime: Boolean(row.lifetime),
       portoBrowserMinutes: used.portoMinutes,
       portoRuns: used.portoRuns,
       whatsappMessages: used.whatsappMessages,

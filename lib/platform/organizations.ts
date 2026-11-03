@@ -56,7 +56,7 @@ export async function listOrganizations(filters: { status?: string | null; searc
       SELECT
         o.id, o.name, o.legal_name AS "legalName", o.slug, o.status, o.email, o.city, o.state,
         o.created_at AS "createdAt", o.activated_at AS "activatedAt", o.status_changed_at AS "statusChangedAt",
-        o.onboarding_status AS "onboardingStatus", o.signup_source AS "signupSource",
+        o.onboarding_status AS "onboardingStatus", o.signup_source AS "signupSource", o.lifetime,
         (SELECT COUNT(*)::int FROM technicians t
           WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS "activeTechnicians",
         (SELECT COUNT(*)::int FROM users u
@@ -180,6 +180,10 @@ function serializeOrganization(row: Record<string, unknown>) {
     // Self-service signups: awaiting_payment (setup fee) → setup (team preparing) → done (released).
     onboardingStatus: (row.onboarding_status as string | null) ?? null,
     signupSource: (row.signup_source as string | null) ?? null,
+    // Lifetime: uses the platform without paying; left out of revenue, still counted as cost.
+    lifetime: Boolean(row.lifetime),
+    lifetimeSince: (row.lifetime_since as string | null) ?? null,
+    lifetimeReason: (row.lifetime_reason as string | null) ?? null,
   };
 }
 
@@ -485,6 +489,69 @@ export async function updateOrganization(organizationId: string, input: Record<s
     },
   });
 
+  return serializeOrganization(rows[0]);
+}
+
+/**
+ * Turns the lifetime mode on or off. A lifetime organization is never charged or suspended for
+ * nonpayment and stays out of the revenue figures; its consumption still counts as cost. Turning it
+ * on needs a reason and, when the gateway is charging the organization, the owner's confirmation
+ * that the recurring charge is canceled (charges already issued stay as they are).
+ */
+export async function setLifetime(organizationId: string, input: Record<string, unknown>, actor: Actor) {
+  const organization = await requireOrganization(organizationId);
+  const enabled = input.enabled === true;
+  if (Boolean(organization.lifetime) === enabled) {
+    throw new PlatformError(enabled ? 'Esta empresa já é vitalícia.' : 'Esta empresa não é vitalícia.', 409);
+  }
+
+  if (!enabled) {
+    const rows = await sql`
+      UPDATE organizations SET lifetime = FALSE, lifetime_since = NULL, lifetime_reason = NULL, updated_at = NOW()
+      WHERE id = ${organizationId} RETURNING *
+    `;
+    await recordAudit({
+      organizationId,
+      actorId: actor.id,
+      actorRole: 'platform_owner',
+      action: 'organization.lifetime_removed',
+      targetType: 'organization',
+      targetId: organizationId,
+      details: { reason: organization.lifetime_reason, since: organization.lifetime_since },
+    });
+    return serializeOrganization(rows[0]);
+  }
+
+  const reason = text(input.reason);
+  if (reason.length < 3) throw new PlatformError('Informe o motivo (por exemplo: parceiro, permuta, piloto).');
+
+  const [subscription] = await sql`SELECT asaas_subscription_id FROM subscriptions WHERE organization_id = ${organizationId}`;
+  const charging = Boolean(subscription?.asaas_subscription_id);
+  if (charging && input.cancelBilling !== true) {
+    throw new PlatformError('Esta empresa tem cobrança recorrente ativa no Asaas. Confirme o cancelamento da cobrança para torná-la vitalícia.', 409);
+  }
+  if (charging) await cancelBilling(organizationId, actor);
+
+  // A hold that billing put on it no longer applies; one the owner chose stays.
+  const releaseHold = organization.status === 'past_due' || (organization.status === 'suspended' && organization.status_source === 'billing');
+  const rows = await sql`
+    UPDATE organizations
+    SET lifetime = TRUE, lifetime_since = NOW(), lifetime_reason = ${reason}, updated_at = NOW(),
+        status = CASE WHEN ${releaseHold} THEN 'active' ELSE status END,
+        status_source = CASE WHEN ${releaseHold} THEN 'owner' ELSE status_source END,
+        status_reason = CASE WHEN ${releaseHold} THEN NULL ELSE status_reason END,
+        status_changed_at = CASE WHEN ${releaseHold} THEN NOW() ELSE status_changed_at END
+    WHERE id = ${organizationId} RETURNING *
+  `;
+  await recordAudit({
+    organizationId,
+    actorId: actor.id,
+    actorRole: 'platform_owner',
+    action: 'organization.lifetime_enabled',
+    targetType: 'organization',
+    targetId: organizationId,
+    details: { reason, billingCanceled: charging, statusReleased: releaseHold },
+  });
   return serializeOrganization(rows[0]);
 }
 

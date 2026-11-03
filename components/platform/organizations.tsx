@@ -64,6 +64,7 @@ type OrganizationListItem = {
   slug: string;
   status: OrganizationStatusKey;
   onboardingStatus: OnboardingStatus | null;
+  lifetime: boolean;
   createdAt: string;
   activeTechnicians: number;
   activeUsers: number;
@@ -93,6 +94,9 @@ type Organization = {
   activatedAt: string | null;
   onboardingStatus: OnboardingStatus | null;
   signupSource: 'owner' | 'self_service' | null;
+  lifetime: boolean;
+  lifetimeSince: string | null;
+  lifetimeReason: string | null;
 };
 
 type Subscription = {
@@ -316,6 +320,7 @@ export function Organizations() {
                 render: (row) => (
                   <span>
                     <Badge>{row.statusText}</Badge>
+                    {row.lifetime ? <small className="block">Vitalícia</small> : null}
                     {row.onboardingStatus && row.onboardingStatus !== 'done' ? <small className="block">{ONBOARDING_LABELS[row.onboardingStatus]}</small> : null}
                   </span>
                 ),
@@ -336,8 +341,8 @@ export function Organizations() {
                   );
                 },
               },
-              { key: 'value', label: 'Valor do ciclo', render: (row) => (row.subscription ? money(row.value) : '—') },
-              { key: 'nextBilling', label: 'Próxima cobrança', render: (row) => date(row.nextBilling) },
+              { key: 'value', label: 'Valor do ciclo', render: (row) => (row.lifetime ? 'Vitalícia' : row.subscription ? money(row.value) : '—') },
+              { key: 'nextBilling', label: 'Próxima cobrança', render: (row) => (row.lifetime ? '—' : date(row.nextBilling)) },
               { key: 'createdAt', label: 'Criada em', render: (row) => date(row.createdAt) },
             ]}
             actions={(row) => (
@@ -880,6 +885,26 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
     });
   }
 
+  function lifetimeAction() {
+    const turnOn = !organization.lifetime;
+    const charging = Boolean(subscription?.asaas.subscriptionId);
+    setEditor({
+      title: turnOn ? 'Tornar vitalícia' : 'Remover modo vitalício',
+      description: turnOn
+        ? `Usa a plataforma sem pagar: sai da receita, das cobranças e da inadimplência, mas o que consome continua nos custos.${charging ? ' A cobrança recorrente no Asaas será cancelada (cobranças já emitidas ficam como estão).' : ''}`
+        : 'Volta a contar na receita. Nenhuma cobrança é criada sozinha: ative a cobrança na aba Assinatura quando quiser.',
+      fields: [],
+      initial: {},
+      reason: turnOn,
+      submit: turnOn ? 'Tornar vitalícia' : 'Remover',
+      save: (_, reason) =>
+        act(
+          () => api(`/organizations/${id}/lifetime`, { body: turnOn ? { enabled: true, reason, ...(charging ? { cancelBilling: true } : {}) } : { enabled: false } }),
+          turnOn ? 'Empresa marcada como vitalícia.' : 'Modo vitalício removido.',
+        ),
+    });
+  }
+
   const editCompany = () =>
     setEditor({
       title: 'Editar empresa',
@@ -916,9 +941,15 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           action={
             <div className="nr-actions">
               <Badge>{statusLabel(organization.status)}</Badge>
+              {organization.lifetime && <Badge>Vitalícia</Badge>}
               <button className="nr-btn" disabled={organization.status === 'provisioning'} onClick={() => setEnter(true)}>
                 Entrar na conta
               </button>
+              {organization.status !== 'provisioning' && (
+                <button className="nr-btn" onClick={lifetimeAction}>
+                  {organization.lifetime ? 'Remover vitalício' : 'Tornar vitalícia'}
+                </button>
+              )}
               {organization.status !== 'provisioning' && (
                 <button className="nr-btn" onClick={() => statusAction(readOnly ? 'reactivate' : 'suspend')}>
                   {readOnly ? 'Reativar' : 'Suspender'}
@@ -933,6 +964,12 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           </Link>
         )}
         {organization.statusReason && readOnly && <div className="nr-alert mb-4">Motivo: {organization.statusReason}</div>}
+        {organization.lifetime && (
+          <div className="nr-alert mb-4">
+            <strong>Empresa vitalícia</strong> desde {date(organization.lifetimeSince)}
+            {organization.lifetimeReason ? ` · ${organization.lifetimeReason}` : ''}. Fora da receita e da cobrança; o consumo segue em Custos.
+          </div>
+        )}
         {onboarding && (
           <div className="nr-alert mb-4">
             <strong>{ONBOARDING_LABELS[onboarding]}.</strong>{' '}
@@ -1001,6 +1038,7 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           onSave={saveSubscription}
           onCancel={() => statusAction('cancel')}
           canCancel={organization.status !== 'canceled' && organization.status !== 'provisioning'}
+          lifetime={organization.lifetime}
           onChanged={detail.reload}
         />
       )}
@@ -1236,6 +1274,7 @@ function SubscriptionTab({
   onSave,
   onCancel,
   canCancel,
+  lifetime,
   onChanged,
 }: {
   organizationId: string;
@@ -1245,6 +1284,7 @@ function SubscriptionTab({
   onSave: (changes: Record<string, unknown>, message: string) => Promise<void>;
   onCancel: () => void;
   canCancel: boolean;
+  lifetime: boolean;
   onChanged: () => void;
 }) {
   const notify = useNotify();
@@ -1301,7 +1341,7 @@ function SubscriptionTab({
               ['Valor do plano', money(subscription.basePrice)],
               ['Técnicos extras', subscription.extraTechnicians ? `${subscription.extraTechnicians} × ${money(subscription.extraTechnicianPrice)}/mês` : 'Nenhum'],
               ['Desconto', [subscription.discountPercent ? `${subscription.discountPercent}%` : '', subscription.discountAmount ? money(subscription.discountAmount) : ''].filter(Boolean).join(' + ') || 'Nenhum'],
-              ['Valor do ciclo', money(subscription.value)],
+              ['Valor do ciclo', lifetime ? 'Vitalícia (sem cobrança)' : money(subscription.value)],
               ['Implantação', `${subscription.setupFee ? `${money(subscription.setupFee)} · ` : ''}${SETUP_LABELS[subscription.setupFeeStatus]}`],
               ['Próximo vencimento', date(subscription.nextDueDate)],
               ['Carência', `${subscription.graceDays} dias`],
@@ -1314,7 +1354,7 @@ function SubscriptionTab({
             ))}
           </div>
           <div className="nr-actions mt-6">
-            {!billingActive && (
+            {!billingActive && !lifetime && (
               <button
                 className="nr-btn primary"
                 onClick={() =>

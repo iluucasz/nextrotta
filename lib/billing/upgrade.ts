@@ -136,8 +136,17 @@ async function firstChargeFromNextMonth(organizationId: string, billingDay: numb
 
 const dateKey = (value: unknown) => (value ? new Date(value as string).toISOString().slice(0, 10) : null);
 
+/** Lifetime organizations don't pay: the owner changes their plan, not the company. */
+async function isLifetime(organizationId: string) {
+  const [row] = await sql`SELECT lifetime FROM organizations WHERE id = ${organizationId}`;
+  return Boolean(row?.lifetime);
+}
+
 export async function listUpgradeOptions(organizationId: string) {
   const { subscription, current, options, onboarding } = await loadUpgradeContext(organizationId);
+  if (await isLifetime(organizationId)) {
+    return { current: { key: current.key, name: current.name, cycle: subscription.cycle, value: 0 }, options: [], available: false, effectiveFrom: null };
+  }
   const [row] = await sql`SELECT billing_day FROM subscriptions WHERE organization_id = ${organizationId}`;
   return {
     current: { key: current.key, name: current.name, cycle: subscription.cycle, value: subscription.value },
@@ -149,6 +158,7 @@ export async function listUpgradeOptions(organizationId: string) {
 }
 
 export async function upgradeSubscription(organizationId: string, planKey: unknown, actor: { userId: string; impersonating: boolean }) {
+  if (await isLifetime(organizationId)) throw new PlatformError('O plano da sua empresa é ajustado pelo suporte do NextRotta.', 409);
   const { subscription, current, options, onboarding } = await loadUpgradeContext(organizationId);
   if (onboarding === 'awaiting_payment') throw new PlatformError('Conclua o pagamento da implantação antes de mudar de plano.', 409);
   const option = options.find((candidate) => candidate.plan.key === planKey);
