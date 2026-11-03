@@ -78,6 +78,22 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 
 ## Estado da implantação
 
+> **03/11/2026 — worker, agente e proxy próprios, tudo só `nextrotta-*`.** Rede Docker `nextrotta-net`.
+> - `nextrotta-vps-agent:20261014-1`: só leitura (`VPS_AGENT_READ_ONLY=1`), sem porta publicada, segredos em
+>   `/opt/nextrotta/agent.env`. Sem a limpeza ativa ainda.
+> - `nextrotta-worker:20261014-1` (imagem antiga, **sem** os backups diários) na `nextrotta-net`, com
+>   `VPS_AGENT_URL=http://nextrotta-vps-agent:8092` + `VPS_AGENT_SECRET` no `worker.env`; as métricas da VPS
+>   voltaram a ser gravadas (a cada 5 min). Container anterior parado como `nextrotta-worker-old`; cópia do env
+>   em `worker.env.bak-20261103`.
+> - `nextrotta-proxy:20261103-1` (Caddy + plugin DuckDNS, `/opt/nextrotta/proxy/`): publica **só a 8443**
+>   (as 80/443 são do Caddy de outro projeto, que não se mexe), certificado Let's Encrypt por DNS-01 no
+>   `nextrotta-infra.duckdns.org` (token do DuckDNS em `proxy.env`, 600). Rotas: `/nextrotta-worker/*` → 8091 e
+>   `/nextrotta-vps-agent/*` → 8092; o resto dá 404. Sem segredo, 401; com ele, 200 (testado de fora).
+> - Na Vercel: `PORTO_WORKER_URL=https://nextrotta-infra.duckdns.org:8443/nextrotta-worker`,
+>   `VPS_AGENT_URL=https://nextrotta-infra.duckdns.org:8443/nextrotta-vps-agent`, `PORTO_WORKER_SECRET` e
+>   `VPS_AGENT_SECRET` (os mesmos dos arquivos `.env` da VPS).
+> - Falta: redeploy do worker com o código atual (backups) e `BLOB_READ_WRITE_TOKEN`; Evolution próprio.
+
 > **14/10/2026 — VPS compartilhada atual (164.163.11.159, Ubuntu 24.04, 8 vCPU, 8 GB, 55 GB).** A
 > VPS da BlackHosting (143.20.50.58) caiu e **não deve mais ser usada**; o texto abaixo sobre ela é
 > histórico. A atual é compartilhada com outros projetos do dono (`garimpo-importer`, `porto-evolution-*`,
