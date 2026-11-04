@@ -8,10 +8,14 @@ import { date } from './api';
 
 export function Title({ title, description, action }: { title: string; description?: string; action?: ReactNode }) { return <div className="nr-heading"><div><p className="nr-eyebrow">NEXTROTTA / PLATAFORMA</p><h1>{title}</h1>{description && <p>{description}</p>}</div>{action}</div>; }
 export function Panel({ title, description, children, action, className = '' }: { title?: string; description?: string; children: ReactNode; action?: ReactNode; className?: string }) { return <section className={`nr-panel ${className}`}>{(title || action) && <div className="nr-panel-heading"><div><h2>{title}</h2>{description && <p>{description}</p>}</div>{action}</div>}{children}</section>; }
-export function Badge({ children }: { children: ReactNode }) {
+export function Badge({ children, tone: forced }: { children: ReactNode; tone?: 'good' | 'bad' | 'warn' | 'neutral' }) {
   const text = String(children);
-  const tone = /Ativa|Ativo|Paga|Conclu|Pronta|Publicado|Ganho|Conectado|Online|Resolvido/.test(text) ? 'good' : /Falh|Vencida|Suspensa|Crítica|Cancelada|Perdido|Desconectado|Offline/.test(text) ? 'bad' : /Pendente|atraso|Novo|Alta|Provisionando|análise/.test(text) ? 'warn' : 'neutral';
+  const tone = forced ?? /Ativa|Ativo|Paga|Conclu|Pronta|Publicado|Ganho|Conectado|Online|Resolvido/.test(text) ? 'good' : /Falh|Vencida|Suspensa|Crítica|Cancelada|Perdido|Desconectado|Offline/.test(text) ? 'bad' : /Pendente|atraso|Novo|Alta|Provisionando|análise/.test(text) ? 'warn' : 'neutral';
   return <span className={`nr-badge ${tone}`}><i />{children}</span>;
+}
+/** One labeled line whose value reads at a glance: green = on, amber = test/attention, grey = off. */
+export function StateLine({ label, state, children }: { label: string; state: 'on' | 'test' | 'off' | 'bad'; children: ReactNode }) {
+  return <div className="nr-stateline"><span>{label}</span><b className={`nr-state ${state}`}><i />{children}</b></div>;
 }
 export function Metric({ label, value, detail, accent }: { label: string; value: ReactNode; detail?: string; accent?: boolean }) { return <div className={`nr-metric ${accent ? 'accent' : ''}`}><span>{label}<ArrowUpRight size={16} /></span><strong>{value}</strong>{detail && <small>{detail}</small>}</div>; }
 export function Empty({ title = 'Nenhum resultado por aqui', text = 'Altere os filtros ou cadastre um novo registro para começar.' }: { title?: string; text?: string }) { return <div className="nr-empty"><Inbox size={32} /><h3>{title}</h3><p>{text}</p></div>; }

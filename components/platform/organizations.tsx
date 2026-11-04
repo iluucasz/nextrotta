@@ -37,6 +37,7 @@ import {
   Metric,
   NewLink,
   Panel,
+  StateLine,
   Title,
   options,
   type Field,
@@ -1225,10 +1226,16 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
         <div className="nr-grid-3">
           <Panel title="Porto Seguro">
             <div className="nr-pad">
-              <Badge>{integrations.porto.configured ? 'Configurada' : 'Não configurada'}</Badge>
+              <Badge tone={integrations.porto.configured ? 'good' : 'warn'}>{integrations.porto.configured ? 'Configurada' : 'Não configurada'}</Badge>
+              <div className="nr-statelines">
+                <StateLine
+                  label="Automação"
+                  state={integrations.porto.automationEnabled ? (integrations.porto.dryRunOnly ? 'test' : 'on') : 'off'}
+                >
+                  {integrations.porto.automationEnabled ? (integrations.porto.dryRunOnly ? 'Ligada (modo teste)' : 'Ligada') : 'Desligada'}
+                </StateLine>
+              </div>
               <p className="my-4 text-xs">
-                Automação: {integrations.porto.automationEnabled ? (integrations.porto.dryRunOnly ? 'ligada (modo teste)' : 'ligada') : 'desligada'}
-                <br />
                 Última importação de horas: {date(integrations.porto.lastHoursImportAt, true)} {integrations.porto.lastHoursImportStatus ? `(${integrations.porto.lastHoursImportStatus})` : ''}
                 <br />
                 Última checagem de escala: {date(integrations.porto.lastScheduleCheckAt, true)}
@@ -1240,13 +1247,18 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           </Panel>
           <Panel title="WhatsApp">
             <div className="nr-pad">
-              <Badge>{integrations.whatsapp.state === 'connected' ? 'Conectado' : integrations.whatsapp.instance ? 'Desconectado' : 'Não conectado'}</Badge>
+              <Badge tone={integrations.whatsapp.state === 'connected' ? 'good' : integrations.whatsapp.instance ? 'bad' : 'warn'}>
+                {integrations.whatsapp.state === 'connected' ? 'Conectado' : integrations.whatsapp.instance ? 'Desconectado' : 'Não conectado'}
+              </Badge>
+              <div className="nr-statelines">
+                <StateLine label="Automação" state={integrations.whatsapp.enabled ? 'on' : 'off'}>
+                  {integrations.whatsapp.enabled ? 'Ligada' : 'Desligada'}
+                </StateLine>
+              </div>
               <p className="my-4 text-xs">
                 Instância: {integrations.whatsapp.instance ?? 'ainda não criada'}
                 <br />
                 Número: {integrations.whatsapp.number ? `+${integrations.whatsapp.number}` : '—'}
-                <br />
-                Automação: {integrations.whatsapp.enabled ? 'ligada' : 'desligada'}
                 <br />
                 {usage.whatsappSentThisMonth} mensagens enviadas no mês
                 {integrations.whatsapp.checkedAt ? (
