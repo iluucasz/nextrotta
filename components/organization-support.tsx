@@ -5,7 +5,8 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { LifeBuoy, Maximize2, Megaphone, Wrench } from 'lucide-react';
 import { dateTime, NewTicketForm, StatusPill, useTickets } from '@/components/support-center';
 import { formatTicketNumber, REPORT_TYPE_LABELS } from '@/lib/reports';
-import { stripSceneMarkers } from '@/lib/news-scenes';
+import dynamic from 'next/dynamic';
+import { splitNewsBody } from '@/lib/news-scenes';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -15,6 +16,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+
+// The animated scenes (same ones as on the site) only load when someone opens the news.
+const NewsFigure = dynamic(
+  () => import('@/components/site/news-scenes').then((module) => module.NewsFigure),
+  { ssr: false },
+);
 
 /** Shown to every user of every organization while the platform owner has maintenance on. */
 export function MaintenanceBanner({ message }: { message: string }) {
@@ -42,32 +49,41 @@ const date = (value: string, time = false) =>
 /** "## subtitle" and "**bold**", the same light markup the platform panel writes. */
 function RichText({ text }: { text: string }) {
   return (
-    <div className="space-y-2 text-sm leading-relaxed">
-      {stripSceneMarkers(text)
+    <div className="space-y-3 text-[15px] leading-7 text-foreground/80">
+      {text
         .split('\n')
+        .filter((line) => line.trim())
         .map((line, index) =>
-        line.startsWith('## ') ? (
-          <h4 key={index} className="pt-2 font-semibold">
-            {line.slice(3)}
-          </h4>
-        ) : line.startsWith('# ') ? (
-          <h3 key={index} className="pt-2 text-base font-semibold">
-            {line.slice(2)}
-          </h3>
-        ) : (
-          <p key={index}>
-            {line
-              .split(/(\*\*.*?\*\*)/g)
-              .map((part, partIndex) =>
-                part.startsWith('**') ? (
-                  <strong key={partIndex}>{part.slice(2, -2)}</strong>
-                ) : (
-                  part
-                ),
-              )}
-          </p>
-        ),
-      )}
+          line.startsWith('## ') ? (
+            <h4
+              key={index}
+              className="pt-4 text-base font-semibold text-foreground"
+            >
+              {line.slice(3)}
+            </h4>
+          ) : line.startsWith('# ') ? (
+            <h3
+              key={index}
+              className="pt-4 text-lg font-semibold text-foreground"
+            >
+              {line.slice(2)}
+            </h3>
+          ) : (
+            <p key={index}>
+              {line
+                .split(/(\*\*.*?\*\*)/g)
+                .map((part, partIndex) =>
+                  part.startsWith('**') ? (
+                    <strong key={partIndex} className="font-semibold text-foreground">
+                      {part.slice(2, -2)}
+                    </strong>
+                  ) : (
+                    part
+                  ),
+                )}
+            </p>
+          ),
+        )}
     </div>
   );
 }
@@ -89,6 +105,11 @@ const CATEGORY_LABELS = {
   feature: 'Novo recurso',
   improvement: 'Melhoria',
   fix: 'Correção',
+};
+const CATEGORY_STYLES = {
+  feature: 'bg-emerald-100 text-emerald-800',
+  improvement: 'bg-sky-100 text-sky-800',
+  fix: 'bg-amber-100 text-amber-800',
 };
 const NEWS_SEEN_KEY = 'nextrotta-news-seen';
 
@@ -166,45 +187,67 @@ function NewsButton({ compact, quiet }: { compact: boolean; quiet: boolean }) {
         )}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-          <DialogHeader>
-            <DialogTitle>Novidades do NextRotta</DialogTitle>
+        <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-3xl">
+          <DialogHeader className="border-b border-border px-6 py-5 pr-14 sm:px-8">
+            <DialogTitle className="text-xl font-semibold tracking-tight">
+              Novidades do NextRotta
+            </DialogTitle>
             <DialogDescription>
               Melhorias e novos recursos que chegaram ao sistema.
             </DialogDescription>
           </DialogHeader>
-          {!posts ? (
-            <p className="text-sm text-muted-foreground">Carregando…</p>
-          ) : posts.length ? (
-            <div className="space-y-6">
-              {posts.map((post) => (
-                <article
-                  key={post.id}
-                  className="border-b border-border pb-6 last:border-b-0"
-                >
-                  <p className="text-xs text-muted-foreground">
-                    {CATEGORY_LABELS[post.category]} · {date(post.publishedOn)}
-                  </p>
-                  <h3 className="mt-1 text-base font-semibold">{post.title}</h3>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  {post.imageUrl && (
-                    <img
-                      src={post.imageUrl}
-                      alt=""
-                      className="mt-3 max-h-64 rounded-md"
-                    />
-                  )}
-                  <div className="mt-3">
-                    <RichText text={post.body} />
-                  </div>
-                </article>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">
-              Nenhuma novidade publicada ainda.
-            </p>
-          )}
+          <div className="min-h-0 flex-1 overflow-y-auto bg-secondary/30 px-4 py-6 sm:px-8">
+            {!posts ? (
+              <p className="text-sm text-muted-foreground">Carregando…</p>
+            ) : posts.length ? (
+              <div className="space-y-6">
+                {posts.map((post) => (
+                  <article
+                    key={post.id}
+                    className="rounded-2xl border border-border bg-card px-5 py-6 shadow-sm sm:px-8 sm:py-8"
+                  >
+                    <div className="flex flex-wrap items-center gap-3">
+                      <span
+                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${CATEGORY_STYLES[post.category]}`}
+                      >
+                        {CATEGORY_LABELS[post.category]}
+                      </span>
+                      <time
+                        dateTime={post.publishedOn}
+                        className="text-xs text-muted-foreground"
+                      >
+                        {date(post.publishedOn)}
+                      </time>
+                    </div>
+                    <h3 className="mt-3 text-2xl font-semibold leading-tight tracking-tight">
+                      {post.title}
+                    </h3>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    {post.imageUrl && (
+                      <img
+                        src={post.imageUrl}
+                        alt=""
+                        className="mt-5 max-h-72 w-full rounded-xl object-cover"
+                      />
+                    )}
+                    <div className="mt-5">
+                      {splitNewsBody(post.body).map((part, index) =>
+                        part.type === 'scene' ? (
+                          <NewsFigure key={index} name={part.name} />
+                        ) : (
+                          <RichText key={index} text={part.text} />
+                        ),
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma novidade publicada ainda.
+              </p>
+            )}
+          </div>
         </DialogContent>
       </Dialog>
     </>
