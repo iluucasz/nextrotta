@@ -2,11 +2,10 @@
 
 import Link from 'next/link';
 import { useEffect, useState, type ReactNode } from 'react';
-import { LifeBuoy, Maximize2, Megaphone, Wrench } from 'lucide-react';
+import { ArrowUpRight, LifeBuoy, Maximize2, Megaphone, Wrench } from 'lucide-react';
 import { dateTime, NewTicketForm, StatusPill, useTickets } from '@/components/support-center';
 import { formatTicketNumber, REPORT_TYPE_LABELS } from '@/lib/reports';
-import dynamic from 'next/dynamic';
-import { splitNewsBody } from '@/lib/news-scenes';
+import { stripSceneMarkers } from '@/lib/news-scenes';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -16,12 +15,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-
-// The animated scenes (same ones as on the site) only load when someone opens the news.
-const NewsFigure = dynamic(
-  () => import('@/components/site/news-scenes').then((module) => module.NewsFigure),
-  { ssr: false },
-);
 
 /** Shown to every user of every organization while the platform owner has maintenance on. */
 export function MaintenanceBanner({ message }: { message: string }) {
@@ -49,43 +42,48 @@ const date = (value: string, time = false) =>
 /** "## subtitle" and "**bold**", the same light markup the platform panel writes. */
 function RichText({ text }: { text: string }) {
   return (
-    <div className="space-y-3 text-[15px] leading-7 text-foreground/80">
-      {text
+    <div className="space-y-2 text-sm leading-relaxed text-foreground/80">
+      {stripSceneMarkers(text)
         .split('\n')
         .filter((line) => line.trim())
         .map((line, index) =>
           line.startsWith('## ') ? (
-            <h4
-              key={index}
-              className="pt-4 text-base font-semibold text-foreground"
-            >
+            <h4 key={index} className="pt-2 font-semibold text-foreground">
               {line.slice(3)}
             </h4>
           ) : line.startsWith('# ') ? (
-            <h3
-              key={index}
-              className="pt-4 text-lg font-semibold text-foreground"
-            >
+            <h3 key={index} className="pt-2 text-base font-semibold text-foreground">
               {line.slice(2)}
             </h3>
           ) : (
             <p key={index}>
-              {line
-                .split(/(\*\*.*?\*\*)/g)
-                .map((part, partIndex) =>
-                  part.startsWith('**') ? (
-                    <strong key={partIndex} className="font-semibold text-foreground">
-                      {part.slice(2, -2)}
-                    </strong>
-                  ) : (
-                    part
-                  ),
-                )}
+              {line.split(/(\*\*.*?\*\*)/g).map((part, partIndex) =>
+                part.startsWith('**') ? (
+                  <strong key={partIndex} className="font-semibold text-foreground">
+                    {part.slice(2, -2)}
+                  </strong>
+                ) : (
+                  part
+                ),
+              )}
             </p>
           ),
         )}
     </div>
   );
+}
+
+/** A short plain-text summary: the first lines of the post, without markup, cut at a word. */
+function excerpt(body: string, max = 180) {
+  const plain = stripSceneMarkers(body)
+    .split('\n')
+    .filter((line) => line.trim() && !line.startsWith('#'))
+    .join(' ')
+    .replace(/\*\*/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (plain.length <= max) return plain;
+  return `${plain.slice(0, max).replace(/\s+\S*$/, '')}…`;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -99,7 +97,9 @@ type NewsPost = {
   category: 'feature' | 'improvement' | 'fix';
   body: string;
   imageUrl: string | null;
+  destination: 'site' | 'system' | 'both';
 };
+type NewsData = { posts: NewsPost[]; siteUrl: string | null };
 
 const CATEGORY_LABELS = {
   feature: 'Novo recurso',
@@ -113,15 +113,18 @@ const CATEGORY_STYLES = {
 };
 const NEWS_SEEN_KEY = 'nextrotta-news-seen';
 
-let cachedNews: Promise<NewsPost[]> | null = null;
+let cachedNews: Promise<NewsData> | null = null;
 
 function loadNews(refresh = false) {
   if (refresh) cachedNews = null;
   if (!cachedNews) {
     cachedNews = fetch('/api/news', { cache: 'no-store' })
       .then((response) => (response.ok ? response.json() : { posts: [] }))
-      .then((data: { posts: NewsPost[] }) => data.posts)
-      .catch(() => []);
+      .then((data: Partial<NewsData>) => ({
+        posts: data.posts ?? [],
+        siteUrl: data.siteUrl ?? null,
+      }))
+      .catch(() => ({ posts: [], siteUrl: null }));
   }
   return cachedNews;
 }
@@ -138,8 +141,78 @@ function readSeen() {
 const QUIET_BUTTON_CLASS =
   'h-10 gap-2 rounded-lg px-3.5 text-[15px] font-medium text-muted-foreground hover:bg-secondary hover:text-foreground';
 
+/** One news summary. Posts that are also on the site open there (with the animated scenes); system-only ones expand in place. */
+function NewsItem({ post, siteUrl }: { post: NewsPost; siteUrl: string | null }) {
+  const [expanded, setExpanded] = useState(false);
+  const onSite = post.destination !== 'system' && Boolean(siteUrl);
+  const header = (
+    <>
+      <div className="flex flex-wrap items-center gap-3">
+        <span
+          className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${CATEGORY_STYLES[post.category]}`}
+        >
+          {CATEGORY_LABELS[post.category]}
+        </span>
+        <time dateTime={post.publishedOn} className="text-xs text-muted-foreground">
+          {date(post.publishedOn)}
+        </time>
+      </div>
+      <h3 className="mt-2.5 text-lg font-semibold leading-snug tracking-tight">
+        {post.title}
+      </h3>
+    </>
+  );
+  const cardClass =
+    'block w-full rounded-xl border border-border bg-card p-5 text-left shadow-sm transition-colors';
+
+  if (onSite) {
+    return (
+      <li>
+        <a
+          href={`${siteUrl}/novidades/${post.id}`}
+          target="_blank"
+          rel="noopener"
+          className={`${cardClass} group hover:border-primary/40 hover:bg-secondary/40`}
+        >
+          {header}
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {excerpt(post.body)}
+          </p>
+          <span className="mt-3 inline-flex items-center gap-1 text-sm font-medium text-primary">
+            Ver novidade
+            <ArrowUpRight className="h-4 w-4 transition-transform group-hover:-translate-y-0.5 group-hover:translate-x-0.5" />
+          </span>
+        </a>
+      </li>
+    );
+  }
+
+  return (
+    <li className={cardClass}>
+      {header}
+      {expanded ? (
+        <div className="mt-3">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          {post.imageUrl && <img src={post.imageUrl} alt="" className="mb-3 max-h-64 rounded-lg" />}
+          <RichText text={post.body} />
+        </div>
+      ) : (
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{excerpt(post.body)}</p>
+      )}
+      <button
+        type="button"
+        onClick={() => setExpanded((value) => !value)}
+        className="mt-3 text-sm font-medium text-primary hover:underline"
+      >
+        {expanded ? 'Mostrar menos' : 'Ler mais'}
+      </button>
+    </li>
+  );
+}
+
 function NewsButton({ compact, quiet }: { compact: boolean; quiet: boolean }) {
-  const [posts, setPosts] = useState<NewsPost[] | null>(null);
+  const [data, setData] = useState<NewsData | null>(null);
+  const posts = data?.posts ?? null;
   const [open, setOpen] = useState(false);
   const [unread, setUnread] = useState(false);
 
@@ -147,9 +220,10 @@ function NewsButton({ compact, quiet }: { compact: boolean; quiet: boolean }) {
     let active = true;
     loadNews(open).then((value) => {
       if (!active) return;
-      setPosts(value);
+      setData(value);
+      const latest = value.posts[0];
       const seen = readSeen();
-      setUnread(Boolean(value[0]) && (!seen || value[0].publishedOn > seen));
+      setUnread(Boolean(latest) && (!seen || latest.publishedOn > seen));
     });
     return () => {
       active = false;
@@ -196,52 +270,15 @@ function NewsButton({ compact, quiet }: { compact: boolean; quiet: boolean }) {
               Melhorias e novos recursos que chegaram ao sistema.
             </DialogDescription>
           </DialogHeader>
-          <div className="min-h-0 flex-1 overflow-y-auto bg-secondary/30 px-4 py-6 sm:px-8">
+          <div className="min-h-0 flex-1 overflow-y-auto bg-secondary/30 px-4 py-5 sm:px-8">
             {!posts ? (
               <p className="text-sm text-muted-foreground">Carregando…</p>
             ) : posts.length ? (
-              <div className="space-y-6">
+              <ul className="space-y-3">
                 {posts.map((post) => (
-                  <article
-                    key={post.id}
-                    className="rounded-2xl border border-border bg-card px-5 py-6 shadow-sm sm:px-8 sm:py-8"
-                  >
-                    <div className="flex flex-wrap items-center gap-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${CATEGORY_STYLES[post.category]}`}
-                      >
-                        {CATEGORY_LABELS[post.category]}
-                      </span>
-                      <time
-                        dateTime={post.publishedOn}
-                        className="text-xs text-muted-foreground"
-                      >
-                        {date(post.publishedOn)}
-                      </time>
-                    </div>
-                    <h3 className="mt-3 text-2xl font-semibold leading-tight tracking-tight">
-                      {post.title}
-                    </h3>
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    {post.imageUrl && (
-                      <img
-                        src={post.imageUrl}
-                        alt=""
-                        className="mt-5 max-h-72 w-full rounded-xl object-cover"
-                      />
-                    )}
-                    <div className="mt-5">
-                      {splitNewsBody(post.body).map((part, index) =>
-                        part.type === 'scene' ? (
-                          <NewsFigure key={index} name={part.name} />
-                        ) : (
-                          <RichText key={index} text={part.text} />
-                        ),
-                      )}
-                    </div>
-                  </article>
+                  <NewsItem key={post.id} post={post} siteUrl={data?.siteUrl ?? null} />
                 ))}
-              </div>
+              </ul>
             ) : (
               <p className="text-sm text-muted-foreground">
                 Nenhuma novidade publicada ainda.
