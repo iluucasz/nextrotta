@@ -82,11 +82,11 @@ export default function LoginPage() {
               <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" placeholder="voce@empresa.com.br" className="w-full bg-transparent outline-none" required />
             </div>
           </label>
-          <label className="block text-sm">
-            <span className="mb-2 flex justify-between font-medium">Senha<button type="button" className="nr-login-forgot" onClick={() => setForgot(true)}>Esqueci minha senha</button></span>
+          <div className="block text-sm">
+            <div className="mb-2 flex justify-between font-medium"><label htmlFor="login-password">Senha</label><button type="button" className="nr-login-forgot" onClick={() => setForgot(true)}>Esqueci minha senha</button></div>
             <div className="flex min-h-11 items-center gap-2 rounded-md border border-input bg-background px-3 focus-within:ring-2 focus-within:ring-ring">
               <LockKeyhole className="h-4 w-4 text-muted-foreground" />
-              <input type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="sua senha" className="w-full bg-transparent outline-none" required />
+              <input id="login-password" type={showPassword ? 'text' : 'password'} value={password} onChange={(event) => setPassword(event.target.value)} autoComplete="current-password" placeholder="sua senha" className="w-full bg-transparent outline-none" required />
               <button
                 type="button"
                 onClick={() => setShowPassword((value) => !value)}
@@ -97,7 +97,7 @@ export default function LoginPage() {
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               </button>
             </div>
-          </label>
+          </div>
           <button type="submit" disabled={loading} className="nr-login-submit">
             {isRedirecting ? 'Redirecionando…' : loading ? 'Entrando…' : 'Entrar no sistema'}<ArrowRight size={16} />
           </button>
