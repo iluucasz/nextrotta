@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { AssistantWidget } from '@/components/assistant/widget';
 import { LegalGate } from '@/components/legal-gate';
+import { PasswordGate } from '@/components/password-gate';
 import {
   Banknote,
   BookOpen,
@@ -482,6 +483,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [previewMode, setPreviewMode] = useState(false);
   const [impersonationMode, setImpersonationMode] = useState(false);
+  const [legalResolved, setLegalResolved] = useState(false);
   const [organizationStatus, setOrganizationStatus] = useState<OrganizationStatusInfo | null>(null);
 
   useEffect(() => {
@@ -844,7 +846,9 @@ export function AppShell({ children, role, userName }: AppShellProps) {
         </div>
       </main>
       {role === 'admin' && !previewMode ? <AssistantWidget /> : null}
-      <LegalGate enabled={role === 'admin' && !previewMode && !impersonationMode} />
+      <LegalGate enabled={role === 'admin' && !previewMode && !impersonationMode} onResolved={() => setLegalResolved(true)} />
+      {/* Only after the terms window (admins) is out of the way. */}
+      <PasswordGate enabled={!previewMode && !impersonationMode && (role !== 'admin' || legalResolved)} />
       </div>
     </>
   );

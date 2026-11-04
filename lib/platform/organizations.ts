@@ -369,8 +369,8 @@ export async function runProvisioning(organizationId: string, actor: Actor) {
 
       adminTemporaryPassword = temporaryPassword();
       await sql`
-        INSERT INTO users (organization_id, email, name, password_hash, role)
-        VALUES (${organizationId}, ${email}, ${String(run.admin_name)}, ${await hashPassword(adminTemporaryPassword)}, 'admin')
+        INSERT INTO users (organization_id, email, name, password_hash, role, must_change_password)
+        VALUES (${organizationId}, ${email}, ${String(run.admin_name)}, ${await hashPassword(adminTemporaryPassword)}, 'admin', TRUE)
       `;
       return { status: 'done' };
     },
@@ -649,8 +649,8 @@ export async function createOrganizationAdmin(organizationId: string, input: Rec
 
   const password = temporaryPassword();
   const rows = await sql`
-    INSERT INTO users (organization_id, email, name, password_hash, role)
-    VALUES (${organizationId}, ${email}, ${name}, ${await hashPassword(password)}, 'admin')
+    INSERT INTO users (organization_id, email, name, password_hash, role, must_change_password)
+    VALUES (${organizationId}, ${email}, ${name}, ${await hashPassword(password)}, 'admin', TRUE)
     RETURNING id, name, email, role, status
   `;
 
@@ -704,6 +704,7 @@ export async function updateOrganizationUser(
   if (input.resetPassword === true) {
     temporary = temporaryPassword();
     changes.password_hash = await hashPassword(temporary);
+    changes.must_change_password = true;
   }
   if (!Object.keys(changes).length) throw new PlatformError('Nada para alterar.');
 

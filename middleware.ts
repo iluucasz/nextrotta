@@ -63,7 +63,7 @@ const previewEscapeRoutes = ['/api/auth/preview/exit', '/api/auth/logout'];
 const previewAdminRoutes = ['/api/technician-visibility'];
 
 /** Writes still allowed while the organization is read-only (suspended or canceled). */
-const readOnlyAllowedRoutes = ['/api/auth/logout', '/api/auth/impersonation/exit', '/api/auth/preview/exit'];
+const readOnlyAllowedRoutes = ['/api/auth/logout', '/api/auth/password', '/api/auth/impersonation/exit', '/api/auth/preview/exit'];
 // Reporting a problem (and talking about it) stays possible while the organization is read-only.
 const readOnlyAllowedPrefixes = ['/api/bug-reports', '/api/notifications'];
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];

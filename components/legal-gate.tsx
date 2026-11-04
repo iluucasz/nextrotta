@@ -17,7 +17,7 @@ let cleared = false;
  * admin sees this window until they accept; the acceptance is recorded with the version, the moment and the origin. Only the
  * company's admin is asked: not the technicians, not the owner working inside the account, not a preview.
  */
-export function LegalGate({ enabled }: { enabled: boolean }) {
+export function LegalGate({ enabled, onResolved }: { enabled: boolean; onResolved?: () => void }) {
   const [documents, setDocuments] = useState<LegalDocumentInfo[]>([]);
   const [pending, setPending] = useState<string[]>([]);
   const [agree, setAgree] = useState(false);
@@ -25,21 +25,29 @@ export function LegalGate({ enabled }: { enabled: boolean }) {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (!enabled || cleared) return;
+    if (!enabled) return;
+    if (cleared) {
+      onResolved?.();
+      return;
+    }
     let active = true;
     fetch('/api/organization/legal', { cache: 'no-store' })
       .then(async (response) => {
-        if (!response.ok) return;
+        if (!response.ok) return onResolved?.();
         const data = await response.json();
         if (!active) return;
         setDocuments(data.documents ?? []);
         setPending(data.pending ?? []);
-        if (!(data.pending ?? []).length) cleared = true;
+        if (!(data.pending ?? []).length) {
+          cleared = true;
+          onResolved?.();
+        }
       })
-      .catch(() => undefined);
+      .catch(() => onResolved?.());
     return () => {
       active = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
   if (!enabled || !pending.length) return null;
@@ -59,6 +67,7 @@ export function LegalGate({ enabled }: { enabled: boolean }) {
       if (!response.ok) throw new Error(data?.error || 'Não foi possível registrar o aceite.');
       cleared = true;
       setPending([]);
+      onResolved?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível registrar o aceite.');
     } finally {
