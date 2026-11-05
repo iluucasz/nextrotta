@@ -78,6 +78,16 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 
 ## Estado da implantação
 
+> **05/11/2026 — worker atualizado com os backups.** `nextrotta-worker:20261105-1` (código atual: backups diários às 00:00,
+> backup antes do bloqueio, recuperação do Porto etc.) no lugar do `20261014-1`, com `BLOB_READ_WRITE_TOKEN` no
+> `/opt/nextrotta/worker.env` (cópia do env anterior em `worker.env.bak-20261105`; código anterior em
+> `/opt/nextrotta/app.bak-20261105`). Mesmas opções de antes (`--memory=3g --shm-size=512m`, `nextrotta-net`, sem porta
+> publicada). O container anterior ficou parado como `nextrotta-worker-old` (volta atrás: `docker stop nextrotta-worker &&
+> docker rename nextrotta-worker nextrotta-worker-new && docker rename nextrotta-worker-old nextrotta-worker && docker
+> update --restart=unless-stopped nextrotta-worker && docker start nextrotta-worker`). Conferido: sobe, grava o sinal de vida,
+> vê o token e **fez um backup de verdade no armazenamento a partir do container**. Código novo na VPS: `tar` de `lib/` e
+> `worker/` para `/opt/nextrotta/app` (limpando as duas pastas antes) e `docker build -f worker/Dockerfile`.
+>
 > **03/11/2026 — worker, agente e proxy próprios, tudo só `nextrotta-*`.** Rede Docker `nextrotta-net`.
 > - `nextrotta-vps-agent:20261014-1`: só leitura (`VPS_AGENT_READ_ONLY=1`), sem porta publicada, segredos em
 >   `/opt/nextrotta/agent.env`. Sem a limpeza ativa ainda.
@@ -92,7 +102,7 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 > - Na Vercel: `PORTO_WORKER_URL=https://nextrotta-infra.duckdns.org:8443/nextrotta-worker`,
 >   `VPS_AGENT_URL=https://nextrotta-infra.duckdns.org:8443/nextrotta-vps-agent`, `PORTO_WORKER_SECRET` e
 >   `VPS_AGENT_SECRET` (os mesmos dos arquivos `.env` da VPS).
-> - Falta: redeploy do worker com o código atual (backups) e `BLOB_READ_WRITE_TOKEN`; Evolution próprio.
+> - Falta: Evolution próprio. (O redeploy do worker com os backups e o token foi feito em 05/11.)
 
 > **14/10/2026 — VPS compartilhada atual (164.163.11.159, Ubuntu 24.04, 8 vCPU, 8 GB, 55 GB).** A
 > VPS da BlackHosting (143.20.50.58) caiu e **não deve mais ser usada**; o texto abaixo sobre ela é
