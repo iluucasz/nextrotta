@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, CreditCard, Download, FileSpreadsheet, LifeBuoy, Loader2, LockKeyhole, LogOut, MessageCircle, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, CreditCard, Download, ExternalLink, FileSpreadsheet, FileText, ImageIcon, LifeBuoy, Loader2, LockKeyhole, LogOut, MessageCircle, ShieldCheck } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/ui/button';
 
@@ -114,17 +114,21 @@ export default function ClosedAccessPage() {
               {access.isAdmin ? (
                 <Section icon={LifeBuoy} title={access.payment ? 'Precisa de ajuda ou combinar o pagamento?' : 'Para voltar a usar o sistema'}>
                   <p style={{ color: COLORS.soft }}>Abra um chamado e a administração do NextRotta responde por aqui, no seu e-mail e no painel quando o acesso voltar.</p>
-                  <TicketForm company={access.name} />
-                  <a
-                    href={access.support.whatsapp ? `https://wa.me/${access.support.whatsapp}?text=${encodeURIComponent(`Olá! Sou da ${access.name} e quero voltar a usar o NextRotta.`)}` : contactUrl}
-                    target={access.support.whatsapp ? '_blank' : undefined}
-                    rel="noreferrer"
-                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium hover:underline"
-                    style={{ color: COLORS.green }}
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    Falar com a administração{access.support.whatsapp ? ' no WhatsApp' : ''}
-                  </a>
+                  <TicketForm
+                    company={access.name}
+                    extra={
+                      <a
+                        href={access.support.whatsapp ? `https://wa.me/${access.support.whatsapp}?text=${encodeURIComponent(`Olá! Sou da ${access.name} e quero voltar a usar o NextRotta.`)}` : contactUrl}
+                        target={access.support.whatsapp ? '_blank' : undefined}
+                        rel="noreferrer"
+                        className="inline-flex h-9 items-center justify-center gap-2 rounded-md border px-4 text-sm font-medium hover:bg-[#f1f8f3]"
+                        style={{ color: COLORS.green, borderColor: '#b9e3cc' }}
+                      >
+                        <MessageCircle className="h-4 w-4" />
+                        Falar no WhatsApp
+                      </a>
+                    }
+                  />
                 </Section>
               ) : (
                 <Section icon={LifeBuoy} title="Para voltar a usar o sistema">
@@ -140,14 +144,14 @@ export default function ClosedAccessPage() {
                         Último backup: <strong>{dateTime(access.lastBackup.createdAt)}</strong>
                         {access.lastBackup.kind === 'closing' ? ' (feito antes de bloquear, com os dados mais recentes)' : ''}.
                       </p>
-                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-                        <Button asChild size="lg" className="text-white hover:opacity-90" style={{ background: COLORS.green }}>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                        <Button asChild size="lg" className="w-full text-white hover:opacity-90 sm:w-auto" style={{ background: COLORS.green }}>
                           <a href="/api/organization/backups/ultimo/planilha">
                             <FileSpreadsheet className="h-5 w-5" />
                             Baixar planilha (Excel)
                           </a>
                         </Button>
-                        <Button asChild size="lg" variant="outline">
+                        <Button asChild size="lg" variant="outline" className="w-full sm:w-auto">
                           <a href={`/api/organization/backups/${access.lastBackup.id}`}>
                             <Download className="h-5 w-5" />
                             Arquivo completo (.json.gz)
@@ -158,7 +162,7 @@ export default function ClosedAccessPage() {
                   ) : (
                     <>
                       <p style={{ color: COLORS.soft }}>Não há um backup guardado. Podemos gerar agora a planilha com os dados como estão.</p>
-                      <Button asChild size="lg" className="mt-3 text-white hover:opacity-90" style={{ background: COLORS.green }}>
+                      <Button asChild size="lg" className="mt-3 w-full text-white hover:opacity-90 sm:w-auto" style={{ background: COLORS.green }}>
                         <a href="/api/organization/backups/atual/planilha">
                           <FileSpreadsheet className="h-5 w-5" />
                           Gerar e baixar a planilha
@@ -171,6 +175,8 @@ export default function ClosedAccessPage() {
                   </p>
                 </Section>
               ) : null}
+
+              {access.isAdmin ? <FilesSection /> : null}
             </div>
           </>
         )}
@@ -199,7 +205,7 @@ function Section({ icon: Icon, title, tone, children }: { icon: typeof CreditCar
 }
 
 /** A support ticket that works while the system is locked (the only write the company can still make). */
-function TicketForm({ company }: { company: string }) {
+function TicketForm({ company, extra }: { company: string; extra?: React.ReactNode }) {
   const [open, setOpen] = useState(false);
   const [subject, setSubject] = useState('Quero voltar a usar o sistema');
   const [text, setText] = useState('');
@@ -236,10 +242,13 @@ function TicketForm({ company }: { company: string }) {
   }
   if (!open) {
     return (
-      <Button type="button" variant="outline" className="mt-3" onClick={() => setOpen(true)}>
-        <LifeBuoy className="h-4 w-4" />
-        Abrir chamado
-      </Button>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+        <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(true)}>
+          <LifeBuoy className="h-4 w-4" />
+          Abrir chamado
+        </Button>
+        {extra}
+      </div>
     );
   }
   const field = 'mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:ring-2';
@@ -254,15 +263,114 @@ function TicketForm({ company }: { company: string }) {
         <textarea className={field} style={{ borderColor: COLORS.line }} rows={4} value={text} onChange={(event) => setText(event.target.value)} placeholder="Conte o que precisa: pagamento feito, combinar uma data, dúvida…" disabled={busy} />
       </label>
       {error ? <p className="text-sm text-rose-700">{error}</p> : null}
-      <div className="flex gap-2">
-        <Button type="button" onClick={() => void send()} disabled={busy || subject.trim().length < 3} className="text-white hover:opacity-90" style={{ background: COLORS.green }}>
+      <div className="flex flex-col gap-2 sm:flex-row">
+        <Button type="button" onClick={() => void send()} disabled={busy || subject.trim().length < 3} className="w-full text-white hover:opacity-90 sm:w-auto" style={{ background: COLORS.green }}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LifeBuoy className="h-4 w-4" />}
           {busy ? 'Enviando…' : 'Enviar chamado'}
         </Button>
-        <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+        <Button type="button" variant="outline" className="w-full sm:w-auto" onClick={() => setOpen(false)} disabled={busy}>
           Cancelar
         </Button>
       </div>
+      {extra ? <div className="flex flex-col sm:flex-row">{extra}</div> : null}
     </div>
+  );
+}
+
+type CompanyFiles = {
+  documents: Array<{ id: string; title: string; category: string | null; fileName: string | null; type: string | null; size: number | null }>;
+  images: Array<{ id: string; name: string; size: number | null }>;
+};
+
+const sizeLabel = (bytes: number | null) => (bytes == null ? '' : bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+
+/** The private files of the company (library documents and the photos of the parts): the system is locked, but they can still be opened and downloaded. */
+function FilesSection() {
+  const [files, setFiles] = useState<CompanyFiles | null>(null);
+  const [tab, setTab] = useState<'documents' | 'images'>('documents');
+
+  useEffect(() => {
+    fetch('/api/organization/files', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((data: CompanyFiles | null) => {
+        if (!data) return;
+        setFiles(data);
+        if (!data.documents.length && data.images.length) setTab('images');
+      })
+      .catch(() => null);
+  }, []);
+
+  if (!files || (!files.documents.length && !files.images.length)) return null;
+  const tabs = [
+    { key: 'documents' as const, label: 'Documentos', count: files.documents.length, icon: FileText },
+    { key: 'images' as const, label: 'Fotos das peças', count: files.images.length, icon: ImageIcon },
+  ].filter((item) => item.count > 0);
+
+  return (
+    <Section icon={FileText} title="Documentos e imagens">
+      <p style={{ color: COLORS.soft }}>Os arquivos são privados e não vão na planilha. Abra ou baixe daqui.</p>
+      {tabs.length > 1 ? (
+        <div className="mt-3 inline-flex rounded-lg border p-1" style={{ borderColor: COLORS.line, background: COLORS.page }}>
+          {tabs.map((item) => (
+            <button
+              key={item.key}
+              type="button"
+              onClick={() => setTab(item.key)}
+              className="inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm font-medium"
+              style={tab === item.key ? { background: '#fff', color: COLORS.ink, boxShadow: '0 1px 3px #12302420' } : { color: COLORS.soft }}
+            >
+              <item.icon className="h-4 w-4" />
+              {item.label} ({item.count})
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <ul className="mt-3 max-h-80 divide-y overflow-y-auto rounded-lg border" style={{ borderColor: COLORS.line }}>
+        {tab === 'documents'
+          ? files.documents.map((doc) => (
+              <FileRow key={doc.id} href={`/api/organization/files/documents/${doc.id}`} title={doc.title} meta={[doc.category, sizeLabel(doc.size)].filter(Boolean).join(' · ')} icon={<FileText className="h-5 w-5" style={{ color: COLORS.green }} />} />
+            ))
+          : files.images.map((image) => (
+              <FileRow
+                key={image.id}
+                href={`/api/organization/files/images/${image.id}`}
+                title={image.name}
+                meta={sizeLabel(image.size)}
+                icon={
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={`/api/organization/files/images/${image.id}`} alt="" loading="lazy" className="h-10 w-10 rounded-md border object-cover" style={{ borderColor: COLORS.line }} />
+                }
+              />
+            ))}
+      </ul>
+    </Section>
+  );
+}
+
+function FileRow({ href, title, meta, icon }: { href: string; title: string; meta: string; icon: React.ReactNode }) {
+  return (
+    <li className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:gap-3" style={{ borderColor: COLORS.line }}>
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center">{icon}</span>
+        <span className="min-w-0">
+          <span className="block truncate font-medium">{title}</span>
+          {meta ? <span className="block truncate text-xs" style={{ color: COLORS.soft }}>{meta}</span> : null}
+        </span>
+      </div>
+      <div className="flex gap-2 sm:shrink-0">
+        <Button asChild size="sm" variant="outline" className="flex-1 sm:flex-none">
+          <a href={href} target="_blank" rel="noreferrer">
+            <ExternalLink className="h-4 w-4" />
+            Abrir
+          </a>
+        </Button>
+        <Button asChild size="sm" variant="outline" className="flex-1 sm:flex-none">
+          <a href={`${href}?download=1`}>
+            <Download className="h-4 w-4" />
+            Baixar
+          </a>
+        </Button>
+      </div>
+    </li>
   );
 }

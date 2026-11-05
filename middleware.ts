@@ -75,7 +75,7 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 const EXPORT_ONLY_PAGE = '/acesso-encerrado';
 const exportOnlyAllowedRoutes = [EXPORT_ONLY_PAGE, '/api/organization/access', '/api/organization/export'];
 // To get its data and to ask for help: the backups only to read and download (making or restoring one is blocked), tickets to open and answer.
-const exportOnlyReadPrefixes = ['/api/organization/backups'];
+const exportOnlyReadPrefixes = ['/api/organization/backups', '/api/organization/files'];
 const exportOnlyWritePrefixes = ['/api/bug-reports'];
 
 /**

@@ -418,7 +418,7 @@ function newestFirst(rows: Row[], key: string) {
 
 /** Documents of the library plus photos of parts: what lives in the system and cannot be opened from a spreadsheet. */
 function fileCount(file: BackupFile) {
-  return (file.tables.library_documents ?? []).filter((row) => !row.deleted_at).length + (file.tables.part_images ?? []).filter((row) => !row.deleted_at).length;
+  return (file.tables.library_documents ?? []).filter((row) => !row.deleted_at).length + (file.tables.part_images ?? []).filter((row) => !row.deleted_at && !row.replaced_at).length;
 }
 
 function planSheets(file: BackupFile, maxRows: number): Plan[] {
@@ -639,7 +639,7 @@ function writeFilesNotice(workbook: ExcelJS.stream.xlsx.WorkbookWriter, plan: Pl
   sheet.columns = [{ width: 34 }, { width: 14 }, { width: 70 }];
   const base = organizationPublicUrl(file.organization.slug);
   const documents = (file.tables.library_documents ?? []).filter((row) => !row.deleted_at).length;
-  const images = (file.tables.part_images ?? []).filter((row) => !row.deleted_at).length;
+  const images = (file.tables.part_images ?? []).filter((row) => !row.deleted_at && !row.replaced_at).length;
 
   const add = (values: Array<Cell | ExcelJS.CellHyperlinkValue>, style?: (row: ExcelJS.Row) => void) => {
     const row = sheet.addRow(values);
@@ -647,7 +647,7 @@ function writeFilesNotice(workbook: ExcelJS.stream.xlsx.WorkbookWriter, plan: Pl
     row.commit();
   };
   add(['Documentos e imagens ficam no sistema'], (row) => { row.height = 28; row.getCell(1).font = { size: 16, bold: true, color: { argb: 'FF282638' } }; });
-  add(['Os arquivos são privados: abrir esta planilha em outro lugar não mostra eles. Entre no sistema normalmente e veja no menu lateral.'], (row) => {
+  add(['Os arquivos são privados: abrir esta planilha em outro lugar não mostra eles. Entre no sistema normalmente e veja no menu lateral. Com o acesso bloqueado, eles aparecem na própria página de acesso bloqueado.'], (row) => {
     sheet.mergeCells(row.number, 1, row.number, 3);
     row.height = 34;
     row.getCell(1).alignment = { wrapText: true, vertical: 'top' };
