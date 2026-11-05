@@ -58,14 +58,15 @@ const LIST_POLL_MS = 6_000;
 const THREAD_POLL_MS = 3_000;
 
 /** The platform's live chat inbox: the web chats opened from tickets and the conversations of the official WhatsApp number. */
-export function Livechat() {
+export function Livechat({ initialId = null }: { initialId?: string | null }) {
   const notify = useNotify();
-  const [filter, setFilter] = useState<'open' | 'closed' | 'all'>('open');
+  // Coming from a ticket, the conversation may be closed: start on "Todas" so it is in the list.
+  const [filter, setFilter] = useState<'open' | 'closed' | 'all'>(initialId ? 'all' : 'open');
   const [search, setSearch] = useState('');
   const [list, setList] = useState<Conversation[] | null>(null);
   const [unread, setUnread] = useState({ conversations: 0, messages: 0 });
   const [listError, setListError] = useState('');
-  const [selected, setSelected] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(initialId);
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
@@ -177,7 +178,7 @@ export function Livechat() {
           {!whatsapp
             ? 'Verificando o WhatsApp…'
             : connected
-              ? `WhatsApp oficial conectado${whatsapp.number ? ` (${phoneLabel(whatsapp.number)})` : ''}`
+              ? `WhatsApp oficial conectado${whatsapp.number ? ` · ${phoneLabel(whatsapp.number)}` : ''}`
               : !whatsapp.serverConfigured
                 ? 'Servidor do WhatsApp não configurado'
                 : whatsapp.error

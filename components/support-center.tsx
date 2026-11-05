@@ -161,6 +161,7 @@ export function NewTicketForm({
       const ticket = await request<{ id: string; ticketNumber: number }>('/api/bug-reports', {
         type,
         category: type === 'support' ? category : undefined,
+        urgent: type === 'support' && urgent,
         title,
         description,
         screenshot: screenshot?.dataUrl ?? null,
@@ -287,7 +288,7 @@ export function NewTicketForm({
           <input type="checkbox" checked={urgent} onChange={(event) => setUrgent(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
           <span>
             <span className="block font-medium">É urgente: quero falar agora no chat ao vivo</span>
-            <span className="block text-xs text-muted-foreground">Depois de enviar, abrimos o chat para você conversar com a nossa equipe.</span>
+            <span className="block text-xs text-muted-foreground">O chamado vai como prioridade alta, a equipe é avisada na hora e abrimos o chat para você conversar com ela.</span>
           </span>
         </label>
       ) : null}

@@ -3,9 +3,11 @@
 Uma caixa de entrada só, no painel do dono: **Reports → Livechat**, no formato do WhatsApp (lista de conversas à esquerda,
 conversa à direita, balões, não lidas). Duas origens:
 
-- **Chat do chamado (`web`)** — para urgências. O cliente marca "É urgente" ao abrir um chamado de suporte (ou clica em
-  **Iniciar chat ao vivo** na página do chamado) e conversa ali. A conversa nasce com a primeira mensagem, é ligada ao chamado e
-  só existe uma aberta por chamado. O dono recebe um alerta no WhatsApp de alertas (no máximo um a cada 10 minutos por conversa).
+- **Chat do chamado (`web`)** — para urgências. Ao abrir um chamado de suporte com **"É urgente"**, o chamado vai com prioridade
+  alta e a conversa já nasce aberta, **não lida**, no Livechat (com "Urgente: <título>"), antes de o cliente escrever; o chamado do
+  painel ganha o botão **Abrir no Livechat**. Sem "urgente", o cliente pode clicar em **Iniciar chat ao vivo** na página do chamado e
+  a conversa nasce com a primeira mensagem. Está ligada ao chamado e só existe uma aberta por chamado. Só chamados de suporte
+  podem ser urgentes. O dono recebe um alerta no WhatsApp de alertas (no máximo um a cada 10 minutos por conversa).
 - **WhatsApp oficial (`whatsapp`)** — o número oficial (instância `nextrotta-suporte`, separada da `nextrotta-alertas`). O que
   chega nele aparece no Livechat, o que o dono responde no painel sai por ele, e o que o dono digita no próprio celular também é
   guardado. Número de técnico ou empresa conhecidos vem com o nome e a empresa.

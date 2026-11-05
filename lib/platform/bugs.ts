@@ -1,5 +1,6 @@
 import { recordAudit } from '../audit';
 import { sql } from '../db';
+import { alertOwnerOfChat, startWebConversation } from '../livechat/store';
 import { notifyOrganization } from '../notifications';
 import { isUuid, PlatformError, type Actor } from './errors';
 import { formatTicketNumber, REPORT_TYPES, SUPPORT_CATEGORIES, type ReportType, type SupportCategory } from '../reports';
@@ -115,8 +116,16 @@ export async function getBugReport(
     WHERE m.bug_id = ${id} AND (${viewer.kind === 'owner'} OR NOT m.internal)
     ORDER BY m.created_at
   `;
+  // The owner also sees whether there is a live chat on this ticket.
+  const chat =
+    viewer.kind === 'owner'
+      ? (
+          await sql`SELECT id, status, unread_owner FROM livechat_conversations WHERE ticket_id = ${id} AND channel = 'web' ORDER BY (status = 'open') DESC, created_at DESC LIMIT 1`
+        )[0] ?? null
+      : null;
   return {
     report: serializeBug(row),
+    chat: chat ? { id: String(chat.id), status: chat.status as 'open' | 'closed', unread: Number(chat.unread_owner) } : null,
     messages: messages.map((message) => ({
       id: String(message.id),
       authorName: String(message.author_name),
@@ -167,17 +176,32 @@ export async function createBugReport(
   if (screenshot && screenshot.length > MAX_SCREENSHOT_LENGTH)
     throw new PlatformError('A captura de tela passa de 2 MB. Envie uma imagem menor.');
 
+  // "É urgente" (support tickets only): high priority, and the live chat is opened at once so the owner sees it in the Livechat.
+  const urgent = type === 'support' && input.urgent === true;
   const rows = await sql`
     INSERT INTO bug_reports (
-      organization_id, user_id, title, description, page_url, user_agent, app_version, screenshot, report_type, support_category
+      organization_id, user_id, title, description, page_url, user_agent, app_version, screenshot, report_type, support_category, priority
     )
     VALUES (
       ${reporter.organizationId}, ${reporter.userId}, ${title}, ${description}, ${cleanText(input.pageUrl, 500) || null},
-      ${cleanText(input.userAgent, 500) || null}, ${cleanText(input.appVersion, 50) || null}, ${screenshot}, ${type}, ${category}
+      ${cleanText(input.userAgent, 500) || null}, ${cleanText(input.appVersion, 50) || null}, ${screenshot}, ${type}, ${category},
+      ${urgent ? 'high' : 'medium'}
     )
     RETURNING id, ticket_number
   `;
-  return { id: String(rows[0].id), ticketNumber: Number(rows[0].ticket_number) };
+  const ticketId = String(rows[0].id);
+  if (urgent) {
+    try {
+      const user = (await sql`SELECT name FROM users WHERE id = ${reporter.userId}`)[0];
+      const userName = String(user?.name ?? 'Cliente');
+      const conversation = await startWebConversation({ organizationId: reporter.organizationId, userId: reporter.userId, ticketId, userName, urgentTitle: title });
+      await alertOwnerOfChat(conversation, userName, `Chamado urgente: ${title}`);
+    } catch (error) {
+      // The ticket is what matters: it exists, and the customer can still start the chat from its page.
+      console.error('[bug-reports] urgent chat not opened:', error);
+    }
+  }
+  return { id: ticketId, ticketNumber: Number(rows[0].ticket_number) };
 }
 
 /** A message in the report's conversation, from the organization or from the owner. */

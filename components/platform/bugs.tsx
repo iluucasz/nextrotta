@@ -206,6 +206,15 @@ export function Bugs({ id }: { id?: string }) {
   const [type, setType] = useState<ReportType | 'all' | 'livechat'>('all');
   // Messages waiting in the live chat: shown on the tab from any other tab of Reports.
   const [chatUnread, setChatUnread] = useState(0);
+  // ?chat=<id> (from a ticket) opens the Livechat with that conversation selected.
+  const [chatId, setChatId] = useState<string | null>(null);
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('chat');
+    if (wanted) {
+      setChatId(wanted);
+      setType('livechat');
+    }
+  }, []);
   useEffect(() => {
     if (id) return;
     let active = true;
@@ -260,7 +269,7 @@ export function Bugs({ id }: { id?: string }) {
           </button>
         ))}
       </div>
-      {type === 'livechat' ? <Livechat /> : (
+      {type === 'livechat' ? <Livechat key={chatId ?? 'inbox'} initialId={chatId} /> : (
         <>
       <div className="nr-metrics">
         {(
@@ -295,7 +304,7 @@ export function Bugs({ id }: { id?: string }) {
 
 function BugDetail({ id }: { id: string }) {
   const notify = useNotify();
-  const detail = useResource<{ report: BugRow; messages: BugMessage[] }>(
+  const detail = useResource<{ report: BugRow; chat: { id: string; status: 'open' | 'closed'; unread: number } | null; messages: BugMessage[] }>(
     `/bugs/${id}`,
   );
   const [text, setText] = useState('');
@@ -305,7 +314,7 @@ function BugDetail({ id }: { id: string }) {
   if (detail.error)
     return <ErrorState message={detail.error} onRetry={detail.reload} />;
 
-  const { report, messages } = detail.data!;
+  const { report, messages, chat } = detail.data!;
   const labels = reportStatusLabels(report.type ?? 'bug');
 
   async function run(action: () => Promise<unknown>, message: string) {
@@ -328,6 +337,11 @@ function BugDetail({ id }: { id: string }) {
         description={`${formatTicketNumber(report.ticketNumber)} · ${REPORT_TYPE_LABELS[report.type ?? 'bug']}${report.supportCategory ? ` · ${SUPPORT_CATEGORY_LABELS[report.supportCategory]}` : ''} · ${report.organizationName ?? ''} · ${report.userName ?? ''} · ${date(report.createdAt, true)}`}
         action={
           <div className="nr-actions">
+            {chat ? (
+              <Link className="nr-btn primary" href={`/plataforma/reports?chat=${chat.id}`}>
+                Abrir no Livechat{chat.unread ? ` (${chat.unread})` : ''}
+              </Link>
+            ) : null}
             <Link className="nr-btn" href="/plataforma/reports">
               Voltar à lista
             </Link>

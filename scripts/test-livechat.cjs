@@ -85,6 +85,7 @@ let other;
 let user;
 let ticket;
 let otherTicket;
+const extraTickets = [];
 const stamp = Date.now();
 
 async function makeTicket(organizationId, userId, title) {
@@ -117,6 +118,33 @@ test('web: the customer starts the chat in the ticket, once', async () => {
   assert.equal(again.id, conversation.id, 'one open chat per ticket');
   const concurrent = await Promise.all([1, 2, 3].map(() => store.startWebConversation({ organizationId: org, userId: user, ticketId: ticket, userName: 'Carla Chat' })));
   assert.ok(concurrent.every((item) => item.id === conversation.id), 'concurrent starts give the same chat');
+});
+
+test('an urgent ticket opens the chat at once, unread, with high priority; a normal one does not', async () => {
+  const { createBugReport, getBugReport } = require('../lib/platform/bugs.ts');
+  const base = { type: 'support', category: 'billing', description: 'Descrição longa o bastante para o teste' };
+  const urgent = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Urgente ${stamp}`, urgent: true });
+  extraTickets.push(urgent.id);
+  const found = await store.findWebConversation(urgent.id);
+  assert.ok(found, 'the conversation exists before the customer writes anything');
+  assert.deepEqual([found.status, found.urgent, found.unreadOwner, found.lastMessagePreview], ['open', true, 1, `Urgente: Urgente ${stamp}`]);
+  const owner = await getBugReport(urgent.id, { kind: 'owner' });
+  assert.equal(owner.report.priority, 'high');
+  assert.deepEqual([owner.chat.id, owner.chat.status, owner.chat.unread], [found.id, 'open', 1], 'the owner sees the chat from the ticket');
+  assert.equal((await getBugReport(urgent.id, { kind: 'organization', organizationId: org })).chat, null, 'the customer side has no owner data');
+  assert.equal((await store.listConversations({ status: 'open', search: `Urgente ${stamp}` })).length, 1, 'it is in the inbox');
+  assert.equal((await store.getMessages(found.id)).filter((message) => message.kind === 'system').length, 1);
+
+  const normal = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Normal ${stamp}` });
+  extraTickets.push(normal.id);
+  assert.equal(await store.findWebConversation(normal.id), null, 'no chat without "urgent"');
+  assert.equal((await getBugReport(normal.id, { kind: 'owner' })).report.priority, 'medium');
+
+  // only support tickets can be urgent
+  const bug = await createBugReport({ organizationId: org, userId: user }, { type: 'bug', title: `Bug ${stamp}`, description: 'Descrição longa o bastante para o teste', urgent: true });
+  extraTickets.push(bug.id);
+  assert.equal(await store.findWebConversation(bug.id), null);
+  assert.equal((await getBugReport(bug.id, { kind: 'owner' })).report.priority, 'medium');
 });
 
 test('web: messages both ways, unread counters, previews and order', async () => {
@@ -207,5 +235,6 @@ test('isolation: the chat of a ticket belongs to its company (the route checks t
 after(async () => {
   await sql`UPDATE livechat_conversations SET status = 'closed', closed_at = NOW() WHERE (organization_id = ${org} OR contact_phone IN ('5521955550001', '5521955550002')) AND status = 'open'`;
   await sql`UPDATE bug_reports SET status = 'resolved', resolved_at = NOW() WHERE id IN (${ticket}, ${otherTicket}) AND status <> 'resolved'`;
+  for (const id of extraTickets) await sql`UPDATE bug_reports SET status = 'resolved', resolved_at = NOW() WHERE id = ${id} AND status <> 'resolved'`;
   await sql`UPDATE organizations SET deleted_at = NOW(), status = 'canceled' WHERE id = ${org}`;
 });

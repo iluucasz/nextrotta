@@ -166,7 +166,7 @@ async function addMessage(input: {
 // ----- the web chat (inside a support ticket)
 
 /** The open chat of a ticket, started now when there is none (an urgent matter: the owner is alerted). */
-export async function startWebConversation(input: { organizationId: string; userId: string; ticketId: string; userName: string }) {
+export async function startWebConversation(input: { organizationId: string; userId: string; ticketId: string; userName: string; /** An urgent ticket: the chat opens now, unread, so the owner sees it before the customer writes. */ urgentTitle?: string }) {
   const existing = await sql`SELECT id FROM livechat_conversations WHERE ticket_id = ${input.ticketId} AND channel = 'web' AND status = 'open'`;
   if (existing[0]) return getConversation(String(existing[0].id));
 
@@ -177,7 +177,12 @@ export async function startWebConversation(input: { organizationId: string; user
     RETURNING id
   `;
   const id = created[0] ? String(created[0].id) : String((await sql`SELECT id FROM livechat_conversations WHERE ticket_id = ${input.ticketId} AND channel = 'web' AND status = 'open'`)[0].id);
-  if (created[0]) await addMessage({ conversationId: id, direction: 'in', kind: 'system', body: 'Chat ao vivo iniciado pelo cliente.' });
+  if (created[0]) {
+    await addMessage({ conversationId: id, direction: 'in', kind: 'system', body: input.urgentTitle ? 'Chamado urgente aberto pelo cliente. A equipe foi avisada e responde por aqui.' : 'Chat ao vivo iniciado pelo cliente.' });
+    if (input.urgentTitle) {
+      await sql`UPDATE livechat_conversations SET unread_owner = 1, last_message_preview = ${previewOf(`Urgente: ${input.urgentTitle}`)}, last_message_at = NOW() WHERE id = ${id}`;
+    }
+  }
   return getConversation(id);
 }
 
@@ -195,7 +200,7 @@ export async function sendCustomerMessage(conversation: Conversation, userName: 
   if (Number(recent[0].total) >= MAX_CUSTOMER_MESSAGES_PER_MINUTE) throw new PlatformError('Muitas mensagens em pouco tempo. Aguarde um instante.', 429);
 
   const message = await addMessage({ conversationId: conversation.id, direction: 'in', senderName: userName, body: text });
-  await alertOwner(conversation, userName, text);
+  await alertOwnerOfChat(conversation, userName, text);
   return message;
 }
 
@@ -216,7 +221,8 @@ export async function setUrgent(id: string, urgent: boolean) {
   return getConversation(id);
 }
 
-async function alertOwner(conversation: Conversation, userName: string, text: string) {
+/** One WhatsApp alert to the owner per conversation and window (never throws). */
+export async function alertOwnerOfChat(conversation: Conversation, userName: string, text: string) {
   await sendOwnerAlert({
     key: ownerAlertKey(conversation.id),
     kind: 'livechat',
