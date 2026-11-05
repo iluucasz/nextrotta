@@ -1,5 +1,6 @@
 import { PassThrough } from 'node:stream';
 import ExcelJS from 'exceljs';
+import { organizationPublicUrl } from '../tenant-host';
 import { BACKUP_KIND_LABELS, type BackupFile, type BackupKind } from './tables';
 
 // The backup as a spreadsheet: one "Resumo" tab (index with links) and one tab per subject, written as a stream so a company
@@ -49,6 +50,8 @@ type Spec = {
   newestBy?: string;
   /** A two-column "setting / value" tab instead of a table (a table with one row). */
   settings?: boolean;
+  /** Not a table: a notice that the files live in the system, with links to where to see them. */
+  files?: boolean;
 };
 
 const GROUPS: Record<Group, { label: string; color: string }> = {
@@ -192,25 +195,13 @@ export const SPECS: Spec[] = [
   },
   // ---- company
   { table: 'organization_settings', sheet: 'Configurações', group: 'company', about: 'As configurações da empresa (comissão, jornada, valores padrão, horários do Porto).', settings: true },
+  { table: 'library_documents', sheet: 'Documentos e imagens', group: 'company', about: 'Os documentos da biblioteca e as fotos das peças ficam no sistema (são privados e não abrem fora dele).', files: true },
   { table: 'parts_settings', sheet: 'Configurações de peças', group: 'company', about: 'As configurações de Venda de Peças.', settings: true },
   {
     table: 'users', sheet: 'Usuários', group: 'company', about: 'Quem entra no sistema (as senhas não entram no backup).',
     columns: [{ header: 'Nome', key: 'name', width: 32 }, { header: 'E-mail', key: 'email', width: 34 }, { header: 'Papel', key: 'role', words: ROLES }, { header: 'Situação', key: 'status', words: ACTIVE }, { header: 'Último acesso', key: 'last_login_at', kind: 'datetime' }, created],
   },
-  {
-    table: 'library_documents', sheet: 'Documentos', group: 'company', about: 'O registro dos documentos da biblioteca (os arquivos em si não vêm na planilha).', newestBy: 'created_at',
-    columns: [{ header: 'Título', key: 'title', width: 44 }, { header: 'Categoria', key: 'category', width: 20 }, { header: 'Para', key: 'audience', words: { admin: 'Administradores', technician: 'Técnicos', all: 'Todos' } }, { header: 'Tipo', key: 'type' }, { header: 'Arquivo', key: 'file_name', width: 36 }, { header: 'Tamanho (KB)', get: (row) => (row.file_size ? Math.round(Number(row.file_size) / 1024) : null), kind: 'int' }, { header: 'Técnico', get: (row, context) => (row.technician_id ? context.technician(row.technician_id) : ''), width: 28 }, created],
-  },
   // ---- integrations
-  {
-    table: 'porto_sync_log', sheet: 'Execuções do Porto', group: 'integrations', about: 'Cada vez que o robô do Porto rodou e o que aconteceu.', newestBy: 'started_at',
-    columns: [
-      { header: 'Início', key: 'started_at', kind: 'datetime' }, { header: 'Fim', key: 'finished_at', kind: 'datetime' }, { header: 'Tarefa', key: 'job_type', words: { hours: 'Horas', schedule: 'Escala' } },
-      { header: 'Resultado', key: 'status', words: { success: 'Tudo certo', partial: 'Com avisos', error: 'Falhou', dry_run: 'Teste', skipped: 'Não rodou', running: 'Em andamento' } },
-      { header: 'Como rodou', key: 'run_trigger', words: { auto: 'Automática', manual: 'Manual' } }, { header: 'Técnicos', key: 'technicians_processed', kind: 'int' }, { header: 'Registros gravados', key: 'rows_written', kind: 'int' },
-      { header: 'De', key: 'range_start', kind: 'date' }, { header: 'Até', key: 'range_end', kind: 'date' }, { header: 'Erro', key: 'error_message', width: 60 },
-    ],
-  },
   {
     table: 'whatsapp_messages', sheet: 'Mensagens de WhatsApp', group: 'integrations', about: 'As mensagens que o sistema enviou pelo WhatsApp da empresa.', newestBy: 'created_at',
     columns: [{ header: 'Quando', key: 'created_at', kind: 'datetime' }, { header: 'Para', key: 'technician_name', width: 28 }, { header: 'Telefone', key: 'phone' }, { header: 'Tipo', key: 'type' }, { header: 'Situação', key: 'status' }, { header: 'Mensagem', key: 'message', width: 70 }, { header: 'Erro', key: 'error', width: 36 }],
@@ -233,24 +224,21 @@ export const SPECS: Spec[] = [
     table: 'bug_reports', sheet: 'Chamados', group: 'system', about: 'Os chamados de suporte, bugs e sugestões abertos pela empresa.', newestBy: 'created_at',
     columns: [{ header: 'Nº', key: 'ticket_number', kind: 'int' }, { header: 'Abertura', key: 'created_at', kind: 'datetime' }, { header: 'Tipo', key: 'report_type', words: { support: 'Suporte', bug: 'Bug', suggestion: 'Sugestão' } }, { header: 'Assunto', key: 'title', width: 44 }, { header: 'Descrição', key: 'description', width: 70 }, { header: 'Situação', key: 'status' }, { header: 'Resolvido em', key: 'resolved_at', kind: 'datetime' }],
   },
-  {
-    table: 'audit_events', sheet: 'Auditoria', group: 'system', about: 'O registro das ações importantes (quem fez o quê e quando).', newestBy: 'created_at',
-    columns: [{ header: 'Quando', key: 'created_at', kind: 'datetime' }, { header: 'Quem', get: (row, context) => (row.actor_id ? context.user(row.actor_id) : 'Sistema'), width: 28 }, { header: 'Papel', key: 'actor_role', words: ROLES }, { header: 'Ação', key: 'action', width: 34 }, { header: 'Sobre', key: 'target_type' }, { header: 'Detalhes', key: 'details', kind: 'json', width: 70 }],
-  },
 ];
+
+/**
+ * Tables that stay in the backup (they are restored from it) but are not worth a tab: the technical or internal records,
+ * and the registers of files, which the "Documentos e imagens" tab covers.
+ */
+const NOT_IN_SPREADSHEET = new Set(['audit_events', 'notifications', 'mercadopago_accounts', 'porto_config', 'porto_sync_log', 'technician_visibility_settings', 'part_images']);
 
 /** Tables with a tab of their own that no curated spec names: one generic tab each, so nothing is left out. */
 const GENERIC: Record<string, { sheet: string; group: Group; about: string }> = {
-  technician_visibility_settings: { sheet: 'Visibilidade do técnico', group: 'company', about: 'O que cada técnico pode ver no sistema.' },
-  porto_config: { sheet: 'Config. do Porto', group: 'integrations', about: 'A configuração do robô do Porto (a senha não entra no backup).' },
   whatsapp_config: { sheet: 'Config. do WhatsApp', group: 'integrations', about: 'A configuração do WhatsApp da empresa.' },
-  mercadopago_accounts: { sheet: 'Mercado Pago', group: 'integrations', about: 'As contas do Mercado Pago ligadas (os tokens não entram no backup).' },
-  part_images: { sheet: 'Imagens das peças', group: 'parts', about: 'O registro das fotos das peças.' },
   subscriptions: { sheet: 'Assinatura', group: 'plan', about: 'A assinatura da empresa: plano, valores, ciclo e limites.' },
   ai_conversations: { sheet: 'Conversas da IA', group: 'plan', about: 'As conversas com o assistente de IA.' },
   organization_features: { sheet: 'Recursos liberados', group: 'plan', about: 'Recursos extras liberados para a empresa.' },
   coupon_redemptions: { sheet: 'Cupons usados', group: 'plan', about: 'Cupons de desconto aplicados.' },
-  notifications: { sheet: 'Notificações', group: 'system', about: 'As notificações que a empresa recebeu.' },
 };
 
 // ----------------------------------------------------------------------------------------------------------- the values
@@ -428,6 +416,11 @@ function newestFirst(rows: Row[], key: string) {
   return [...rows].sort((a, b) => String(b[key] ?? '').localeCompare(String(a[key] ?? '')));
 }
 
+/** Documents of the library plus photos of parts: what lives in the system and cannot be opened from a spreadsheet. */
+function fileCount(file: BackupFile) {
+  return (file.tables.library_documents ?? []).filter((row) => !row.deleted_at).length + (file.tables.part_images ?? []).filter((row) => !row.deleted_at).length;
+}
+
 function planSheets(file: BackupFile, maxRows: number): Plan[] {
   const taken = new Set<string>(['resumo']);
   const plans: Plan[] = [];
@@ -437,13 +430,19 @@ function planSheets(file: BackupFile, maxRows: number): Plan[] {
   ];
   const known = new Set(specs.map((spec) => spec.table));
   // A table that is in the backup but has no entry above still gets its own generic tab.
-  for (const table of Object.keys(file.tables)) if (!known.has(table)) specs.push({ table, sheet: humanize(table), group: 'system', about: 'Dados desta parte do sistema.' });
+  for (const table of Object.keys(file.tables)) if (!known.has(table) && !NOT_IN_SPREADSHEET.has(table)) specs.push({ table, sheet: humanize(table), group: 'system', about: 'Dados desta parte do sistema.' });
 
   const order = Object.keys(GROUPS) as Group[];
   specs.sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group));
 
   for (const spec of specs) {
     let rows = file.tables[spec.table] ?? [];
+    if (spec.files) {
+      // One tab, only when there is something to find in the system; it holds the notice and the links, no rows.
+      const name = fileCount(file) ? sheetName(spec.sheet, taken) : '';
+      plans.push({ spec, columns: [], rows: [], part: 1, parts: 1, name });
+      continue;
+    }
     if (!rows.length) {
       plans.push({ spec, columns: [], rows: [], part: 1, parts: 1, name: '' });
       continue;
@@ -515,7 +514,7 @@ export async function buildBackupWorkbook(file: BackupFile, info: WorkbookInfo, 
   workbook.created = new Date(info.createdAt);
 
   writeSummary(workbook, file, info, plans);
-  for (const plan of plans) if (plan.name) writeSheet(workbook, plan, context);
+  for (const plan of plans) if (plan.name) writeSheet(workbook, plan, context, file);
 
   await workbook.commit();
   await finished;
@@ -558,7 +557,7 @@ function writeSummary(workbook: ExcelJS.stream.xlsx.WorkbookWriter, file: Backup
   for (const plan of plans) {
     if (seen.has(plan.spec.table)) continue;
     seen.add(plan.spec.table);
-    const all = file.tables[plan.spec.table] ?? [];
+    const all = plan.spec.files ? new Array(fileCount(file)).fill({}) : (file.tables[plan.spec.table] ?? []);
     const archived = all.filter((row) => row.deleted_at).length;
     const tabs = plans.filter((other) => other.spec.table === plan.spec.table && other.name);
     const link: Cell | ExcelJS.CellHyperlinkValue = tabs.length
@@ -579,7 +578,7 @@ function writeSummary(workbook: ExcelJS.stream.xlsx.WorkbookWriter, file: Backup
     'Cada aba traz um assunto. A primeira linha fica fixa e tem filtro: clique na setinha de uma coluna para filtrar ou ordenar.',
     'Os registros mais recentes aparecem primeiro nas abas com datas.',
     '“Arquivados”: o sistema nunca apaga dados. Um registro removido na tela continua aqui, com a data em “Arquivado em”.',
-    'Senhas, chaves e tokens nunca entram em um backup. Os arquivos da biblioteca (PDFs, imagens) não vêm na planilha, só o registro deles.',
+    'Senhas, chaves e tokens nunca entram em um backup. Os documentos e as fotos são privados e não abrem fora do sistema: veja a aba “Documentos e imagens”.',
     'Esta planilha é uma cópia para consulta e guarda. Editá-la não muda o sistema. Para voltar a empresa a este ponto, use Configurações → Backups.',
   ];
   notes.forEach((note, index) => {
@@ -593,11 +592,12 @@ function writeSummary(workbook: ExcelJS.stream.xlsx.WorkbookWriter, file: Backup
   sheet.commit();
 }
 
-function writeSheet(workbook: ExcelJS.stream.xlsx.WorkbookWriter, plan: Plan, context: Context) {
+function writeSheet(workbook: ExcelJS.stream.xlsx.WorkbookWriter, plan: Plan, context: Context, file: BackupFile) {
   const { spec, rows } = plan;
   const color = GROUPS[spec.group].color;
 
   if (spec.settings) return writeSettings(workbook, plan);
+  if (spec.files) return writeFilesNotice(workbook, plan, file);
 
   const columns = plan.columns;
   const probe = rows.slice(0, 300);
@@ -631,6 +631,44 @@ function writeSheet(workbook: ExcelJS.stream.xlsx.WorkbookWriter, plan: Plan, co
   }
   sheet.commit();
   void columnLetter;
+}
+
+/** The files are private to the system: this tab says where to see them, with links that open after logging in. */
+function writeFilesNotice(workbook: ExcelJS.stream.xlsx.WorkbookWriter, plan: Plan, file: BackupFile) {
+  const sheet = workbook.addWorksheet(plan.name, { properties: { tabColor: { argb: GROUPS[plan.spec.group].color } }, views: [{ showGridLines: false }] });
+  sheet.columns = [{ width: 34 }, { width: 14 }, { width: 70 }];
+  const base = organizationPublicUrl(file.organization.slug);
+  const documents = (file.tables.library_documents ?? []).filter((row) => !row.deleted_at).length;
+  const images = (file.tables.part_images ?? []).filter((row) => !row.deleted_at).length;
+
+  const add = (values: Array<Cell | ExcelJS.CellHyperlinkValue>, style?: (row: ExcelJS.Row) => void) => {
+    const row = sheet.addRow(values);
+    style?.(row);
+    row.commit();
+  };
+  add(['Documentos e imagens ficam no sistema'], (row) => { row.height = 28; row.getCell(1).font = { size: 16, bold: true, color: { argb: 'FF282638' } }; });
+  add(['Os arquivos são privados: abrir esta planilha em outro lugar não mostra eles. Entre no sistema normalmente e veja no menu lateral.'], (row) => {
+    sheet.mergeCells(row.number, 1, row.number, 3);
+    row.height = 34;
+    row.getCell(1).alignment = { wrapText: true, vertical: 'top' };
+    row.getCell(1).font = { color: { argb: 'FF4B4A5C' } };
+  });
+  add([]);
+  add(['Onde ver', 'Arquivos', 'Como chegar'], (row) => {
+    row.height = 22;
+    row.eachCell((cell) => { cell.fill = HEADER_FILL; cell.font = { bold: true, color: { argb: 'FFFFFFFF' } }; cell.alignment = { vertical: 'middle' }; });
+  });
+  const place = (name: string, count: number, path: string, how: string) => {
+    if (!count) return;
+    add([base ? { text: name, hyperlink: `${base}${path}` } : name, count, how], (row) => {
+      row.getCell(1).font = base ? { color: { argb: 'FF4F46E5' }, underline: true } : {};
+      row.getCell(2).numFmt = '#,##0';
+      row.eachCell((cell) => { cell.border = { bottom: { style: 'thin', color: { argb: BORDER_COLOR } } }; });
+    });
+  };
+  place('Biblioteca (documentos)', documents, '/admin/library', 'Menu lateral → Biblioteca');
+  place('Fotos das peças', images, '/admin/pecas', 'Menu lateral → Venda de Peças → Peças');
+  sheet.commit();
 }
 
 /** A one-row table (the settings) reads better turned on its side: setting on the left, value on the right. */

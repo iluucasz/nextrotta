@@ -59,7 +59,50 @@ test('every table of the backup is in the summary, in a tab when it has data', a
   // Empty tables are listed but get no tab: the workbook is not full of blank tabs.
   assert.ok(!workbook.getWorksheet('Descontos e adiantamentos'));
   assert.ok(workbook.getWorksheet('Técnicos') && workbook.getWorksheet('Serviços (OS)') && workbook.getWorksheet('Folhas'));
-  assert.ok(workbook.getWorksheet('Notificações'), 'a table with no curated tab still gets a generic one');
+});
+
+test('a table nobody curated still gets a generic tab', async () => {
+  const extra = { tabela_nova: [{ id: uuid(70), organization_id: ORG, name: 'Item novo', created_at: '2026-11-01T12:00:00Z' }] };
+  const workbook = await load(await buildBackupWorkbook(file(extra), INFO));
+  assert.ok(workbook.worksheets.some((sheet) => /nova/i.test(sheet.name)));
+});
+
+test('the internal records are left out of the spreadsheet (they stay in the backup)', async () => {
+  const extra = {
+    audit_events: [{ id: uuid(80), organization_id: ORG, action: 'x', created_at: '2026-11-01T12:00:00Z' }],
+    porto_config: [{ organization_id: ORG, automation_enabled: true }],
+    porto_sync_log: [{ id: uuid(81), organization_id: ORG, status: 'success', started_at: '2026-11-01T12:00:00Z' }],
+    mercadopago_accounts: [{ id: uuid(82), organization_id: ORG, nickname: 'X' }],
+    technician_visibility_settings: [{ organization_id: ORG, scope: 'default' }],
+  };
+  const workbook = await load(await buildBackupWorkbook(file(extra), INFO));
+  const names = workbook.worksheets.map((sheet) => sheet.name);
+  for (const gone of ['Auditoria', 'Notificações', 'Mercado Pago', 'Config. do Porto', 'Execuções do Porto', 'Visibilidade do técnico']) assert.ok(!names.includes(gone), `${gone} is not a tab`);
+  const listed = [];
+  workbook.getWorksheet('Resumo').eachRow((row) => { const cell = row.getCell(2).value; listed.push(typeof cell === 'object' && cell ? cell.text : cell); });
+  assert.ok(!listed.some((name) => /Auditoria|Notificações|Mercado Pago|do Porto|Visibilidade/.test(String(name))));
+});
+
+test('documents and images: one tab that sends the person to the system, no rows of files', async () => {
+  const empty = await load(await buildBackupWorkbook(file(), INFO));
+  assert.ok(!empty.getWorksheet('Documentos e imagens'), 'no files, no tab');
+
+  const extra = {
+    library_documents: [{ id: uuid(90), organization_id: ORG, title: 'Manual', url: 'https://privado/x.pdf', created_at: '2026-11-01T12:00:00Z' }, { id: uuid(91), organization_id: ORG, title: 'Antigo', deleted_at: '2026-11-02T12:00:00Z' }],
+    part_images: [{ id: uuid(92), organization_id: ORG, part_id: uuid(40), url: 'https://privado/y.jpg' }],
+  };
+  const workbook = await load(await buildBackupWorkbook(file(extra), INFO));
+  const sheet = workbook.getWorksheet('Documentos e imagens');
+  assert.ok(sheet, 'the tab exists');
+  assert.ok(!workbook.getWorksheet('Documentos') && !workbook.getWorksheet('Imagens das peças'));
+  let text = '';
+  sheet.eachRow((row) => row.eachCell((cell) => { text += ` ${typeof cell.value === 'object' && cell.value ? (cell.value.text ?? cell.value) : cell.value}`; }));
+  assert.match(text, /Biblioteca/);
+  assert.match(text, /Fotos das peças/);
+  assert.ok(!/privado\//.test(text), 'the private addresses of the files are not in the spreadsheet');
+  const link = sheet.getRow(5).getCell(1).value;
+  assert.match(String(link.hyperlink), /^https?:\/\/teste\..+\/admin\/library$/, 'a link to the system of the company');
+  assert.equal(sheet.getRow(5).getCell(2).value, 1, 'archived files are not counted');
 });
 
 test('a person can read it: names instead of ids, real dates, money, status in words', async () => {

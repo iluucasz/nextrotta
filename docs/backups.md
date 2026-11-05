@@ -44,7 +44,7 @@ fixo com filtro, larguras ajustadas, **nomes no lugar de códigos** (técnico, p
 fuso de Brasília, valores em R$, horas, %, situação em palavras, mais recentes primeiro, e **registros arquivados
 mantidos** com a data na coluna "Arquivado em". Configurações viram uma lista "configuração / valor" em português. Tabela
 vazia aparece no Resumo mas não ganha aba. Passou de 1 milhão de linhas, continua em "(2)". Senhas, chaves e tokens não
-entram; arquivos da biblioteca também não (só o registro). Cada aba tem a cor do seu grupo. Para mudar colunas: `SPECS` no topo
+entram. **Fora da planilha** (continuam no backup e na restauração): Auditoria, Notificações, Mercado Pago, Config. do Porto, Execuções do Porto e Visibilidade do técnico (`NOT_IN_SPREADSHEET`). Documentos e fotos de peças não têm uma aba de registros: a aba **Documentos e imagens** (só aparece se houver arquivos) explica que os arquivos são privados e leva, com link para o sistema da empresa (`organizationPublicUrl`), à Biblioteca e a Venda de Peças → Peças, onde a pessoa os vê depois de entrar. Cada aba tem a cor do seu grupo. Para mudar colunas: `SPECS` no topo
 do arquivo (tabelas sem entrada ganham uma aba genérica, para nada ficar de fora). Teste: `node scripts/test-backup-workbook.cjs`.
 
 ## Restaurar e desfazer
