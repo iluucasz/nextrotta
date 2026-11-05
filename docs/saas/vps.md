@@ -104,6 +104,18 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 >   `VPS_AGENT_SECRET` (os mesmos dos arquivos `.env` da VPS).
 > - Falta: Evolution próprio. (O redeploy do worker com os backups e o token foi feito em 05/11.)
 
+> **05/11/2026 — Evolution do NextRotta.** `nextrotta-evolution-api` (evoapicloud/evolution-api v2.3.7, `--memory` 1g),
+> `nextrotta-evolution-postgres` (postgres:16-alpine, 512m) e `nextrotta-evolution-redis` (redis:7-alpine, 256m), em
+> `/opt/nextrotta/evolution/` (`docker-compose.yml` e `evolution.env`, 600; projeto `nextrotta-evolution`; volumes
+> `nextrotta-evolution_nextrotta_evolution_{pg,redis,instances}`). O banco e o cache só na rede `nextrotta-evolution-net`; a API
+> também na `nextrotta-net`, sem porta publicada. Rota no `nextrotta-proxy`: `/nextrotta-evolution/*` →
+> `nextrotta-evolution-api:8080` (Caddyfile com cópia `Caddyfile.bak-20261105`; o arquivo é montado por bind, então se edita com
+> `cat >`, não com `sed -i`). Chave global gerada na hora, só no `evolution.env`; não guarda mensagens, contatos nem chats
+> (`DATABASE_SAVE_DATA_*=false`, só a instância). `worker.env` ganhou `EVOLUTION_API_URL=http://nextrotta-evolution-api:8080` e a
+> chave (cópia `worker.env.bak-evolution-20261105`); o worker **não** foi reiniciado (vale no próximo restart). **Atenção:** o
+> `evolution-whatsapp.duckdns.org` do `.env` do dono é o Evolution do `essencialcentro`, não do NextRotta.
+> Voltar atrás: `cd /opt/nextrotta/evolution && docker compose down` (os volumes ficam; `down -v` apaga) e restaurar o Caddyfile.
+>
 > **14/10/2026 — VPS compartilhada atual (164.163.11.159, Ubuntu 24.04, 8 vCPU, 8 GB, 55 GB).** A
 > VPS da BlackHosting (143.20.50.58) caiu e **não deve mais ser usada**; o texto abaixo sobre ela é
 > histórico. A atual é compartilhada com outros projetos do dono (`garimpo-importer`, `porto-evolution-*`,

@@ -19,13 +19,13 @@ webhook dela para `https://<ROOT_DOMAIN>/api/webhooks/evolution` e mostra o QR C
 O token do webhook é derivado de `JWT_SECRET` (`webhookToken()`, nada novo para configurar). Em desenvolvimento
 (`*.localhost`) não há endereço público: dá para conectar, mas as mensagens só chegam no site publicado.
 
-**Pendência (05/11/2026): o NextRotta ainda não tem Evolution.** Conferido na VPS: os únicos servidores Evolution são
-`porto-evolution-api` (produção do Central Operacional) e `essencialcentro-evolution` (outro projeto do dono); não existe
-`nextrotta-evolution`. O `EVOLUTION_API_URL` do `.env` (`https://evolution-whatsapp.duckdns.org`) aponta para esta mesma VPS e quem
-responde é o `essencialcentro` (`clientName` na raiz do servidor); por isso a chave do `.env` recebe **401**, e é bom que receba:
-**não se deve usar esse servidor** (nem criar a instância `nextrotta-suporte` nele). Enquanto não houver um Evolution do
-NextRotta, o Livechat mostra "O servidor do WhatsApp recusou a chave" e só o chat dos chamados funciona. O recebimento e o envio
-pelo WhatsApp foram testados só com mensagens simuladas do webhook, nunca com um Evolution real.
+**O Evolution do NextRotta** foi criado em 05/11/2026 na VPS (ver `docs/saas/vps.md`): `nextrotta-evolution-api`, em
+`https://nextrotta-infra.duckdns.org:8443/nextrotta-evolution`. **Falta o dono pôr no `.env` e na Vercel** `EVOLUTION_API_URL` (esse
+endereço) e `EVOLUTION_API_KEY` (o `AUTHENTICATION_API_KEY` de `/opt/nextrotta/evolution/evolution.env` na VPS). Hoje o `.env`
+ainda aponta para `evolution-whatsapp.duckdns.org`, que é do projeto `essencialcentro`: por isso a chave recebe **401**, e **esse
+servidor não deve ser usado**. Sem a troca, o Livechat mostra "O servidor do WhatsApp recusou a chave" e só o chat dos chamados
+funciona. Testado contra o Evolution novo: a criação da instância `nextrotta-suporte` e o QR Code (a instância já existe, sem número
+conectado). Nunca testados com um número de verdade: o recebimento (webhook, só com mensagens simuladas) e o envio.
 
 ## O que há de código
 
