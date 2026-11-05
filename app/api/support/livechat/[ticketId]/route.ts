@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { cleanMessage } from '@/lib/livechat/rules';
-import { closeConversation, findWebConversation, getMessages, markReadByCustomer, sendCustomerMessage, startWebConversation, type ChatMessage, type Conversation } from '@/lib/livechat/store';
+import { closeConversation, findWebConversation, getMessages, markReadByCustomer, sendCustomerMessage, setConversationPhone, startWebConversation, type ChatMessage, type Conversation } from '@/lib/livechat/store';
+import { normalizePhone } from '@/lib/whatsapp/phone';
 import { getBugReport } from '@/lib/platform/bugs';
 import { PlatformError } from '@/lib/platform/errors';
 
@@ -25,7 +26,7 @@ const forCustomer = (message: ChatMessage) => ({
   kind: message.kind,
   createdAt: message.createdAt,
 });
-const conversationView = (conversation: Conversation | null) => (conversation ? { id: conversation.id, status: conversation.status, unread: conversation.unreadCustomer } : null);
+const conversationView = (conversation: Conversation | null) => (conversation ? { id: conversation.id, status: conversation.status, unread: conversation.unreadCustomer, whatsapp: conversation.contactPhone } : null);
 
 /** The ticket of this company that this person may chat about (the admin: any; others: their own). */
 async function authorize(request: NextRequest, ticketId: string) {
@@ -57,7 +58,18 @@ export async function POST(request: NextRequest, context: Context) {
   try {
     const { ticketId } = await context.params;
     const { auth, report, userName } = await authorize(request, ticketId);
-    const body = (await request.json().catch(() => ({}))) as { text?: unknown; action?: unknown };
+    const body = (await request.json().catch(() => ({}))) as { text?: unknown; action?: unknown; phone?: unknown };
+
+    // { action: 'phone', phone } — the WhatsApp the team may also answer on ("" removes it).
+    if (body.action === 'phone') {
+      const existing = await findWebConversation(ticketId);
+      if (!existing || existing.status !== 'open') throw new PlatformError('Inicie o chat antes de informar o WhatsApp.', 409);
+      const raw = String(body.phone ?? '').trim();
+      const phone = raw ? normalizePhone(raw) : null;
+      if (raw && !phone) throw new PlatformError('O WhatsApp informado não é válido. Use DDD + número.');
+      const updated = await setConversationPhone(existing.id, phone);
+      return NextResponse.json({ conversation: conversationView(updated), messages: (await getMessages(updated.id)).map(forCustomer) });
+    }
 
     if (body.action === 'close') {
       const existing = await findWebConversation(ticketId);

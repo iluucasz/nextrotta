@@ -50,7 +50,7 @@ const phoneLabel = (digits: string | null) => {
 const titleOf = (c: Conversation) => (c.channel === 'web' ? c.organizationName ?? 'Cliente' : c.contactName || phoneLabel(c.contactPhone) || 'Contato');
 const subtitleOf = (c: Conversation) =>
   c.channel === 'web'
-    ? [c.userName, c.ticketNumber ? `Chamado #${c.ticketNumber}` : null].filter(Boolean).join(' · ')
+    ? [c.userName, c.ticketNumber ? `Chamado #${c.ticketNumber}` : null, c.contactPhone ? `WhatsApp ${phoneLabel(c.contactPhone)}` : null].filter(Boolean).join(' · ')
     : [c.contactName ? phoneLabel(c.contactPhone) : null, c.organizationName].filter(Boolean).join(' · ');
 const initials = (text: string) => text.split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join('') || '?';
 
@@ -319,6 +319,8 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  // A web chat whose customer gave a WhatsApp: the answer also goes there, unless this box is unchecked.
+  const [mirror, setMirror] = useState(true);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastAt = useRef<string | null>(null);
 
@@ -365,10 +367,11 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
     setSending(true);
     setError('');
     try {
-      const data = await api<{ messages: Message[] }>(`/livechat/${conversation.id}`, { method: 'POST', body: { text: body } });
+      const data = await api<{ messages: Message[]; whatsapp?: 'sent' | 'failed' | 'skipped'; whatsappError?: string | null }>(`/livechat/${conversation.id}`, { method: 'POST', body: { text: body, mirror } });
       setText('');
       merge(data.messages, true);
       onChanged();
+      if (data.whatsapp === 'failed') setError(`Enviada no chat, mas o WhatsApp do cliente não recebeu: ${data.whatsappError ?? 'confira a conexão do WhatsApp.'}`);
     } catch (reason) {
       setError(errorMessage(reason));
     } finally {
@@ -461,6 +464,12 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
         }}
       >
         {error ? <p className="lc-error" role="alert">{error}</p> : null}
+        {conversation.channel === 'web' && conversation.contactPhone ? (
+          <label className="lc-mirror">
+            <input type="checkbox" checked={mirror} onChange={(event) => setMirror(event.target.checked)} />
+            Enviar também no WhatsApp do cliente · {phoneLabel(conversation.contactPhone)}
+          </label>
+        ) : null}
         <div className="lc-composer-row">
           <textarea
             value={text}

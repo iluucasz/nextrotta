@@ -5,7 +5,9 @@ import { formatTicketNumber } from '../reports';
 import {
   cleanMessage,
   MAX_CUSTOMER_MESSAGES_PER_MINUTE,
+  isMirroredText,
   ownerAlertKey,
+  phoneTail,
   previewOf,
   samePhone,
   SUPPORT_SENDER,
@@ -166,13 +168,13 @@ async function addMessage(input: {
 // ----- the web chat (inside a support ticket)
 
 /** The open chat of a ticket, started now when there is none (an urgent matter: the owner is alerted). */
-export async function startWebConversation(input: { organizationId: string; userId: string; ticketId: string; userName: string; /** An urgent ticket: the chat opens now, unread, so the owner sees it before the customer writes. */ urgentTitle?: string }) {
+export async function startWebConversation(input: { organizationId: string; userId: string; ticketId: string; userName: string; /** An urgent ticket: the chat opens now, unread, so the owner sees it before the customer writes. */ urgentTitle?: string; /** The customer's WhatsApp (digits with 55): the owner's replies are mirrored there and what it answers comes back here. */ contactPhone?: string | null }) {
   const existing = await sql`SELECT id FROM livechat_conversations WHERE ticket_id = ${input.ticketId} AND channel = 'web' AND status = 'open'`;
   if (existing[0]) return getConversation(String(existing[0].id));
 
   const created = await sql`
-    INSERT INTO livechat_conversations (channel, organization_id, ticket_id, user_id, contact_name, urgent)
-    VALUES ('web', ${input.organizationId}, ${input.ticketId}, ${input.userId}, ${input.userName}, TRUE)
+    INSERT INTO livechat_conversations (channel, organization_id, ticket_id, user_id, contact_name, contact_phone, urgent)
+    VALUES ('web', ${input.organizationId}, ${input.ticketId}, ${input.userId}, ${input.userName}, ${input.contactPhone ?? null}, TRUE)
     ON CONFLICT (ticket_id) WHERE channel = 'web' AND status = 'open' DO NOTHING
     RETURNING id
   `;
@@ -202,6 +204,21 @@ export async function sendCustomerMessage(conversation: Conversation, userName: 
   const message = await addMessage({ conversationId: conversation.id, direction: 'in', senderName: userName, body: text });
   await alertOwnerOfChat(conversation, userName, text);
   return message;
+}
+
+/** The customer's WhatsApp on a web chat: set (digits with 55) or removed (null). */
+export async function setConversationPhone(id: string, phone: string | null) {
+  await sql`UPDATE livechat_conversations SET contact_phone = ${phone} WHERE id = ${id} AND channel = 'web'`;
+  return getConversation(id);
+}
+
+/** The owner's message got its WhatsApp id: the echo that comes back through the webhook will be recognized. */
+export async function attachWaId(messageId: string, waId: string) {
+  try {
+    await sql`UPDATE livechat_messages SET wa_message_id = ${waId} WHERE id = ${messageId} AND wa_message_id IS NULL`;
+  } catch {
+    /* the echo was stored first: already counted once */
+  }
 }
 
 /** The customer closes the chat (the ticket stays). */
@@ -282,8 +299,37 @@ export async function openWhatsAppConversation(phone: string, name: string | nul
   return String((await sql`SELECT id FROM livechat_conversations WHERE channel = 'whatsapp' AND contact_phone = ${phone} AND status = 'open'`)[0].id);
 }
 
-/** A message that came through the WhatsApp webhook: the customer's, or one the owner typed on the phone itself. */
+/** The open web chat whose customer gave this WhatsApp number (null when there is none). */
+export async function findOpenWebConversationByPhone(phone: string): Promise<string | null> {
+  const rows = await sql`
+    SELECT id, contact_phone FROM livechat_conversations
+    WHERE channel = 'web' AND status = 'open' AND contact_phone IS NOT NULL AND contact_phone LIKE ${`%${phoneTail(phone)}`}
+    ORDER BY last_message_at DESC LIMIT 10
+  `;
+  const match = rows.find((row) => samePhone(String(row.contact_phone), phone));
+  return match ? String(match.id) : null;
+}
+
+/**
+ * A message that came through the WhatsApp webhook: the customer's, or one the owner typed on the phone itself. When the number
+ * belongs to an open web chat (the customer gave it for the urgent ticket) it goes into that chat; otherwise it is a WhatsApp
+ * conversation of its own.
+ */
 export async function storeWhatsAppMessage(message: InboundMessage) {
+  const web = await findOpenWebConversationByPhone(message.phone);
+  if (web) {
+    // What the panel mirrored to this number is already in the chat: its echo is not a new message.
+    if (message.fromMe && isMirroredText(message.text)) return null;
+    return addMessage({
+      conversationId: web,
+      direction: message.fromMe ? 'out' : 'in',
+      senderName: message.fromMe ? null : message.name,
+      body: message.text,
+      kind: message.media ? 'media' : 'text',
+      waMessageId: message.waId,
+      at: message.at,
+    });
+  }
   const conversationId = await openWhatsAppConversation(message.phone, message.fromMe ? null : message.name);
   return addMessage({
     conversationId,

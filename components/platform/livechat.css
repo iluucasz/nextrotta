@@ -88,3 +88,6 @@
 .lc-pairing { display: grid; justify-items: center; gap: 6px; margin-top: 14px; text-align: center; }
 .lc-pairing small { color: #6b7c77; font-size: 13px; max-width: 360px; }
 .lc-pairing strong { font-size: 26px; letter-spacing: 4px; font-weight: 650; color: #152b28; }
+
+.lc-mirror { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #405a4f; margin-bottom: 8px; cursor: pointer; }
+.lc-mirror input { width: 16px; height: 16px; accent-color: var(--lc-wa); }

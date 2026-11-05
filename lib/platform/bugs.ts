@@ -2,6 +2,7 @@ import { recordAudit } from '../audit';
 import { sql } from '../db';
 import { alertOwnerOfChat, startWebConversation } from '../livechat/store';
 import { notifyOrganization } from '../notifications';
+import { normalizePhone } from '../whatsapp/phone';
 import { isUuid, PlatformError, type Actor } from './errors';
 import { formatTicketNumber, REPORT_TYPES, SUPPORT_CATEGORIES, type ReportType, type SupportCategory } from '../reports';
 
@@ -178,6 +179,10 @@ export async function createBugReport(
 
   // "É urgente" (support tickets only): high priority, and the live chat is opened at once so the owner sees it in the Livechat.
   const urgent = type === 'support' && input.urgent === true;
+  // Optional: the number the team may also answer on (what the customer types back there lands in the same chat).
+  const whatsappInput = urgent ? String(input.whatsapp ?? '').trim() : '';
+  const contactPhone = whatsappInput ? normalizePhone(whatsappInput) : null;
+  if (whatsappInput && !contactPhone) throw new PlatformError('O WhatsApp informado não é válido. Use DDD + número, ou deixe em branco.');
   const rows = await sql`
     INSERT INTO bug_reports (
       organization_id, user_id, title, description, page_url, user_agent, app_version, screenshot, report_type, support_category, priority
@@ -194,7 +199,7 @@ export async function createBugReport(
     try {
       const user = (await sql`SELECT name FROM users WHERE id = ${reporter.userId}`)[0];
       const userName = String(user?.name ?? 'Cliente');
-      const conversation = await startWebConversation({ organizationId: reporter.organizationId, userId: reporter.userId, ticketId, userName, urgentTitle: title });
+      const conversation = await startWebConversation({ organizationId: reporter.organizationId, userId: reporter.userId, ticketId, userName, urgentTitle: title, contactPhone });
       await alertOwnerOfChat(conversation, userName, `Chamado urgente: ${title}`);
     } catch (error) {
       // The ticket is what matters: it exists, and the customer can still start the chat from its page.

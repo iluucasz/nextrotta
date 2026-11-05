@@ -11,7 +11,8 @@ import {
 import { evolutionServer } from '../whatsapp/store';
 import { PlatformError } from '../platform/errors';
 import { getSupportContact } from '../support-contact';
-import { getConversation, storeOwnerMessage } from './store';
+import { mirroredText } from './rules';
+import { attachWaId, getConversation, storeOwnerMessage } from './store';
 
 /**
  * The platform's official WhatsApp number (the live chat inbox). Its own instance on the shared Evolution server, separate from
@@ -120,18 +121,36 @@ export async function disconnectLivechatWhatsApp(): Promise<LivechatWhatsAppStat
   return getLivechatWhatsAppStatus();
 }
 
+export type ReplyResult = {
+  message: Awaited<ReturnType<typeof storeOwnerMessage>>;
+  /** 'sent' went through WhatsApp too; 'failed' was stored in the chat but WhatsApp refused it; 'skipped' had no WhatsApp to use. */
+  whatsapp: 'sent' | 'failed' | 'skipped';
+  whatsappError?: string;
+};
+
 /**
- * The owner's answer in a conversation. On the web chat it is just stored (the customer's window reads it); on WhatsApp it is
- * sent through the instance first and stored only when WhatsApp accepted it, with its own id so the echo that comes back through
- * the webhook counts once.
+ * The owner's answer in a conversation. A WhatsApp conversation is sent through the instance first and stored only when WhatsApp
+ * accepted it. A web chat is stored first (the customer's window reads it) and, when the customer gave a WhatsApp number, also
+ * mirrored there ("*Suporte NextRotta* — chamado #…"); a failure of the mirror never loses the reply. The WhatsApp id of what was
+ * sent is kept so the echo that comes back through the webhook counts once.
  */
-export async function sendOwnerReply(conversationId: string, text: string) {
+export async function sendOwnerReply(conversationId: string, text: string, options: { mirror?: boolean } = {}): Promise<ReplyResult> {
   const conversation = await getConversation(conversationId);
-  if (conversation.channel === 'web') return storeOwnerMessage(conversationId, text);
+
+  if (conversation.channel === 'web') {
+    const message = await storeOwnerMessage(conversationId, text);
+    if (!conversation.contactPhone || options.mirror === false) return { message, whatsapp: 'skipped' };
+    const server = evolutionServer();
+    if (!server) return { message, whatsapp: 'failed', whatsappError: 'Servidor do WhatsApp (EVOLUTION_API_URL/KEY) não configurado.' };
+    const sent = await sendEvolutionText({ ...server, instance: LIVECHAT_INSTANCE }, conversation.contactPhone, mirroredText(conversation.ticketNumber, text));
+    if (!sent.ok) return { message, whatsapp: 'failed', whatsappError: sent.error ?? 'Confira a conexão do WhatsApp.' };
+    if (sent.messageId && message) await attachWaId(message.id, sent.messageId);
+    return { message, whatsapp: 'sent' };
+  }
 
   const server = requireServer();
   if (!conversation.contactPhone) throw new PlatformError('Esta conversa não tem um número de WhatsApp.', 409);
   const sent = await sendEvolutionText({ ...server, instance: LIVECHAT_INSTANCE }, conversation.contactPhone, text);
   if (!sent.ok) throw new PlatformError(`A mensagem não foi enviada. ${sent.error ?? 'Confira a conexão do WhatsApp.'}`, 502);
-  return storeOwnerMessage(conversationId, text, { senderName: undefined, waMessageId: sent.messageId ?? null });
+  return { message: await storeOwnerMessage(conversationId, text, { senderName: undefined, waMessageId: sent.messageId ?? null }), whatsapp: 'sent' };
 }

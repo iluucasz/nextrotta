@@ -22,17 +22,18 @@ export async function GET(request: NextRequest, context: Context) {
   });
 }
 
-/** { text } — the owner's answer (on WhatsApp it is sent through the official number). */
+/** { text, mirror?: false } — the owner's answer. On WhatsApp it is sent through the official number; on a web chat it is also mirrored to the customer's WhatsApp when there is one (unless mirror is false). */
 export async function POST(request: NextRequest, context: Context) {
   return withPlatformOwner(request, async () => {
     const { id } = await context.params;
-    const text = cleanMessage((await readJson(request)).text);
+    const body = await readJson(request);
+    const text = cleanMessage(body.text);
     if (!text) throw new PlatformError('Escreva a mensagem.');
     const conversation = await getConversation(id);
     if (conversation.status === 'closed') await reopenConversation(id);
-    await sendOwnerReply(id, text);
+    const reply = await sendOwnerReply(id, text, { mirror: body.mirror !== false });
     await markReadByOwner(id);
-    return NextResponse.json({ conversation: await getConversation(id), messages: await getMessages(id) });
+    return NextResponse.json({ conversation: await getConversation(id), messages: await getMessages(id), whatsapp: reply.whatsapp, whatsappError: reply.whatsappError ?? null });
   });
 }
 

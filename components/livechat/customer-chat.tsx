@@ -1,11 +1,15 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Headset, Loader2, Send } from 'lucide-react';
+import { Headset, Loader2, MessageCircle, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { PhoneInput } from '@/components/phone-input';
+import { formatPhoneInput, validatePhone } from '@/lib/whatsapp/phone';
 
 type Message = { id: string; mine: boolean; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; createdAt: string };
-type ChatState = { conversation: { id: string; status: 'open' | 'closed'; unread: number } | null; messages: Message[] };
+type ChatState = { conversation: { id: string; status: 'open' | 'closed'; unread: number; /** Digits with 55: where the team's answers are also sent. */ whatsapp: string | null } | null; messages: Message[] };
+
+const nationalOf = (digits: string) => formatPhoneInput(digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits);
 
 const clock = (value: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
 const day = (value: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: 'long' }).format(new Date(value));
@@ -24,6 +28,10 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [editingPhone, setEditingPhone] = useState(false);
+  const [phoneValue, setPhoneValue] = useState('');
+  const [phoneBusy, setPhoneBusy] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
   const listRef = useRef<HTMLDivElement>(null);
   const lastAt = useRef<string | null>(null);
 
@@ -93,6 +101,27 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
     }
   }
 
+  async function savePhone(value: string) {
+    setPhoneBusy(true);
+    setPhoneError('');
+    try {
+      const response = await fetch(`/api/support/livechat/${ticketId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'phone', phone: value }) });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Não foi possível salvar o WhatsApp.');
+      apply(data as ChatState, true);
+      setEditingPhone(false);
+      try {
+        if (value) window.localStorage.setItem('nr-support-whatsapp', value);
+      } catch {
+        /* nothing to remember */
+      }
+    } catch (reason) {
+      setPhoneError(reason instanceof Error ? reason.message : 'Não foi possível salvar o WhatsApp.');
+    } finally {
+      setPhoneBusy(false);
+    }
+  }
+
   async function close() {
     const response = await fetch(`/api/support/livechat/${ticketId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'close' }) });
     if (response.ok) apply((await response.json()) as ChatState, true);
@@ -120,6 +149,63 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
           </button>
         ) : null}
       </header>
+
+      {live && state?.conversation ? (
+        <div className="border-b border-border px-4 py-2.5 text-xs text-muted-foreground">
+          {state.conversation.whatsapp && !editingPhone ? (
+            <p className="leading-relaxed">
+              <MessageCircle className="mr-1.5 inline h-3.5 w-3.5 align-text-bottom text-primary" />
+              As respostas também chegam no WhatsApp <strong className="text-foreground">{nationalOf(state.conversation.whatsapp)}</strong>. O que você escrever lá cai aqui.
+              <button
+                type="button"
+                className="ml-2 underline-offset-2 hover:underline"
+                onClick={() => {
+                  setPhoneValue(nationalOf(state.conversation!.whatsapp!));
+                  setEditingPhone(true);
+                }}
+              >
+                Alterar
+              </button>
+              <button type="button" className="ml-2 underline-offset-2 hover:underline" disabled={phoneBusy} onClick={() => void savePhone('')}>
+                Remover
+              </button>
+            </p>
+          ) : editingPhone ? (
+            <form
+              className="space-y-2"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void savePhone(phoneValue);
+              }}
+            >
+              <p className="font-medium text-foreground">Seu WhatsApp, para a equipe também responder por lá</p>
+              <PhoneInput value={phoneValue} onChange={setPhoneValue} hint={null} />
+              {phoneError ? <p className="text-destructive">{phoneError}</p> : null}
+              <div className="flex gap-2">
+                <Button type="submit" size="sm" disabled={phoneBusy || validatePhone(phoneValue).status !== 'valid'}>
+                  {phoneBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                  Salvar
+                </Button>
+                <Button type="button" size="sm" variant="outline" onClick={() => setEditingPhone(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </form>
+          ) : (
+            <button
+              type="button"
+              className="inline-flex items-center gap-1.5 underline-offset-2 hover:underline"
+              onClick={() => {
+                setPhoneValue(typeof window !== 'undefined' ? (() => { try { return window.localStorage.getItem('nr-support-whatsapp') ?? ''; } catch { return ''; } })() : '');
+                setEditingPhone(true);
+              }}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              Receber as respostas também no WhatsApp
+            </button>
+          )}
+        </div>
+      ) : null}
 
       {!open && !active ? (
         <div className="px-4 py-4">

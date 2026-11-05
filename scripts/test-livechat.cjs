@@ -16,7 +16,7 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(
 const rules = require('../lib/livechat/rules.ts');
 const { sql } = require('../lib/db.ts');
 const store = require('../lib/livechat/store.ts');
-const { webhookToken, webhookTokenMatches } = require('../lib/livechat/whatsapp.ts');
+const { webhookToken, webhookTokenMatches, sendOwnerReply } = require('../lib/livechat/whatsapp.ts');
 
 // ------------------------------------------------------------------------------------------------------------- rules
 
@@ -145,6 +145,92 @@ test('an urgent ticket opens the chat at once, unread, with high priority; a nor
   extraTickets.push(bug.id);
   assert.equal(await store.findWebConversation(bug.id), null);
   assert.equal((await getBugReport(bug.id, { kind: 'owner' })).report.priority, 'medium');
+});
+
+test('rules: the mirrored text names the ticket, and its echo is recognized', () => {
+  assert.equal(rules.mirroredText(1015, 'Já estou olhando'), '*Suporte NextRotta* — chamado #1015\nJá estou olhando');
+  assert.equal(rules.mirroredText(null, 'oi'), '*Suporte NextRotta*\noi');
+  assert.ok(rules.isMirroredText(rules.mirroredText(7, 'x')));
+  assert.ok(!rules.isMirroredText('Obrigado, estou aguardando'));
+});
+
+test('mirror to the customer WhatsApp: the number on the urgent ticket, replies out, answers back, no doubles', async () => {
+  const { createBugReport, getBugReport } = require('../lib/platform/bugs.ts');
+  await assert.rejects(createBugReport({ organizationId: org, userId: user }, { type: 'support', category: 'billing', title: 'Número ruim', description: 'Descrição longa o bastante', urgent: true, whatsapp: '123' }), /não é válido/);
+
+  const ticketRow = await createBugReport({ organizationId: org, userId: user }, { type: 'support', category: 'billing', title: `Espelho ${stamp}`, description: 'Descrição longa o bastante para o teste', urgent: true, whatsapp: '(21) 95555-0003' });
+  extraTickets.push(ticketRow.id);
+  const conv = await store.findWebConversation(ticketRow.id);
+  assert.equal(conv.contactPhone, '5521955550003', 'stored as digits with the country code');
+  const number = (await getBugReport(ticketRow.id, { kind: 'owner' })).report.ticketNumber;
+
+  // Evolution is simulated: what would go out is recorded, nothing is sent.
+  const realFetch = global.fetch;
+  const calls = [];
+  let fail = false;
+  process.env.EVOLUTION_API_URL = 'http://evolution.test';
+  process.env.EVOLUTION_API_KEY = 'test-key';
+  global.fetch = async (url, init) => {
+    // Only Evolution is simulated: the database driver goes through fetch too.
+    if (!String(url).startsWith('http://evolution.test')) return realFetch(url, init);
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    return fail ? { ok: false, status: 500, text: async () => 'down', json: async () => ({}) } : { ok: true, status: 200, text: async () => '', json: async () => ({ key: { id: `WA-OUT-${calls.length}` } }) };
+  };
+  try {
+    // 1. the owner answers in the panel: stored in the chat AND mirrored with the ticket named
+    const reply = await sendOwnerReply(conv.id, 'Já estou olhando a cobrança.');
+    assert.equal(reply.whatsapp, 'sent');
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /\/message\/sendText\/nextrotta-suporte$/);
+    assert.deepEqual([calls[0].body.number, calls[0].body.text], ['5521955550003', `*Suporte NextRotta* — chamado #${number}\nJá estou olhando a cobrança.`]);
+    assert.equal((await store.getMessages(conv.id)).filter((m) => m.direction === 'out' && m.kind === 'text').length, 1);
+
+    // 2. WhatsApp echoes what was sent (fromMe, with the prefix): not a second message
+    const echo = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '5521955550003@s.whatsapp.net', fromMe: true, id: 'WA-OUT-1' } }, { message: { conversation: calls[0].body.text }, messageTimestamp: Math.floor(Date.now() / 1000) + 1 }))[0];
+    assert.equal(await store.storeWhatsAppMessage(echo), null);
+
+    // 3. the customer answers on WhatsApp (and without the 9th digit): it lands in the same web chat, not in a new conversation
+    const answer = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '552155550003@s.whatsapp.net', fromMe: false, id: `WA-${stamp}-IN` } }, { message: { conversation: 'Obrigado, estou aguardando' }, pushName: 'Carla', messageTimestamp: Math.floor(Date.now() / 1000) + 2 }))[0];
+    assert.ok(await store.storeWhatsAppMessage(answer));
+    const after = await store.getMessages(conv.id);
+    assert.deepEqual(after.filter((m) => m.kind === 'text').map((m) => [m.direction, m.body]), [['out', 'Já estou olhando a cobrança.'], ['in', 'Obrigado, estou aguardando']]);
+    assert.equal((await store.getConversation(conv.id)).unreadOwner, 2, 'one from the urgent opening and one from the answer');
+    assert.equal((await store.listConversations({ status: 'open', search: '552155550003' })).filter((c) => c.channel === 'whatsapp').length, 0, 'no conversation of its own');
+
+    // 4. what the owner types on the phone (no prefix) is the owner's message in the chat
+    const typed = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '5521955550003@s.whatsapp.net', fromMe: true, id: `WA-${stamp}-PH` } }, { message: { conversation: 'Resolvido por aqui' }, messageTimestamp: Math.floor(Date.now() / 1000) + 3 }))[0];
+    assert.ok(await store.storeWhatsAppMessage(typed));
+    assert.equal((await store.getMessages(conv.id)).at(-1).direction, 'out');
+
+    // 5. unchecked "send also on WhatsApp": nothing goes out
+    calls.length = 0;
+    assert.equal((await sendOwnerReply(conv.id, 'Só no chat', { mirror: false })).whatsapp, 'skipped');
+    assert.equal(calls.length, 0);
+
+    // 6. WhatsApp down: the reply is kept in the chat and the failure is reported, not thrown
+    fail = true;
+    const failed = await sendOwnerReply(conv.id, 'Vai falhar no WhatsApp');
+    assert.equal(failed.whatsapp, 'failed');
+    assert.ok(failed.whatsappError);
+    assert.ok((await store.getMessages(conv.id)).some((m) => m.body === 'Vai falhar no WhatsApp'), 'still in the chat');
+    fail = false;
+
+    // 7. a web chat without a WhatsApp number never calls Evolution
+    calls.length = 0;
+    const plain = await createBugReport({ organizationId: org, userId: user }, { type: 'support', category: 'billing', title: `Sem número ${stamp}`, description: 'Descrição longa o bastante para o teste', urgent: true });
+    extraTickets.push(plain.id);
+    const plainConv = await store.findWebConversation(plain.id);
+    assert.equal(plainConv.contactPhone, null);
+    assert.equal((await sendOwnerReply(plainConv.id, 'Resposta só no chat')).whatsapp, 'skipped');
+    assert.equal(calls.length, 0);
+
+    // 8. the customer adds the number later in the window, and removes it
+    const added = await store.setConversationPhone(plainConv.id, '5521955550004');
+    assert.equal(added.contactPhone, '5521955550004');
+    assert.equal((await store.setConversationPhone(plainConv.id, null)).contactPhone, null);
+  } finally {
+    global.fetch = realFetch;
+  }
 });
 
 test('web: messages both ways, unread counters, previews and order', async () => {

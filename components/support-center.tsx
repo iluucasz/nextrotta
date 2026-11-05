@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LiveChatPanel } from '@/components/livechat/customer-chat';
+import { PhoneInput } from '@/components/phone-input';
 import { ArrowLeft, Bug, ImagePlus, LifeBuoy, Lightbulb, Loader2, MessageSquare, Plus, Search, Send } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import { PageHeader } from '@/components/page-header';
@@ -140,6 +141,15 @@ export function NewTicketForm({
   const [created, setCreated] = useState<{ id: string; ticketNumber: number; type: ReportType; urgent: boolean } | null>(null);
   // An urgent support ticket goes on to the live chat.
   const [urgent, setUrgent] = useState(false);
+  // The WhatsApp the team may also answer on, remembered in this browser for the next urgent ticket.
+  const [whatsapp, setWhatsapp] = useState('');
+  useEffect(() => {
+    try {
+      setWhatsapp(window.localStorage.getItem('nr-support-whatsapp') ?? '');
+    } catch {
+      /* private window: starts empty */
+    }
+  }, []);
   const copy = TYPE_COPY[type];
 
   async function pickImage(file: File | undefined) {
@@ -162,6 +172,7 @@ export function NewTicketForm({
         type,
         category: type === 'support' ? category : undefined,
         urgent: type === 'support' && urgent,
+        whatsapp: type === 'support' && urgent ? whatsapp : undefined,
         title,
         description,
         screenshot: screenshot?.dataUrl ?? null,
@@ -170,6 +181,11 @@ export function NewTicketForm({
         appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? null,
       });
       setCreated({ ...ticket, type, urgent: type === 'support' && urgent });
+      try {
+        if (urgent && whatsapp) window.localStorage.setItem('nr-support-whatsapp', whatsapp);
+      } catch {
+        /* nothing to remember */
+      }
       setUrgent(false);
       setTitle('');
       setDescription('');
@@ -291,6 +307,12 @@ export function NewTicketForm({
             <span className="block text-xs text-muted-foreground">O chamado vai como prioridade alta, a equipe é avisada na hora e abrimos o chat para você conversar com ela.</span>
           </span>
         </label>
+      ) : null}
+      {type === 'support' && urgent ? (
+        <div className="space-y-1.5">
+          <Label htmlFor="ticket-whatsapp">Seu WhatsApp (opcional)</Label>
+          <PhoneInput id="ticket-whatsapp" value={whatsapp} onChange={setWhatsapp} hint="A equipe também responde por lá, e o que você escrever no WhatsApp cai na mesma conversa. Só usamos para este atendimento." />
+        </div>
       ) : null}
       <div className="space-y-1.5">
         <Label htmlFor={`ticket-screenshot-${type}`}>Captura de tela (opcional, até 2 MB)</Label>

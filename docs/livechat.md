@@ -12,6 +12,15 @@ conversa à direita, balões, não lidas). Duas origens:
   chega nele aparece no Livechat, o que o dono responde no painel sai por ele, e o que o dono digita no próprio celular também é
   guardado. Número de técnico ou empresa conhecidos vem com o nome e a empresa.
 
+**Espelho no WhatsApp do cliente (urgentes).** Ao marcar "urgente" o cliente pode informar o WhatsApp dele (opcional; lembrado no
+navegador; dá para informar, alterar ou remover depois na janela do chat). Com o número: as respostas que o dono dá no Livechat vão
+também para esse WhatsApp pelo número oficial, como "*Suporte NextRotta* — chamado #1049" + o texto (o dono pode desmarcar "Enviar
+também no WhatsApp do cliente" numa resposta); e o que o cliente escrever de volta no WhatsApp (ou o que o dono digitar no próprio
+celular) cai na mesma conversa, mesmo se o número vier sem o nono dígito. O eco do que o painel enviou é reconhecido e não duplica.
+Se o WhatsApp falhar, a resposta fica no chat e o painel avisa. **Nada sai sozinho:** não há mensagem automática ao cliente; só vai o
+que o dono escreve, e ele vê o número na conversa (o número é digitado pelo cliente, por isso o envio é sempre ato do dono).
+Sem número, ou sem o número oficial conectado, o chat segue só no sistema.
+
 O dono lê e responde sem abrir o WhatsApp Web. Escrever numa conversa encerrada a reabre; uma mensagem do cliente também.
 
 ## Conectar o número

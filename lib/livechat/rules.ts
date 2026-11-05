@@ -9,6 +9,16 @@ export const OWNER_ALERT_WINDOW_MS = 10 * 60 * 1000;
 
 export const SUPPORT_SENDER = 'Suporte NextRotta';
 
+/** What starts every reply the owner's panel mirrors to the customer's WhatsApp (so its echo is recognized and not stored twice). */
+export const MIRROR_PREFIX = '*Suporte NextRotta*';
+
+/** The owner's reply as the customer receives it on WhatsApp: who it is from and which ticket it is about. */
+export function mirroredText(ticketNumber: number | null, text: string): string {
+  return `${MIRROR_PREFIX}${ticketNumber ? ` — chamado #${ticketNumber}` : ''}\n${text}`;
+}
+
+export const isMirroredText = (text: string) => text.startsWith(MIRROR_PREFIX);
+
 /** The text of a message as stored: trimmed, no more than the limit, and nothing at all is an error for the caller. */
 export function cleanMessage(value: unknown): string {
   return String(value ?? '')
