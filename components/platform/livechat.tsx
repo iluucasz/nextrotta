@@ -2,9 +2,9 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, CheckCheck, Headset, LoaderCircle, MessageCircle, QrCode, Search, Send, Ticket, Unplug } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCheck, FileText, Headset, LoaderCircle, MessageCircle, Paperclip, QrCode, Search, Send, Ticket, Unplug, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
-import { chatClosingMessage } from '@/lib/livechat/rules';
+import { ATTACHMENT_TYPES, attachmentProblem, chatClosingMessage, isImageType } from '@/lib/livechat/rules';
 import { api, errorMessage } from './api';
 import { useNotify } from './notice';
 import './livechat.css';
@@ -26,7 +26,9 @@ type Conversation = {
   lastMessageAt: string;
   lastMessagePreview: string | null;
 };
-type Message = { id: string; direction: 'in' | 'out'; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; createdAt: string };
+type Message = { id: string; direction: 'in' | 'out'; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; attachment: { id: string; fileName: string; contentType: string; size: number } | null; createdAt: string };
+const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
+const ACCEPT = Object.keys(ATTACHMENT_TYPES).join(',');
 type WhatsAppStatus = { serverConfigured: boolean; instanceName: string; created: boolean; state: 'not_created' | 'connected' | 'connecting' | 'disconnected' | 'unknown'; number: string | null; webhookUrl: string | null; error: string | null };
 
 const TZ = 'America/Sao_Paulo';
@@ -326,6 +328,10 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
   const [ending, setEnding] = useState(false);
   const [thanks, setThanks] = useState('');
   const [endingBusy, setEndingBusy] = useState(false);
+  // A file chosen or a screenshot pasted, waiting to be sent with the text.
+  const [pending, setPending] = useState<File | null>(null);
+  const [preview, setPreview] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastAt = useRef<string | null>(null);
 
@@ -366,14 +372,53 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
     if (body) body.scrollTop = body.scrollHeight;
   }, [count]);
 
+  useEffect(() => {
+    if (!pending || !pending.type.startsWith('image/')) {
+      setPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(pending);
+    setPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [pending]);
+
+  function pick(file: File | undefined | null) {
+    if (!file) return;
+    const problem = attachmentProblem({ type: file.type, size: file.size });
+    if (problem) {
+      setError(problem);
+      return;
+    }
+    setError('');
+    setPending(file);
+  }
+
   async function send() {
     const body = text.trim();
-    if (!body || sending) return;
+    if ((!body && !pending) || sending) return;
     setSending(true);
     setError('');
     try {
-      const data = await api<{ messages: Message[]; whatsapp?: 'sent' | 'failed' | 'skipped'; whatsappError?: string | null }>(`/livechat/${conversation.id}`, { method: 'POST', body: { text: body, mirror } });
+      let data: { messages: Message[]; whatsapp?: 'sent' | 'failed' | 'skipped'; whatsappError?: string | null };
+      if (pending) {
+        const form = new FormData();
+        form.append('file', pending, pending.name || 'print.png');
+        form.append('text', body);
+        form.append('mirror', mirror ? '1' : '0');
+        const response = await fetch(`/api/platform/livechat/${conversation.id}/upload`, { method: 'POST', body: form });
+        if (response.status === 401) {
+          window.location.assign('/login');
+          return;
+        }
+        const result = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(result?.error || 'Não foi possível enviar o arquivo.');
+        data = result;
+      } else {
+        data = await api<{ messages: Message[]; whatsapp?: 'sent' | 'failed' | 'skipped'; whatsappError?: string | null }>(`/livechat/${conversation.id}`, { method: 'POST', body: { text: body, mirror } });
+      }
       setText('');
+      setPending(null);
+      if (fileRef.current) fileRef.current.value = '';
       merge(data.messages, true);
       onChanged();
       if (data.whatsapp === 'failed') setError(`Enviada no chat, mas o WhatsApp do cliente não recebeu: ${data.whatsappError ?? 'confira a conexão do WhatsApp.'}`);
@@ -508,7 +553,23 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
                 <div className={`lc-row ${message.direction}`}>
                   <div className={`lc-bubble ${message.direction} ${message.kind === 'media' ? 'media' : ''}`}>
                     {message.direction === 'in' && conversation.channel === 'web' && message.senderName ? <span className="lc-sender">{message.senderName}</span> : null}
-                    <span className="lc-text">{message.body}</span>
+                    {message.attachment ? (
+                      isImageType(message.attachment.contentType) ? (
+                        <a className="lc-attach-img" href={`/api/platform/livechat/files/${message.attachment.id}`} target="_blank" rel="noreferrer">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={`/api/platform/livechat/files/${message.attachment.id}`} alt={message.attachment.fileName} loading="lazy" />
+                        </a>
+                      ) : (
+                        <a className="lc-file" href={`/api/platform/livechat/files/${message.attachment.id}?download=1`}>
+                          <FileText size={22} />
+                          <span>
+                            <strong>{message.attachment.fileName}</strong>
+                            <small>{sizeLabel(message.attachment.size)} · baixar</small>
+                          </span>
+                        </a>
+                      )
+                    ) : null}
+                    {message.body ? <span className="lc-text">{message.body}</span> : null}
                     <time>{clock(message.createdAt)}</time>
                   </div>
                 </div>
@@ -533,10 +594,48 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
             Enviar também no WhatsApp do cliente · {phoneLabel(conversation.contactPhone)}
           </label>
         ) : null}
+        {pending ? (
+          <div className="lc-pending">
+            {preview ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={preview} alt="" />
+            ) : (
+              <span className="lc-pending-icon">
+                <FileText size={22} />
+              </span>
+            )}
+            <span>
+              <strong>{pending.name || 'print.png'}</strong>
+              <small>{sizeLabel(pending.size)} · será enviado com a mensagem</small>
+            </span>
+            <button
+              type="button"
+              aria-label="Remover o anexo"
+              onClick={() => {
+                setPending(null);
+                if (fileRef.current) fileRef.current.value = '';
+              }}
+            >
+              <X size={16} />
+            </button>
+          </div>
+        ) : null}
         <div className="lc-composer-row">
+          <input ref={fileRef} type="file" accept={ACCEPT} className="sr-only" tabIndex={-1} aria-label="Escolher arquivo" onChange={(event) => pick(event.target.files?.[0])} />
+          <button type="button" className="lc-attach-btn" aria-label="Anexar arquivo" title="Anexar arquivo ou imagem" disabled={sending} onClick={() => fileRef.current?.click()}>
+            <Paperclip size={20} />
+          </button>
           <textarea
             value={text}
             onChange={(event) => setText(event.target.value)}
+            onPaste={(event) => {
+              // A screenshot pasted (Ctrl+V) becomes the attachment.
+              const file = Array.from(event.clipboardData.files)[0];
+              if (file) {
+                event.preventDefault();
+                pick(file);
+              }
+            }}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey) {
                 event.preventDefault();
@@ -548,7 +647,7 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
             aria-label="Mensagem"
             placeholder={conversation.status === 'closed' ? 'Escrever reabre a conversa' : conversation.channel === 'whatsapp' ? 'Responder pelo WhatsApp oficial' : 'Responder no chat do chamado'}
           />
-          <button className="lc-send" disabled={!text.trim() || sending} aria-label="Enviar mensagem">
+          <button className="lc-send" disabled={(!text.trim() && !pending) || sending} aria-label="Enviar mensagem">
             {sending ? <LoaderCircle size={20} className="animate-spin" /> : <Send size={20} />}
           </button>
         </div>

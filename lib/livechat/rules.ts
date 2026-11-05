@@ -20,6 +20,66 @@ export function caseClosingMessage(ticketNumber: number | null): string {
   return `Olá! Seu chamado${ticketNumber ? ` #${ticketNumber}` : ''} foi encerrado. Agradecemos o seu contato! Se ainda precisar de ajuda, é só abrir um novo chamado pelo sistema que a nossa equipe responde. 😊`;
 }
 
+// ----------------------------------------------------------------------------------------------------------- attachments
+
+/** Largest file accepted in a chat (a serverless request body on Vercel is limited to 4.5 MB). */
+export const MAX_ATTACHMENT_BYTES = 4 * 1024 * 1024;
+
+/** What can be sent in a chat (never HTML, SVG or anything that runs): type -> the extension used when a file has no name. */
+export const ATTACHMENT_TYPES: Record<string, string> = {
+  'image/png': 'png',
+  'image/jpeg': 'jpg',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+  'application/pdf': 'pdf',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'application/zip': 'zip',
+  'application/msword': 'doc',
+  'application/vnd.ms-excel': 'xls',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+};
+
+/** Types the browser may show in place; anything else is downloaded, never rendered on our origin. */
+export const INLINE_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf', 'text/plain']);
+
+export const isImageType = (type: string) => type.startsWith('image/') && type in ATTACHMENT_TYPES;
+
+/** Why a file cannot be sent (in words for the person), or null when it can. */
+export function attachmentProblem(file: { type: string; size: number }): string | null {
+  if (!file.size) return 'O arquivo está vazio.';
+  if (file.size > MAX_ATTACHMENT_BYTES) return 'O arquivo passa de 4 MB. Envie um menor.';
+  if (!(file.type in ATTACHMENT_TYPES)) return 'Esse tipo de arquivo não é aceito. Envie uma imagem, PDF, planilha, documento ou texto.';
+  return null;
+}
+
+/** A file name safe to keep and show: no path, no control characters, not too long; a pasted image with no name gets one. */
+export function safeFileName(name: string | null | undefined, type: string): string {
+  const base = String(name ?? '')
+    .split(/[\\/]/)
+    .pop()!
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f<>:"|?*]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120);
+  return base || `arquivo.${ATTACHMENT_TYPES[type] ?? 'bin'}`;
+}
+
+/** The line shown in the list for a message that is only a file. */
+export const attachmentPreview = (fileName: string) => `📎 ${fileName}`;
+
+// ------------------------------------------------------------------------------------------------------- the first message
+
+/** What the team's first message says when a live chat opens: who answers, that it is coming, and what to do meanwhile. */
+export function chatWelcomeMessage(input: { name: string | null; ticketNumber: number | null; channel: 'chat' | 'whatsapp' }): string {
+  const first = (input.name ?? '').trim().split(/\s+/)[0];
+  const where = input.channel === 'whatsapp' ? 'por aqui, no WhatsApp, e no chat do sistema' : 'por aqui';
+  const attach = input.channel === 'whatsapp' ? 'Se tiver um print ou arquivo, pode mandar por aqui mesmo.' : 'Se tiver um print ou arquivo, é só anexar aqui no chat.';
+  return `Olá${first ? `, ${first}` : ''}! Recebemos o seu chamado urgente${input.ticketNumber ? ` #${input.ticketNumber}` : ''}. Em instantes um de nossos atendentes vai falar com você ${where}. Enquanto isso, pode ir adiantando os detalhes do que precisa. ${attach} 😊`;
+}
+
 /** What starts every reply the owner's panel mirrors to the customer's WhatsApp (so its echo is recognized and not stored twice). */
 export const MIRROR_PREFIX = '*Suporte NextRotta*';
 

@@ -38,6 +38,45 @@ Se o WhatsApp falhar, a resposta fica no chat e o painel avisa. **Nada sai sozin
 que o dono escreve, e ele vê o número na conversa (o número é digitado pelo cliente, por isso o envio é sempre ato do dono).
 Sem número, ou sem o número oficial conectado, o chat segue só no sistema.
 
+## Primeira mensagem e aviso ao dono
+
+Ao abrir um chat ao vivo, a equipe já "fala primeiro": "Olá, Carla! Recebemos o seu chamado urgente #1227. Em instantes um de nossos
+atendentes vai falar com você… pode ir adiantando os detalhes… é só anexar aqui no chat" (`chatWelcomeMessage`). Ela entra no chat na
+hora (sem mexer na prévia nem nas não lidas do Livechat) e, se o cliente informou o WhatsApp, vai também por lá com o texto do
+WhatsApp, **depois da resposta** da criação (usa `after()`; fora de uma requisição, como nos testes, roda na hora). Para ninguém
+usar o chat para escrever a desconhecidos, no máximo **5 boas-vindas por hora por empresa** vão para um número digitado pelo
+cliente; as demais ficam só no chat. As respostas que o dono dá continuam sendo atos dele.
+
+O aviso ao dono sai pelo WhatsApp de alertas (Configurações → Alertas e robô) quando ele está configurado. Quando não está, sai pelo
+**próprio número oficial, para ele mesmo** ("🚨 *NextRotta — Livechat (urgente)*", empresa, chamado, o começo da mensagem e o link do
+Livechat), que aparece no celular que guarda o número. O eco dessa mensagem no webhook é ignorado (mensagens do número oficial para
+ele mesmo nunca viram conversa). Uma vez por conversa e janela de 10 minutos. Falta provar com o número real que o WhatsApp entrega
+uma mensagem para o próprio número (foi testado só com o Evolution simulado).
+
+## Anexos
+
+O cliente pode **anexar um arquivo (clipe) ou colar um print (Ctrl+V)** no chat; o dono também anexa nas respostas. Vale para o chat ao
+vivo (não para o chamado por escrito). Aceita imagem (png, jpg, webp, gif), PDF, txt, csv, zip, doc/docx e xls/xlsx, **até 4 MB** (a Vercel
+limita o corpo de uma requisição a 4,5 MB); nada de HTML, SVG ou executável (`ATTACHMENT_TYPES`, validado também no servidor).
+
+- **Onde fica:** no armazenamento privado, na pasta da própria empresa (`chat/<empresa>/<conversa>/…`, `livechat_attachments`,
+  migração `0043`), servido só por rotas que conferem quem pede (`/api/support/livechat/<chamado>/files/<id>` para a empresa do
+  chamado, `/api/platform/livechat/files/<id>` para o dono; tipo vindo do nosso registro, `nosniff`, só imagem/PDF/txt aparecem na
+  tela, o resto baixa).
+- **Cota:** o que o **cliente** envia conta no armazenamento do plano dele (a view `organization_files` já alimenta limites, capacidade e
+  custos; a mensagem de limite cheio é a de sempre). O que a **equipe** envia fica na pasta dele mas **não é cobrado** (`counted = false`).
+- **WhatsApp:** o arquivo que o dono envia no Livechat vai também ao WhatsApp do cliente (imagem ou documento, com a legenda "*Suporte
+  NextRotta* — chamado #N"), e numa conversa de WhatsApp só é guardado se o WhatsApp aceitar. **O que o cliente manda pelo WhatsApp
+  (foto, áudio, documento) continua chegando como aviso** ("📷 Imagem"); baixar a mídia do WhatsApp para o armazenamento é o próximo passo.
+- Backup: `livechat_attachments` está em `BACKUP_EXCLUDED` (registros da plataforma), como a conversa.
+
+## Janela do chat do cliente
+
+Usa a altura da tela (`calc(100dvh - 33rem)`, entre 18 e 44 rem), então cabe sem rolar a página em telas de 900 px ou mais e é
+confortável num monitor grande; a conversa fica centralizada (até 48 rem) em telas largas; no celular os botões e as bolhas se
+ajustam e a página **não rola para o lado** (a coluna da página precisa de `min-w-0`: o cabeçalho do chat não quebra linha e somava
+~480 px ao mínimo da coluna).
+
 O dono lê e responde sem abrir o WhatsApp Web. Escrever numa conversa encerrada a reabre; uma mensagem do cliente também.
 
 ## Conectar o número

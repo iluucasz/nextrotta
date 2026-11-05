@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { LIVECHAT_INSTANCE, webhookTokenMatches } from '@/lib/livechat/whatsapp';
 import { parseEvolutionWebhook } from '@/lib/livechat/rules';
 import { storeWhatsAppMessage } from '@/lib/livechat/store';
+import { getSupportContact } from '@/lib/support-contact';
+import { samePhone } from '@/lib/livechat/rules';
 
 export const runtime = 'nodejs';
 
@@ -26,8 +28,11 @@ export async function POST(request: NextRequest) {
 
   try {
     let stored = 0;
+    // Messages the official number sends to itself (the alerts to the owner) are not conversations.
+    const own = (await getSupportContact().catch(() => null))?.whatsapp ?? null;
     for (const event of parseEvolutionWebhook(payload)) {
       if (event.kind !== 'message') continue;
+      if (own && samePhone(event.phone, own)) continue;
       if (await storeWhatsAppMessage(event)) stored += 1;
     }
     return NextResponse.json({ received: true, stored });

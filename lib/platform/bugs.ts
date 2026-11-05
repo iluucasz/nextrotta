@@ -1,6 +1,8 @@
 import { recordAudit } from '../audit';
 import { sql } from '../db';
-import { alertOwnerOfChat, startWebConversation } from '../livechat/store';
+import { after } from 'next/server';
+import { alertOwnerOfChat, mirrorChatWelcome, storeChatWelcome } from '../livechat/whatsapp';
+import { startWebConversation } from '../livechat/store';
 import { caseClosingMessage } from '../livechat/rules';
 import { notifyOrganization } from '../notifications';
 import { normalizePhone } from '../whatsapp/phone';
@@ -208,7 +210,17 @@ export async function createBugReport(
       const user = (await sql`SELECT name FROM users WHERE id = ${reporter.userId}`)[0];
       const userName = String(user?.name ?? 'Cliente');
       const conversation = await startWebConversation({ organizationId: reporter.organizationId, userId: reporter.userId, ticketId, userName, opening: { message: description }, contactPhone });
-      await alertOwnerOfChat(conversation, userName, description);
+      // The team's first message is in the chat at once; what needs the network (the same on WhatsApp, the alert to the owner) runs after the answer.
+      await storeChatWelcome(conversation, userName);
+      const notify = async () => {
+        await mirrorChatWelcome(conversation, userName);
+        await alertOwnerOfChat(conversation, userName, description);
+      };
+      try {
+        after(notify);
+      } catch {
+        await notify(); // outside a request (scripts, tests)
+      }
     } catch (error) {
       // The ticket is what matters: it exists, and the customer can still start the chat from its page.
       console.error('[bug-reports] urgent chat not opened:', error);

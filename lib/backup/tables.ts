@@ -24,7 +24,7 @@ export const BACKUP_EXCLUDED = [
   // Legal evidence: what was accepted and what was asked must never roll back with a restore.
   'legal_acceptances', 'data_subject_requests',
   // The platform's support inbox (live chat, WhatsApp): records of the platform, never rolled back with a company's restore.
-  'livechat_conversations',
+  'livechat_conversations', 'livechat_attachments',
 ] as const;
 
 /** Secrets never go into a backup file: it can be downloaded by the organization's admin. */

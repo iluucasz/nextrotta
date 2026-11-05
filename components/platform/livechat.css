@@ -91,3 +91,21 @@
 
 .lc-mirror { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #405a4f; margin-bottom: 8px; cursor: pointer; }
 .lc-mirror input { width: 16px; height: 16px; accent-color: var(--lc-wa); }
+
+.lc-attach-btn { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; color: #5d6d65; }
+.lc-attach-btn:hover:not(:disabled) { background: #e8efea; }
+.lc-attach-btn:disabled { opacity: .5; cursor: not-allowed; }
+.lc-attach-img { display: block; margin: 2px 0 4px; }
+.lc-attach-img img { display: block; max-width: min(100%, 320px); max-height: 260px; border-radius: 8px; object-fit: cover; }
+.lc-file { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin: 2px 0 4px; border-radius: 8px; background: #0000000d; color: inherit; }
+.lc-file span { display: grid; min-width: 0; }
+.lc-file strong { font-size: 14px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+.lc-file small { font-size: 12px; color: #6b7c77; }
+.lc-pending { display: flex; align-items: center; gap: 10px; padding: 8px 10px; margin-bottom: 8px; background: #fff; border: 1px solid #dfe6e1; border-radius: 12px; }
+.lc-pending img, .lc-pending-icon { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; flex-shrink: 0; }
+.lc-pending-icon { display: grid; place-items: center; background: #f1f4f2; color: #6b7c77; }
+.lc-pending span:not(.lc-pending-icon) { display: grid; min-width: 0; flex: 1; }
+.lc-pending strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-pending small { font-size: 12px; color: #6b7c77; }
+.lc-pending button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #6b7c77; }
+.lc-pending button:hover { background: #eef2ef; }

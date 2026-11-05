@@ -1,12 +1,11 @@
 import { sql } from '../db';
-import { sendOwnerAlert } from '../platform/alerts';
 import { isUuid, PlatformError } from '../platform/errors';
-import { formatTicketNumber } from '../reports';
+import type { SavedFile } from './files';
 import {
+  attachmentPreview,
   cleanMessage,
   MAX_CUSTOMER_MESSAGES_PER_MINUTE,
   isMirroredText,
-  ownerAlertKey,
   phoneTail,
   previewOf,
   samePhone,
@@ -62,6 +61,10 @@ function serializeMessage(row: Record<string, unknown>) {
     senderName: (row.sender_name as string | null) ?? null,
     body: String(row.body),
     kind: row.kind as 'text' | 'media' | 'system',
+    /** A file sent in this message (kept in the private store; read back only through the system). */
+    attachment: row.attachment_id
+      ? { id: String(row.attachment_id), fileName: String(row.file_name), contentType: String(row.content_type), size: Number(row.file_size) }
+      : null,
     createdAt: iso(row.created_at)!,
   };
 }
@@ -110,9 +113,12 @@ export async function getConversation(id: string): Promise<Conversation> {
 export async function getMessages(conversationId: string, after?: string | null): Promise<ChatMessage[]> {
   const since = after && !Number.isNaN(new Date(after).getTime()) ? new Date(after).toISOString() : null;
   const rows = await sql`
-    SELECT id, direction, sender_name, body, kind, created_at FROM livechat_messages
-    WHERE conversation_id = ${conversationId} AND (${since}::timestamptz IS NULL OR created_at > ${since}::timestamptz)
-    ORDER BY created_at, id
+    SELECT m.id, m.direction, m.sender_name, m.body, m.kind, m.created_at,
+           a.id AS attachment_id, a.file_name, a.content_type, a.file_size
+    FROM livechat_messages m
+    LEFT JOIN livechat_attachments a ON a.message_id = m.id
+    WHERE m.conversation_id = ${conversationId} AND (${since}::timestamptz IS NULL OR m.created_at > ${since}::timestamptz)
+    ORDER BY m.created_at, m.id
     LIMIT 500
   `;
   return rows.map(serializeMessage);
@@ -140,6 +146,10 @@ async function addMessage(input: {
   kind?: 'text' | 'media' | 'system';
   waMessageId?: string | null;
   at?: Date;
+  /** A file sent with the message (the body may be empty then). */
+  attachment?: SavedFile & { organizationId: string | null; counted: boolean };
+  /** Stored in the chat without touching the list (preview, unread): the team's automatic first message. */
+  silent?: boolean;
 }): Promise<ChatMessage | null> {
   const kind = input.kind ?? 'text';
   const at = (input.at ?? new Date()).toISOString();
@@ -150,11 +160,20 @@ async function addMessage(input: {
     RETURNING id, direction, sender_name, body, kind, created_at
   `;
   if (!inserted[0]) return null;
-  if (kind !== 'system') {
+  let attachment: ChatMessage['attachment'] = null;
+  if (input.attachment) {
+    const saved = await sql`
+      INSERT INTO livechat_attachments (message_id, conversation_id, organization_id, file_name, content_type, file_size, url, counted)
+      VALUES (${inserted[0].id}, ${input.conversationId}, ${input.attachment.organizationId}, ${input.attachment.fileName}, ${input.attachment.contentType}, ${input.attachment.size}, ${input.attachment.url}, ${input.attachment.counted})
+      RETURNING id
+    `;
+    attachment = { id: String(saved[0].id), fileName: input.attachment.fileName, contentType: input.attachment.contentType, size: input.attachment.size };
+  }
+  if (kind !== 'system' && !input.silent) {
     const fromCustomer = input.direction === 'in';
     await sql`
       UPDATE livechat_conversations
-      SET last_message_at = GREATEST(last_message_at, ${at}::timestamptz), last_message_preview = ${previewOf(input.body)},
+      SET last_message_at = GREATEST(last_message_at, ${at}::timestamptz), last_message_preview = ${previewOf(input.body || (input.attachment ? attachmentPreview(input.attachment.fileName) : ''))},
           unread_owner = unread_owner + ${fromCustomer ? 1 : 0},
           unread_customer = unread_customer + ${fromCustomer ? 0 : 1},
           status = CASE WHEN ${fromCustomer} THEN 'open' ELSE status END,
@@ -162,7 +181,7 @@ async function addMessage(input: {
       WHERE id = ${input.conversationId}
     `;
   }
-  return serializeMessage(inserted[0]);
+  return { ...serializeMessage(inserted[0]), attachment };
 }
 
 // ----- the web chat (inside a support ticket)
@@ -193,17 +212,46 @@ export async function findWebConversation(ticketId: string): Promise<Conversatio
 }
 
 /** A message from the customer in the web chat; alerts the owner on WhatsApp at most once per window. */
-export async function sendCustomerMessage(conversation: Conversation, userName: string, rawText: unknown) {
-  const text = cleanMessage(rawText);
-  if (!text) throw new PlatformError('Escreva a mensagem.');
+/** The rules every message from the customer passes: an ended chat stays ended, and not too many in a minute. */
+export async function assertCustomerMayWrite(conversation: Conversation) {
   // An ended chat is over (like a finished Omni-Channel session): a new one is started, the old one is not reopened by the customer.
   if (conversation.status === 'closed') throw new PlatformError('Este chat foi encerrado. Para falar com a equipe de novo, inicie um novo chat ao vivo.', 409);
   const recent = await sql`SELECT COUNT(*)::int AS total FROM livechat_messages WHERE conversation_id = ${conversation.id} AND direction = 'in' AND kind <> 'system' AND created_at > NOW() - interval '1 minute'`;
   if (Number(recent[0].total) >= MAX_CUSTOMER_MESSAGES_PER_MINUTE) throw new PlatformError('Muitas mensagens em pouco tempo. Aguarde um instante.', 429);
+}
 
-  const message = await addMessage({ conversationId: conversation.id, direction: 'in', senderName: userName, body: text });
-  await alertOwnerOfChat(conversation, userName, text);
-  return message;
+/** A message from the customer in the web chat (the route alerts the owner). */
+export async function sendCustomerMessage(conversation: Conversation, userName: string, rawText: unknown) {
+  const text = cleanMessage(rawText);
+  if (!text) throw new PlatformError('Escreva a mensagem.');
+  await assertCustomerMayWrite(conversation);
+  return addMessage({ conversationId: conversation.id, direction: 'in', senderName: userName, body: text });
+}
+
+/** A file from the customer (with an optional text), kept in the company's own storage: it counts against the plan. */
+export async function sendCustomerAttachment(conversation: Conversation, userName: string, rawText: unknown, file: SavedFile) {
+  await assertCustomerMayWrite(conversation);
+  return addMessage({
+    conversationId: conversation.id,
+    direction: 'in',
+    senderName: userName,
+    body: cleanMessage(rawText),
+    attachment: { ...file, organizationId: conversation.organizationId, counted: true },
+  });
+}
+
+/** One stored file with where it belongs, for the routes that serve it (null when it does not exist). */
+export async function getAttachment(id: string) {
+  if (!isUuid(id)) return null;
+  const rows = await sql`
+    SELECT a.id, a.conversation_id, a.organization_id, a.file_name, a.content_type, a.file_size, a.url, c.ticket_id
+    FROM livechat_attachments a JOIN livechat_conversations c ON c.id = a.conversation_id
+    WHERE a.id = ${id}
+  `;
+  const row = rows[0];
+  return row
+    ? { id: String(row.id), conversationId: String(row.conversation_id), organizationId: (row.organization_id as string | null) ?? null, ticketId: (row.ticket_id as string | null) ?? null, fileName: String(row.file_name), contentType: String(row.content_type), size: Number(row.file_size), url: String(row.url) }
+    : null;
 }
 
 /** The customer's WhatsApp on a web chat: set (digits with 55) or removed (null). */
@@ -243,26 +291,16 @@ export async function setUrgent(id: string, urgent: boolean) {
   return getConversation(id);
 }
 
-/** One WhatsApp alert to the owner per conversation and window (never throws). */
-export async function alertOwnerOfChat(conversation: Conversation, userName: string, text: string) {
-  await sendOwnerAlert({
-    key: ownerAlertKey(conversation.id),
-    kind: 'livechat',
-    title: `Chat ao vivo${conversation.urgent ? ' (urgente)' : ''}`,
-    lines: [
-      `${conversation.organizationName ?? 'Cliente'} — ${userName}`,
-      conversation.ticketNumber ? `Chamado ${formatTicketNumber(conversation.ticketNumber)}` : 'Sem chamado',
-      `“${previewOf(text, 140)}”`,
-    ],
-    organizationIds: conversation.organizationId ? [conversation.organizationId] : [],
-  }).catch(() => undefined);
-}
-
 // ----- the owner's answers
 
 /** The owner's message, stored once it has been delivered (the WhatsApp channel passes how it was sent). */
-export async function storeOwnerMessage(conversationId: string, text: string, options: { senderName?: string; waMessageId?: string | null } = {}) {
-  return addMessage({ conversationId, direction: 'out', senderName: options.senderName ?? SUPPORT_SENDER, body: text, waMessageId: options.waMessageId ?? null });
+export async function storeOwnerMessage(conversationId: string, text: string, options: { senderName?: string; waMessageId?: string | null; silent?: boolean } = {}) {
+  return addMessage({ conversationId, direction: 'out', senderName: options.senderName ?? SUPPORT_SENDER, body: text, waMessageId: options.waMessageId ?? null, silent: options.silent });
+}
+
+/** The team's file (with an optional text): kept in the company's folder but not charged to its plan. */
+export async function storeOwnerAttachment(conversationId: string, organizationId: string | null, text: string, file: SavedFile, options: { waMessageId?: string | null } = {}) {
+  return addMessage({ conversationId, direction: 'out', senderName: SUPPORT_SENDER, body: text, waMessageId: options.waMessageId ?? null, attachment: { ...file, organizationId, counted: false } });
 }
 
 // ----- the WhatsApp channel

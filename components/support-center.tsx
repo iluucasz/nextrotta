@@ -645,7 +645,8 @@ export function TicketPage({ id, basePath }: { id: string; basePath: string }) {
       <PageHeader eyebrow={`${isChat ? 'Chat ao vivo' : 'Chamado'} ${formatTicketNumber(report.ticketNumber)}`} title={report.title} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
-        <div className="space-y-4">
+        {/* min-w-0: a grid item may shrink below its widest line (the chat header does not wrap), or the page scrolls sideways on a phone */}
+        <div className="min-w-0 space-y-4">
           {!isChat ? (
           <DataPanel title="Descrição">
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{report.description}</p>

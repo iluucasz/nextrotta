@@ -76,6 +76,37 @@ export async function sendEvolutionText(connection: EvolutionConnection, phone: 
   }
 }
 
+/** Sends a picture or a document (base64) with an optional caption; `messageId` is WhatsApp's own id of the sent message. */
+export async function sendEvolutionMedia(
+  connection: EvolutionConnection,
+  phone: string,
+  media: { base64: string; mimetype: string; fileName: string; caption?: string },
+): Promise<EvolutionResult & { messageId?: string | null }> {
+  const number = normalizePhone(phone);
+  if (!number) return { ok: false, error: 'Telefone inválido para WhatsApp.' };
+  try {
+    const response = await request(connection, `/message/sendMedia/${encodeURIComponent(connection.instance)}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        number,
+        mediatype: media.mimetype.startsWith('image/') ? 'image' : 'document',
+        mimetype: media.mimetype,
+        caption: media.caption ?? '',
+        media: media.base64,
+        fileName: media.fileName,
+      }),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      return { ok: false, error: `Evolution API respondeu ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}` };
+    }
+    const sent = (await response.json().catch(() => null)) as { key?: { id?: unknown } } | null;
+    return { ok: true, error: null, messageId: typeof sent?.key?.id === 'string' ? sent.key.id : null };
+  } catch (error) {
+    return { ok: false, error: describeError(error) };
+  }
+}
+
 export interface EvolutionConnectionState {
   connected: boolean;
   state: string | null;

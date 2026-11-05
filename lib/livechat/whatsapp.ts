@@ -1,9 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { sql } from '../db';
+import { sendOwnerAlert } from '../platform/alerts';
+import { formatTicketNumber } from '../reports';
 import {
   connectEvolutionInstance,
   createEvolutionInstance,
   fetchEvolutionInstance,
   logoutEvolutionInstance,
+  sendEvolutionMedia,
   sendEvolutionText,
   setEvolutionWebhook,
   type EvolutionQrCode,
@@ -11,8 +15,9 @@ import {
 import { evolutionServer } from '../whatsapp/store';
 import { PlatformError } from '../platform/errors';
 import { getSupportContact } from '../support-contact';
-import { mirroredText } from './rules';
-import { attachWaId, closeConversation, getConversation, storeOwnerMessage } from './store';
+import { chatWelcomeMessage, mirroredText, ownerAlertKey, previewOf } from './rules';
+import { saveChatFile } from './files';
+import { attachWaId, closeConversation, getConversation, storeOwnerAttachment, storeOwnerMessage, type Conversation } from './store';
 
 /**
  * The platform's official WhatsApp number (the live chat inbox). Its own instance on the shared Evolution server, separate from
@@ -177,3 +182,101 @@ export async function endConversation(conversationId: string, by: 'owner' | 'cus
   const ended = await closeConversation(conversationId, by);
   return { conversation: ended, whatsapp, whatsappError };
 }
+
+// ------------------------------------------------------------------------------------------------------------------ attachments
+
+/** Sends a file to a WhatsApp number through the official number (base64), with the caption the customer will read. */
+async function sendFileToWhatsApp(phone: string, file: { buffer: Buffer; fileName: string; contentType: string }, caption: string) {
+  const server = evolutionServer();
+  if (!server) return { ok: false as const, error: 'Servidor do WhatsApp (EVOLUTION_API_URL/KEY) não configurado.', messageId: null };
+  const sent = await sendEvolutionMedia({ ...server, instance: LIVECHAT_INSTANCE }, phone, { base64: file.buffer.toString('base64'), mimetype: file.contentType, fileName: file.fileName, caption });
+  return { ok: sent.ok, error: sent.error, messageId: sent.messageId ?? null };
+}
+
+/**
+ * The team sends a file (a screenshot, a PDF) in a conversation. It is kept in the folder of the company the chat belongs to (not
+ * charged to it), shown in the chat, and sent to the customer's WhatsApp too when there is one (and "mirror" is not turned off).
+ * On a WhatsApp conversation WhatsApp must accept it first.
+ */
+export async function sendOwnerAttachment(conversationId: string, file: { buffer: Buffer; fileName: string | null; contentType: string }, text: string, options: { mirror?: boolean } = {}) {
+  const conversation = await getConversation(conversationId);
+  const saved = await saveChatFile({ organizationId: conversation.organizationId, conversationId, fileName: file.fileName, contentType: file.contentType, buffer: file.buffer });
+  const toPhone = conversation.contactPhone && (conversation.channel === 'whatsapp' || options.mirror !== false) ? conversation.contactPhone : null;
+
+  let whatsapp: 'sent' | 'failed' | 'skipped' = 'skipped';
+  let whatsappError: string | undefined;
+  let waId: string | null = null;
+  if (toPhone) {
+    const sent = await sendFileToWhatsApp(toPhone, { buffer: file.buffer, fileName: saved.fileName, contentType: saved.contentType }, conversation.channel === 'web' ? mirroredText(conversation.ticketNumber, text) : text);
+    if (sent.ok) {
+      whatsapp = 'sent';
+      waId = sent.messageId;
+    } else if (conversation.channel === 'whatsapp') {
+      throw new PlatformError(`O arquivo não foi enviado. ${sent.error ?? 'Confira a conexão do WhatsApp.'}`, 502);
+    } else {
+      whatsapp = 'failed';
+      whatsappError = sent.error ?? undefined;
+    }
+  }
+  const message = await storeOwnerAttachment(conversationId, conversation.organizationId, text, saved, { waMessageId: waId });
+  return { message, whatsapp, whatsappError };
+}
+
+// ------------------------------------------------------------------------------------------------------- first message and alerts
+
+/** The team's first message in a live chat, stored in the chat at once (it does not move the conversation in the inbox). */
+export async function storeChatWelcome(conversation: Conversation, userName: string | null) {
+  return storeOwnerMessage(conversation.id, chatWelcomeMessage({ name: userName, ticketNumber: conversation.ticketNumber, channel: 'chat' }), { silent: true });
+}
+
+/** A few welcomes per hour per company may go to a WhatsApp number the customer typed: nobody can use the chat to message strangers. */
+const WELCOMES_ON_WHATSAPP_PER_HOUR = 5;
+
+/** The same welcome on the customer's WhatsApp, when they gave a number (slow: Evolution is called, so it runs after the answer). */
+export async function mirrorChatWelcome(conversation: Conversation, userName: string | null): Promise<'sent' | 'failed' | 'skipped'> {
+  try {
+    if (!conversation.contactPhone) return 'skipped';
+    const recent = await sql`SELECT COUNT(*)::int AS n FROM livechat_conversations WHERE organization_id = ${conversation.organizationId} AND channel = 'web' AND contact_phone IS NOT NULL AND created_at > NOW() - interval '1 hour'`;
+    if (Number(recent[0].n) > WELCOMES_ON_WHATSAPP_PER_HOUR) return 'skipped';
+    const server = evolutionServer();
+    if (!server) return 'failed';
+    const sent = await sendEvolutionText({ ...server, instance: LIVECHAT_INSTANCE }, conversation.contactPhone, mirroredText(conversation.ticketNumber, chatWelcomeMessage({ name: userName, ticketNumber: conversation.ticketNumber, channel: 'whatsapp' })));
+    return sent.ok ? 'sent' : 'failed';
+  } catch (error) {
+    console.error('[livechat] welcome on WhatsApp failed:', error);
+    return 'failed';
+  }
+}
+
+/**
+ * Tells the owner a customer is waiting: once per conversation and window, never throws. Through the alerts WhatsApp when it is
+ * configured; otherwise through the official number itself (a message to itself, which shows on the phone that holds it).
+ */
+export async function alertOwnerOfChat(conversation: Conversation, userName: string, text: string) {
+  try {
+    const result = await sendOwnerAlert({
+      key: ownerAlertKey(conversation.id),
+      kind: 'livechat',
+      title: `Chat ao vivo${conversation.urgent ? ' (urgente)' : ''}`,
+      lines: [`${conversation.organizationName ?? 'Cliente'} — ${userName}`, conversation.ticketNumber ? `Chamado ${formatTicketNumber(conversation.ticketNumber)}` : 'Sem chamado', `“${previewOf(text, 140)}”`],
+      organizationIds: conversation.organizationId ? [conversation.organizationId] : [],
+    });
+    if (result.sent || result.duplicate) return;
+
+    const server = evolutionServer();
+    const own = (await getSupportContact().catch(() => null))?.whatsapp;
+    if (!server || !own) return;
+    const root = process.env.ROOT_DOMAIN?.trim();
+    const link = root && !root.includes('localhost') ? `\n\nResponda no painel: https://${root}/plataforma/reports?chat=${conversation.id}` : '';
+    await sendEvolutionText(
+      { ...server, instance: LIVECHAT_INSTANCE },
+      own,
+      `${ALERT_PREFIX} Livechat${conversation.urgent ? ' (urgente)' : ''}*\n${conversation.organizationName ?? 'Cliente'} — ${userName}\n${conversation.ticketNumber ? `Chamado ${formatTicketNumber(conversation.ticketNumber)}\n` : ''}“${previewOf(text, 140)}”${link}`,
+    );
+  } catch (error) {
+    console.error('[livechat] owner alert failed:', error);
+  }
+}
+
+/** What starts the alert the official number sends to itself (its echo through the webhook is ignored). */
+export const ALERT_PREFIX = '🚨 *NextRotta —';

@@ -16,7 +16,20 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(
 const rules = require('../lib/livechat/rules.ts');
 const { sql } = require('../lib/db.ts');
 const store = require('../lib/livechat/store.ts');
-const { webhookToken, webhookTokenMatches, sendOwnerReply, endConversation } = require('../lib/livechat/whatsapp.ts');
+const { webhookToken, webhookTokenMatches, sendOwnerReply, sendOwnerAttachment, endConversation } = require('../lib/livechat/whatsapp.ts');
+
+// Evolution is always simulated. Calls go to `evo.scope` while a test is looking, and to `evo.sink` otherwise.
+const stamp = Date.now();
+const realFetch = global.fetch;
+process.env.EVOLUTION_API_URL = 'http://evolution.test';
+process.env.EVOLUTION_API_KEY = 'test-key';
+const evo = { sink: [], scope: null, fail: false, ids: 0 };
+global.fetch = async (url, init) => {
+  if (!String(url).startsWith('http://evolution.test')) return realFetch(url, init);
+  (evo.scope ?? evo.sink).push({ url: String(url), body: JSON.parse(init.body) });
+  evo.ids += 1;
+  return evo.fail ? { ok: false, status: 500, text: async () => 'down', json: async () => ({}) } : { ok: true, status: 200, text: async () => '', json: async () => ({ key: { id: `WA-MOCK-${stamp}-${evo.ids}` } }) };
+};
 
 // ------------------------------------------------------------------------------------------------------------- rules
 
@@ -86,8 +99,6 @@ let user;
 let ticket;
 let otherTicket;
 const extraTickets = [];
-const stamp = Date.now();
-
 async function makeTicket(organizationId, userId, title) {
   const row = await sql`
     INSERT INTO bug_reports (organization_id, user_id, title, description, report_type, support_category)
@@ -95,23 +106,16 @@ async function makeTicket(organizationId, userId, title) {
   return String(row[0].id);
 }
 
-let sentIds = 0;
-/** Runs `run(calls)` with Evolution simulated (only its URL; the database driver goes through fetch too). */
+/** Runs `run(calls)` with the calls to Evolution collected in `calls` (and made to fail when asked to). */
 async function withEvolution(run, { fail = false } = {}) {
-  const realFetch = global.fetch;
   const calls = [];
-  process.env.EVOLUTION_API_URL = 'http://evolution.test';
-  process.env.EVOLUTION_API_KEY = 'test-key';
-  global.fetch = async (url, init) => {
-    if (!String(url).startsWith('http://evolution.test')) return realFetch(url, init);
-    calls.push({ url: String(url), body: JSON.parse(init.body) });
-    sentIds += 1;
-    return fail ? { ok: false, status: 500, text: async () => 'down', json: async () => ({}) } : { ok: true, status: 200, text: async () => '', json: async () => ({ key: { id: `WA-END-${stamp}-${sentIds}` } }) };
-  };
+  evo.scope = calls;
+  evo.fail = fail;
   try {
     return await run(calls);
   } finally {
-    global.fetch = realFetch;
+    evo.scope = null;
+    evo.fail = false;
   }
 }
 
@@ -124,6 +128,8 @@ test('setup: a test company with a user and a ticket, and another company', asyn
   other = (await sql`SELECT id FROM organizations WHERE slug = 'kappa'`)[0].id;
   // Earlier runs: close what is left open so the unique rules start clean.
   await sql`UPDATE livechat_conversations SET status = 'closed', closed_at = NOW() WHERE (organization_id = ${org} OR contact_phone IN ('5521955550001', '5521955550002')) AND status = 'open'`;
+  // Earlier runs must not count toward the hourly limit of welcomes on WhatsApp.
+  await sql`UPDATE livechat_conversations SET created_at = created_at - interval '3 hours' WHERE organization_id = ${org}`;
   ticket = await makeTicket(org, user, `Teste de chat ${stamp}`);
   const otherUser = (await sql`SELECT id FROM users WHERE organization_id = ${other} AND role = 'admin' LIMIT 1`)[0].id;
   otherTicket = await makeTicket(other, otherUser, `Chamado de outra empresa ${stamp}`);
@@ -187,17 +193,10 @@ test('mirror to the customer WhatsApp: the number on the urgent ticket, replies 
   const number = (await getBugReport(ticketRow.id, { kind: 'owner' })).report.ticketNumber;
 
   // Evolution is simulated: what would go out is recorded, nothing is sent.
-  const realFetch = global.fetch;
   const calls = [];
+  evo.scope = calls;
   let fail = false;
-  process.env.EVOLUTION_API_URL = 'http://evolution.test';
-  process.env.EVOLUTION_API_KEY = 'test-key';
-  global.fetch = async (url, init) => {
-    // Only Evolution is simulated: the database driver goes through fetch too.
-    if (!String(url).startsWith('http://evolution.test')) return realFetch(url, init);
-    calls.push({ url: String(url), body: JSON.parse(init.body) });
-    return fail ? { ok: false, status: 500, text: async () => 'down', json: async () => ({}) } : { ok: true, status: 200, text: async () => '', json: async () => ({ key: { id: `WA-OUT-${calls.length}` } }) };
-  };
+  const setFail = (value) => { fail = value; evo.fail = value; };
   try {
     // 1. the owner answers in the panel: stored in the chat AND mirrored with the ticket named
     const reply = await sendOwnerReply(conv.id, 'Já estou olhando a cobrança.');
@@ -205,7 +204,7 @@ test('mirror to the customer WhatsApp: the number on the urgent ticket, replies 
     assert.equal(calls.length, 1);
     assert.match(calls[0].url, /\/message\/sendText\/nextrotta-suporte$/);
     assert.deepEqual([calls[0].body.number, calls[0].body.text], ['5521955550003', `*Suporte NextRotta* — chamado #${number}\nJá estou olhando a cobrança.`]);
-    assert.equal((await store.getMessages(conv.id)).filter((m) => m.direction === 'out' && m.kind === 'text').length, 1);
+    assert.equal((await store.getMessages(conv.id)).filter((m) => m.direction === 'out' && m.kind === 'text').length, 2, 'the welcome and this reply');
 
     // 2. WhatsApp echoes what was sent (fromMe, with the prefix): not a second message
     const echo = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '5521955550003@s.whatsapp.net', fromMe: true, id: 'WA-OUT-1' } }, { message: { conversation: calls[0].body.text }, messageTimestamp: Math.floor(Date.now() / 1000) + 1 }))[0];
@@ -215,7 +214,7 @@ test('mirror to the customer WhatsApp: the number on the urgent ticket, replies 
     const answer = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '552155550003@s.whatsapp.net', fromMe: false, id: `WA-${stamp}-IN` } }, { message: { conversation: 'Obrigado, estou aguardando' }, pushName: 'Carla', messageTimestamp: Math.floor(Date.now() / 1000) + 2 }))[0];
     assert.ok(await store.storeWhatsAppMessage(answer));
     const after = await store.getMessages(conv.id);
-    assert.deepEqual(after.filter((m) => m.kind === 'text').map((m) => [m.direction, m.body]), [['in', 'Descrição longa o bastante para o teste'], ['out', 'Já estou olhando a cobrança.'], ['in', 'Obrigado, estou aguardando']]);
+    assert.deepEqual(after.filter((m) => m.kind === 'text').map((m) => [m.direction, m.body]), [['in', 'Descrição longa o bastante para o teste'], ['out', rules.chatWelcomeMessage({ name: 'Carla Chat', ticketNumber: number, channel: 'chat' })], ['out', 'Já estou olhando a cobrança.'], ['in', 'Obrigado, estou aguardando']]);
     assert.equal((await store.getConversation(conv.id)).unreadOwner, 2, 'one from the urgent opening and one from the answer');
     assert.equal((await store.listConversations({ status: 'open', search: '552155550003' })).filter((c) => c.channel === 'whatsapp').length, 0, 'no conversation of its own');
 
@@ -230,12 +229,12 @@ test('mirror to the customer WhatsApp: the number on the urgent ticket, replies 
     assert.equal(calls.length, 0);
 
     // 6. WhatsApp down: the reply is kept in the chat and the failure is reported, not thrown
-    fail = true;
+    setFail(true);
     const failed = await sendOwnerReply(conv.id, 'Vai falhar no WhatsApp');
     assert.equal(failed.whatsapp, 'failed');
     assert.ok(failed.whatsappError);
     assert.ok((await store.getMessages(conv.id)).some((m) => m.body === 'Vai falhar no WhatsApp'), 'still in the chat');
-    fail = false;
+    setFail(false);
 
     // 7. a web chat without a WhatsApp number never calls Evolution
     calls.length = 0;
@@ -243,6 +242,7 @@ test('mirror to the customer WhatsApp: the number on the urgent ticket, replies 
     extraTickets.push(plain.id);
     const plainConv = await store.findWebConversation(plain.id);
     assert.equal(plainConv.contactPhone, null);
+    calls.length = 0; // opening it alerted the owner on the official number; what follows is the reply
     assert.equal((await sendOwnerReply(plainConv.id, 'Resposta só no chat')).whatsapp, 'skipped');
     assert.equal(calls.length, 0);
 
@@ -251,7 +251,8 @@ test('mirror to the customer WhatsApp: the number on the urgent ticket, replies 
     assert.equal(added.contactPhone, '5521955550004');
     assert.equal((await store.setConversationPhone(plainConv.id, null)).contactPhone, null);
   } finally {
-    global.fetch = realFetch;
+    evo.scope = null;
+    evo.fail = false;
   }
 });
 
@@ -452,6 +453,181 @@ test('concluding a written case sends the closing message (default, edited or no
   const chat = await mk('Chat E', { channel: 'chat' });
   await updateBugReport(chat, { status: 'resolved' }, { id: ownerId });
   assert.equal(await last(chat), undefined, 'a live chat says goodbye in the Livechat, not in a written thread');
+});
+
+test('rules: attachments (what is accepted), file names, the first message', () => {
+  const ok = (type, size = 1000) => rules.attachmentProblem({ type, size });
+  assert.equal(ok('image/png'), null);
+  assert.equal(ok('application/pdf'), null);
+  assert.match(ok('image/png', 0), /vazio/);
+  assert.match(ok('image/png', 5 * 1024 * 1024), /4 MB/);
+  for (const bad of ['text/html', 'image/svg+xml', 'application/x-msdownload', 'application/javascript', '']) assert.match(ok(bad), /não é aceito/, `${bad} is refused`);
+  assert.ok(rules.isImageType('image/webp') && !rules.isImageType('image/svg+xml') && !rules.isImageType('application/pdf'));
+  assert.equal(rules.safeFileName('..\\..\\etc/passwd', 'text/plain'), 'passwd');
+  assert.equal(rules.safeFileName('a<b>:c|d?.png', 'image/png'), 'a b c d .png');
+  assert.equal(rules.safeFileName('', 'image/png'), 'arquivo.png', 'a pasted screenshot has no name');
+  assert.equal(rules.safeFileName('x'.repeat(300) + '.pdf', 'application/pdf').length, 120);
+  assert.equal(rules.attachmentPreview('print.png'), '📎 print.png');
+  const welcome = rules.chatWelcomeMessage({ name: 'Carla Souza', ticketNumber: 1120, channel: 'chat' });
+  assert.match(welcome, /^Olá, Carla! Recebemos o seu chamado urgente #1120\. Em instantes um de nossos atendentes vai falar com você por aqui\./);
+  assert.match(welcome, /anexar aqui no chat/);
+  assert.match(rules.chatWelcomeMessage({ name: null, ticketNumber: null, channel: 'whatsapp' }), /^Olá! Recebemos o seu chamado urgente\. .*no WhatsApp, e no chat do sistema.*pode mandar por aqui mesmo/);
+});
+
+test('opening a live chat: the team\'s first message is in the chat, on the customer WhatsApp (limited), and the owner is told', async () => {
+  const { createBugReport, getBugReport } = require('../lib/platform/bugs.ts');
+  const base = { type: 'support', category: 'billing', description: 'Descrição longa o bastante para o teste', channel: 'chat' };
+  evo.sink.length = 0;
+
+  const withNumber = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Boas-vindas ${stamp}`, whatsapp: '(21) 95555-0006' });
+  extraTickets.push(withNumber.id);
+  const conv = await store.findWebConversation(withNumber.id);
+  const number = (await getBugReport(withNumber.id, { kind: 'owner' })).report.ticketNumber;
+  const messages = await store.getMessages(conv.id);
+  const welcome = messages.find((m) => m.direction === 'out' && m.kind === 'text');
+  assert.ok(welcome, 'the welcome is in the chat');
+  assert.match(welcome.body, new RegExp(`Olá, Carla! Recebemos o seu chamado urgente #${number}`));
+  assert.equal(conv.lastMessagePreview, 'Descrição longa o bastante para o teste', 'it does not replace the customer\'s message in the inbox');
+  assert.equal((await store.getConversation(conv.id)).unreadOwner, 1, 'and is not something for the owner to read');
+
+  const toCustomer = evo.sink.filter((call) => call.body.number === '5521955550006');
+  assert.equal(toCustomer.length, 1, 'the same welcome went to the customer\'s WhatsApp');
+  assert.match(toCustomer[0].body.text, new RegExp(`^\\*Suporte NextRotta\\* — chamado #${number}\\n.*no WhatsApp, e no chat do sistema`));
+
+  // the owner is told on the official number itself (the alerts WhatsApp is not configured)
+  const settings = (await sql`SELECT data->'alerts' AS alerts FROM platform_settings LIMIT 1`)[0];
+  if (!settings?.alerts?.phone) {
+    const alert = evo.sink.find((call) => call.body.number === '5521997792422');
+    assert.ok(alert, 'an alert went to the official number');
+    assert.match(alert.body.text, /^🚨 \*NextRotta — Livechat \(urgente\)\*\n/);
+    assert.match(alert.body.text, new RegExp(`Chamado #${number}`));
+  }
+
+  // without a number: only the chat
+  evo.sink.length = 0;
+  const plain = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Sem número ${stamp}` });
+  extraTickets.push(plain.id);
+  assert.ok((await store.getMessages((await store.findWebConversation(plain.id)).id)).some((m) => m.direction === 'out' && m.kind === 'text'), 'the chat still says it');
+  assert.equal(evo.sink.filter((call) => call.url.endsWith('/message/sendText/nextrotta-suporte') && call.body.text.includes('Recebemos o seu chamado')).length, 0, 'nothing to WhatsApp without a number');
+
+  // nobody can use this to message strangers: only a few welcomes per hour go out to numbers typed by the customer
+  await sql`UPDATE livechat_conversations SET created_at = created_at - interval '3 hours' WHERE organization_id = ${org}`;
+  evo.sink.length = 0;
+  for (let i = 0; i < 8; i += 1) {
+    const t = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Limite ${i} ${stamp}`, whatsapp: `(21) 95555-01${String(i).padStart(2, '0')}` });
+    extraTickets.push(t.id);
+  }
+  const welcomesOut = evo.sink.filter((call) => /Recebemos o seu chamado/.test(call.body.text ?? '')).length;
+  assert.equal(welcomesOut, 5, 'the sixth, seventh and eighth stayed in the chat');
+});
+
+const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==', 'base64');
+const savedBlobs = [];
+
+test('attachments: kept in the company\'s own storage, charged to it when the customer sends them, served only through the system', async () => {
+  const { saveChatFile, chatFileResponse } = require('../lib/livechat/files.ts');
+  const { createBugReport } = require('../lib/platform/bugs.ts');
+  const t = await createBugReport({ organizationId: org, userId: user }, { type: 'support', category: 'billing', title: `Anexos ${stamp}`, description: 'Descrição longa o bastante para o teste', channel: 'chat' });
+  extraTickets.push(t.id);
+  const conv = await store.findWebConversation(t.id);
+  const used = async () => Number((await sql`SELECT COALESCE(SUM(bytes), 0)::bigint AS n FROM organization_files WHERE organization_id = ${org}`)[0].n);
+  const before = await used();
+
+  // the customer pastes a screenshot with a text
+  const saved = await saveChatFile({ organizationId: org, conversationId: conv.id, fileName: null, contentType: 'image/png', buffer: png });
+  savedBlobs.push(saved.url);
+  assert.deepEqual([saved.fileName, saved.contentType, saved.size], ['arquivo.png', 'image/png', png.length]);
+  const sent = await store.sendCustomerAttachment(conv, 'Carla Chat', 'olha o erro', saved);
+  assert.deepEqual([sent.body, sent.attachment.fileName, sent.attachment.size], ['olha o erro', 'arquivo.png', png.length]);
+  assert.equal((await store.getConversation(conv.id)).lastMessagePreview, 'olha o erro');
+  assert.equal(await used(), before + png.length, 'it counts against the company\'s storage');
+
+  // only a file: the list shows its name
+  const pdf = await saveChatFile({ organizationId: org, conversationId: conv.id, fileName: 'folha-outubro.pdf', contentType: 'application/pdf', buffer: Buffer.from('%PDF-1.4 test') });
+  savedBlobs.push(pdf.url);
+  await store.sendCustomerAttachment(conv, 'Carla Chat', '', pdf);
+  assert.equal((await store.getConversation(conv.id)).lastMessagePreview, '📎 folha-outubro.pdf');
+  const listed = (await store.getMessages(conv.id)).filter((m) => m.attachment);
+  assert.deepEqual(listed.map((m) => m.attachment.fileName), ['arquivo.png', 'folha-outubro.pdf']);
+
+  // served: the type comes from our record; an image shows in place, a pdf too, "download" saves; never sniffed
+  const record = await store.getAttachment(listed[0].attachment.id);
+  assert.deepEqual([record.organizationId, record.conversationId, record.contentType], [org, conv.id, 'image/png']);
+  const inline = await chatFileResponse(record, false);
+  assert.equal(inline.headers.get('content-type'), 'image/png');
+  assert.match(inline.headers.get('content-disposition'), /^inline;/);
+  assert.equal(inline.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(inline.headers.get('cache-control'), 'private, no-store');
+  assert.deepEqual(Buffer.from(await inline.arrayBuffer()), png, 'the same bytes come back');
+  assert.match((await chatFileResponse(record, true)).headers.get('content-disposition'), /^attachment;/);
+  const docx = { ...record, contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+  assert.match((await chatFileResponse(docx, false)).headers.get('content-disposition'), /^attachment;/, 'what the browser cannot show safely is downloaded');
+  const forged = { ...record, contentType: 'text/html' };
+  assert.equal((await chatFileResponse(forged, false)).headers.get('content-type'), 'application/octet-stream', 'a type that is not on the list is never trusted');
+  assert.equal(await store.getAttachment('00000000-0000-0000-0000-000000000000'), null);
+  assert.equal(await store.getAttachment('not-an-id'), null);
+});
+
+test('attachments from the team: sent through the official number as media, kept without charging the customer', async () => {
+  const { createBugReport } = require('../lib/platform/bugs.ts');
+  const t = await createBugReport({ organizationId: org, userId: user }, { type: 'support', category: 'billing', title: `Anexo equipe ${stamp}`, description: 'Descrição longa o bastante para o teste', channel: 'chat', whatsapp: '(21) 95555-0007' });
+  extraTickets.push(t.id);
+  const conv = await store.findWebConversation(t.id);
+  const number = Number((await sql`SELECT ticket_number FROM bug_reports WHERE id = ${t.id}`)[0].ticket_number);
+  const used = async () => Number((await sql`SELECT COALESCE(SUM(bytes), 0)::bigint AS n FROM organization_files WHERE organization_id = ${org}`)[0].n);
+  const before = await used();
+  const file = { buffer: png, fileName: 'orientacao.png', contentType: 'image/png' };
+
+  await withEvolution(async (calls) => {
+    const result = await sendOwnerAttachment(conv.id, file, 'Siga estes passos');
+    assert.equal(result.whatsapp, 'sent');
+    assert.equal(calls.length, 1);
+    assert.match(calls[0].url, /\/message\/sendMedia\/nextrotta-suporte$/);
+    assert.deepEqual([calls[0].body.number, calls[0].body.mediatype, calls[0].body.mimetype, calls[0].body.fileName], ['5521955550007', 'image', 'image/png', 'orientacao.png']);
+    assert.equal(calls[0].body.media, png.toString('base64'));
+    assert.equal(calls[0].body.caption, `*Suporte NextRotta* — chamado #${number}\nSiga estes passos`);
+    const stored = (await store.getMessages(conv.id)).find((m) => m.attachment?.fileName === 'orientacao.png');
+    assert.equal(stored.direction, 'out');
+    savedBlobs.push((await store.getAttachment(stored.attachment.id)).url);
+    assert.equal(await used(), before, 'what the team sends is not charged to the customer');
+
+    // a PDF is a document; "mirror: false" keeps it in the chat only
+    calls.length = 0;
+    const doc = await sendOwnerAttachment(conv.id, { buffer: Buffer.from('%PDF-1.4 x'), fileName: 'guia.pdf', contentType: 'application/pdf' }, '', { mirror: false });
+    assert.equal(doc.whatsapp, 'skipped');
+    assert.equal(calls.length, 0);
+    savedBlobs.push((await store.getAttachment((await store.getMessages(conv.id)).find((m) => m.attachment?.fileName === 'guia.pdf').attachment.id)).url);
+  });
+
+  // WhatsApp down: on a web chat the file still reaches the chat, and the failure is reported
+  await withEvolution(async () => {
+    const failed = await sendOwnerAttachment(conv.id, { buffer: png, fileName: 'de-novo.png', contentType: 'image/png' }, '');
+    assert.equal(failed.whatsapp, 'failed');
+    assert.ok(failed.whatsappError);
+    assert.ok((await store.getMessages(conv.id)).some((m) => m.attachment?.fileName === 'de-novo.png'));
+    savedBlobs.push((await store.getAttachment((await store.getMessages(conv.id)).find((m) => m.attachment?.fileName === 'de-novo.png').attachment.id)).url);
+  }, { fail: true });
+
+  // on a WhatsApp conversation WhatsApp must accept the file first: nothing is stored when it does not
+  const [incoming] = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '5521955550002@s.whatsapp.net', fromMe: false, id: `WA-${stamp}-ATT` } }, { messageTimestamp: Math.floor(Date.now() / 1000) }));
+  await store.storeWhatsAppMessage(incoming);
+  const wa = (await store.listConversations({ status: 'open', search: '5521955550002' })).find((c) => c.channel === 'whatsapp');
+  await withEvolution(async () => {
+    await assert.rejects(sendOwnerAttachment(wa.id, file, ''), /não foi enviado/);
+    assert.equal((await store.getMessages(wa.id)).filter((m) => m.attachment).length, 0);
+  }, { fail: true });
+  await withEvolution(async (calls) => {
+    assert.equal((await sendOwnerAttachment(wa.id, file, 'Segue o print')).whatsapp, 'sent');
+    assert.equal(calls[0].body.caption, 'Segue o print', 'on a WhatsApp conversation there is no ticket prefix');
+    savedBlobs.push((await store.getAttachment((await store.getMessages(wa.id)).find((m) => m.attachment).attachment.id)).url);
+  });
+});
+
+after(async () => {
+  // The only deletion allowed: the files of the test attachments.
+  const { del } = require('@vercel/blob');
+  for (const url of savedBlobs) await del(url).catch(() => undefined);
+  global.fetch = realFetch;
 });
 
 after(async () => {
