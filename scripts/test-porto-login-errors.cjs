@@ -64,3 +64,39 @@ test('describePortoError: the sentence for the screen, the trace kept apart', ()
   assert.deepEqual(e.describePortoError(null), { message: 'Sem detalhe do erro.', technical: null });
   assert.deepEqual(e.describePortoError('Senha recusada'), { message: 'Senha recusada', technical: null });
 });
+
+test('a technical Playwright error becomes a sentence; plain causes stay as they are', () => {
+  const timeout = e.describePortoError('Erro inesperado ao importar horas do Porto: frame.selectOption: Timeout 30000ms exceeded.');
+  assert.equal(timeout.message, e.PORTO_RUN_FAILED_MESSAGE);
+  assert.equal(timeout.technical, 'frame.selectOption: Timeout 30000ms exceeded.');
+  const plain = 'Erro inesperado ao importar horas do Porto: A busca de serviços do Porto não terminou em tempo hábil.';
+  assert.deepEqual(e.describePortoError(plain), { message: plain, technical: null });
+});
+
+test('findPortoLoginProblem: failing only while the newest evidence is a failure', () => {
+  const rejected = e.buildLoginFailureMessage('password_expired', 'url=x');
+  const failedRun = { started_at: '2026-11-05T20:00:00Z', status: 'error', error_message: rejected };
+  const okRun = (at) => ({ started_at: at, status: 'success', error_message: null });
+  const none = { at: null, ok: null, message: null };
+  const find = (input) => e.findPortoLoginProblem({ hasCredentials: true, lastTest: none, runs: [], ...input });
+
+  assert.equal(find({ runs: [failedRun] }).message, e.PORTO_LOGIN_MESSAGES.password_expired);
+  assert.equal(find({ lastTest: { at: '2026-11-05T13:00:00Z', ok: false, message: rejected } }).message, e.PORTO_LOGIN_MESSAGES.password_expired);
+  // A test or a run that worked afterwards clears it.
+  assert.equal(find({ runs: [failedRun], lastTest: { at: '2026-11-05T21:00:00Z', ok: true, message: null } }), null);
+  assert.equal(find({ runs: [failedRun, okRun('2026-11-06T20:00:00Z')] }), null);
+  // An older success does not hide a newer failure.
+  assert.ok(find({ runs: [failedRun, okRun('2026-11-04T20:00:00Z')] }));
+  // Errors that are not a rejected login are not a login problem; no account means nothing to warn about.
+  assert.equal(find({ runs: [{ started_at: '2026-11-05T20:00:00Z', status: 'error', error_message: 'Erro inesperado ao importar horas do Porto: x' }] }), null);
+  assert.equal(find({ hasCredentials: false, runs: [failedRun] }), null);
+  // The old wording counts too.
+  assert.ok(find({ runs: [{ started_at: '2026-11-05T20:00:00Z', status: 'error', error_message: 'Login no Porto falhou — verifique CPF e senha (url=u qraLookup(status=200, body="") modalVisible=false sessionCheck(status=200, body="x"))' }] }));
+});
+
+test('portoLoginNotice: its own title for an expired password', () => {
+  assert.equal(e.portoLoginNotice(e.PORTO_LOGIN_MESSAGES.password_expired).title, 'A senha do Porto expirou');
+  const generic = e.portoLoginNotice(e.PORTO_LOGIN_MESSAGES.credentials_rejected);
+  assert.equal(generic.title, 'O robô do Porto não consegue entrar');
+  assert.match(generic.body, /não são importadas/);
+});

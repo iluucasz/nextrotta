@@ -1,5 +1,6 @@
 // Relative imports only: runs in the VPS worker (worker/tsconfig.json).
 import { notifyOrganization } from './notifications';
+import { describePortoError, isPortoLoginRejection, portoLoginNotice } from './porto-login-errors';
 import { getOrganizationSettings } from './organization-settings-store';
 import { sendEvolutionText } from './whatsapp/evolution';
 import { connectionFromConfig, getWhatsAppConfig } from './whatsapp/store';
@@ -13,15 +14,27 @@ import { connectionFromConfig, getWhatsAppConfig } from './whatsapp/store';
  * (lib/platform/alerts.ts). Never throws: a failed alert only gets logged.
  */
 export async function sendPortoAlert(organizationId: string, title: string, lines: string[]): Promise<{ sent: boolean; reason?: string }> {
-  // The bell does not depend on the WhatsApp being set up: once a day per problem.
-  await notifyOrganization(organizationId, {
-    kind: 'porto',
-    severity: 'warning',
-    title: `Robô do Porto: ${title}`,
-    body: lines.slice(0, 3).join(' · '),
-    href: '/admin/config-porto',
-    dedupeKey: `porto:${title}:${new Date().toISOString().slice(0, 10)}`,
-  });
+  // What the company reads is the sentence, never the technical trace of the run.
+  const rawLines = lines;
+  lines = rawLines.map((line) => describePortoError(line).message);
+  const today = new Date().toISOString().slice(0, 10);
+
+  // The bell does not depend on the WhatsApp being set up: once a day per problem. A rejected login is one entry
+  // (the same key the bell check uses, notification-checks.ts), whichever of the two raises it first.
+  const login = rawLines.find((line) => isPortoLoginRejection(line));
+  if (login) {
+    const notice = portoLoginNotice(describePortoError(login).message);
+    await notifyOrganization(organizationId, { kind: 'porto', severity: 'critical', ...notice, href: '/admin/config-porto', dedupeKey: `porto:login:${today}` });
+  } else {
+    await notifyOrganization(organizationId, {
+      kind: 'porto',
+      severity: 'warning',
+      title: `Robô do Porto: ${title}`,
+      body: lines.slice(0, 3).join(' · '),
+      href: '/admin/config-porto',
+      dedupeKey: `porto:${title}:${today}`,
+    });
+  }
 
   try {
     const phone = (await getOrganizationSettings(organizationId)).portoAlertPhone.trim();

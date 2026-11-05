@@ -150,5 +150,60 @@ export function describePortoError(raw: string | null | undefined): PortoErrorTe
     };
   }
 
+  // "Erro inesperado ao importar horas do Porto: frame.selectOption: Timeout 30000ms exceeded." — the cause is
+  // the browser library talking, not something the company can read. Plain causes ("A busca … não terminou") stay.
+  const unexpected = /^Erro inesperado ao importar (horas|escala)[^:]*:\s*([\s\S]*)$/.exec(text);
+  if (unexpected && TECHNICAL_CAUSE.test(unexpected[2])) {
+    return { message: PORTO_RUN_FAILED_MESSAGE, technical: unexpected[2].split('\n')[0].slice(0, 300) };
+  }
+
   return { message: text, technical: null };
+}
+
+const TECHNICAL_CAUSE = /Timeout \d+ms|waiting for|locator|selector|selectOption|Target (page|closed)|browser has been closed|net::ERR|\b(page|frame|locator|browser|context)\.[a-zA-Z]+/i;
+
+export const PORTO_RUN_FAILED_MESSAGE =
+  'O robô não conseguiu usar uma tela do Portal do Prestador a tempo. Pode ser lentidão do portal ou senha expirada (entre no portal pelo navegador: se pedir nova senha, troque e atualize em “Alterar”). Se estiver tudo certo, tente de novo em alguns minutos.';
+
+export type PortoLoginProblemInput = {
+  hasCredentials: boolean;
+  lastTest: { at: string | null; ok: boolean | null; message: string | null };
+  /** The latest finished run of each job (hours, schedule). */
+  runs: Array<{ started_at: string; status: string; error_message: string | null }>;
+};
+
+/**
+ * Whether the Porto login is failing right now, and the sentence that says why. It is failing when the newest
+ * evidence is a failure: a login test that failed, or a run that stopped on a rejected login — and no login test
+ * or run has worked since. Looks at manual tests and runs too, so it does not depend on the worker raising an alert.
+ */
+export function findPortoLoginProblem(input: PortoLoginProblemInput): { message: string } | null {
+  if (!input.hasCredentials) return null;
+
+  const time = (value: string | null) => (value ? Date.parse(value) || 0 : 0);
+  let failure: { at: number; message: string } | null = null;
+  let success = 0;
+
+  const { lastTest } = input;
+  if (lastTest.ok === false) failure = { at: time(lastTest.at), message: describePortoError(lastTest.message).message };
+  if (lastTest.ok === true) success = Math.max(success, time(lastTest.at));
+
+  for (const run of input.runs) {
+    const at = time(run.started_at);
+    if (run.status === 'error' && isPortoLoginRejection(run.error_message)) {
+      if (!failure || at > failure.at) failure = { at, message: describePortoError(run.error_message).message };
+    } else if (run.status === 'success' || run.status === 'partial') {
+      success = Math.max(success, at);
+    }
+  }
+
+  return failure && failure.at > success ? { message: failure.message } : null;
+}
+
+/** The bell entry for a login that does not work (the same text whoever raises it, so it shows once). */
+export function portoLoginNotice(message: string): { title: string; body: string } {
+  return {
+    title: message === PORTO_LOGIN_MESSAGES.password_expired ? 'A senha do Porto expirou' : 'O robô do Porto não consegue entrar',
+    body: `${message} Enquanto isso, as horas e a escala do Porto não são importadas.`,
+  };
 }

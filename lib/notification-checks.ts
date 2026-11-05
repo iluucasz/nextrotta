@@ -8,6 +8,7 @@ import { addDays } from './expenses';
 import { createNotification, ensureScheduleReminder, resolveNotifications } from './notifications';
 import { getOrganizationSettings } from './organization-settings-store';
 import { getOrganizationSystemStatus } from './system-status';
+import { findPortoLoginProblem, portoLoginNotice } from './porto-login-errors';
 
 const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
@@ -52,6 +53,50 @@ export async function checkModules(organizationId: string) {
   } else {
     await resolveNotifications(organizationId, 'module:whatsapp:');
   }
+}
+
+/**
+ * A Porto login that does not work (expired or changed password, wrong CPF) stops the robot cold; the company only
+ * finds out from the history. Looks at the login test and the latest runs, so it also catches what the worker did
+ * not alert and goes away by itself once a test or a run works again.
+ */
+export async function checkPortoLogin(organizationId: string) {
+  if (!(await organizationHasFeature(organizationId, 'porto'))) return;
+
+  const [config] = await sql`
+    SELECT cpf, encrypted_password, last_login_test_at, last_login_test_ok, last_login_test_message
+    FROM porto_config
+    WHERE organization_id = ${organizationId}
+  `;
+  const runs = await sql`
+    SELECT DISTINCT ON (job_type) started_at, status, error_message
+    FROM porto_sync_log
+    WHERE organization_id = ${organizationId} AND status <> 'running'
+    ORDER BY job_type, started_at DESC
+  `;
+
+  const problem = findPortoLoginProblem({
+    hasCredentials: Boolean(config?.cpf && config?.encrypted_password),
+    lastTest: {
+      at: config?.last_login_test_at ? new Date(config.last_login_test_at as string).toISOString() : null,
+      ok: (config?.last_login_test_ok as boolean | null) ?? null,
+      message: (config?.last_login_test_message as string | null) ?? null,
+    },
+    runs: runs.map((run) => ({ started_at: new Date(run.started_at as string).toISOString(), status: String(run.status), error_message: (run.error_message as string | null) ?? null })),
+  });
+
+  if (!problem) {
+    await resolveNotifications(organizationId, 'porto:login:');
+    return;
+  }
+  await createNotification({
+    organizationId,
+    kind: 'porto',
+    severity: 'critical',
+    ...portoLoginNotice(problem.message),
+    href: '/admin/config-porto',
+    dedupeKey: `porto:login:${brasiliaDateKey()}`,
+  });
 }
 
 /** Active technicians who produced in `month` and have no closed folha for it. */
@@ -249,6 +294,7 @@ export async function runNotificationChecks(organizationId: string) {
   const checks: Array<[string, (id: string) => Promise<unknown>]> = [
     ['schedule', ensureScheduleReminder],
     ['modules', checkModules],
+    ['porto-login', checkPortoLogin],
     ['payroll', checkPayroll],
     ['whatsapp', checkWhatsAppConnection],
     ['storage', checkStorage],

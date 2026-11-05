@@ -27,7 +27,8 @@ O sino do sistema da empresa (barra de cima, só para o admin) mostra dois tipos
 | Nova cobrança, pagamento confirmado, cobrança vencida | `lib/billing/billing.ts` (`notifyCharge`) | info, sucesso, crítica |
 | Pagamento em atraso, acesso pausado, assinatura em dia | `evaluateBillingStatus`, `runBillingMaintenance` | crítica, crítica, sucesso |
 | Resposta do suporte num chamado (sem notas internas) | `lib/platform/bugs.ts` (`addBugMessage`) | info |
-| Robô do Porto falhou ou terminou com avisos (1 por dia por problema) | `lib/porto-alerts.ts` | atenção |
+| Robô do Porto falhou ou terminou com avisos (1 por dia por problema; o texto é a frase de `describePortoError`, nunca o rastro técnico) | `lib/porto-alerts.ts` | atenção |
+| Login do Porto não funciona (senha expirada ou trocada, CPF recusado): vem do teste de login ou da última execução e sai sozinho quando um teste ou uma execução volta a funcionar. Uma só entrada por dia, também quando o worker avisa (`porto:login:`) | `checkPortoLogin`, `lib/porto-alerts.ts` | crítica |
 | Créditos de IA acabando / acabaram (1 por mês cada) | `lib/ai/assistant.ts` | atenção, crítica |
 | A escala termina em menos de 7 dias, ou não existe (empresa sem Porto) | `ensureScheduleReminder` | atenção |
 | Módulo Porto ou WhatsApp em manutenção (o servidor não responde). Sai do sino quando volta | `checkModules` | atenção |
