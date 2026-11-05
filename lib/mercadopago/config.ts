@@ -47,7 +47,7 @@ export function fallbackPayerEmail() {
   const configured = (process.env.MERCADOPAGO_FALLBACK_PAYER_EMAIL ?? '').trim();
   if (configured) return configured;
   const root = getRootDomain().replace(/:\d+$/, '');
-  return `pagador@${root.includes('localhost') ? 'nextrotta.com.br' : root}`;
+  return `pagador@${root.includes('localhost') ? 'nextrotta.app' : root}`;
 }
 
 const IV_LENGTH = 12;

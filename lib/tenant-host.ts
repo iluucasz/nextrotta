@@ -14,7 +14,7 @@ const SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
 export type HostContext = { kind: 'root' } | { kind: 'organization'; slug: string };
 
 /**
- * Root domain including the port in development, e.g. "nextrotta.com.br". The development default is
+ * Root domain including the port in development, e.g. "nextrotta.app". The development default is
  * a *.localhost name (browsers resolve those to loopback) rather than plain "localhost": the dev
  * server sees every request as localhost, so redirects to that origin get rewritten as relative
  * paths and would loop on the organization subdomain.

@@ -20,9 +20,9 @@ NextRotta é o sistema de gestão para empresas de assistência técnica e equip
 
 Quer conhecer ou tirar uma dúvida? Mande uma mensagem. Atendimento de segunda a sexta, das 9h às 18h (Brasília).
 
-nextrotta.com.br
+nextrotta.app
 ```
 
-Outros campos do perfil: e-mail `nextrotta@gmail.com`, site `https://nextrotta.com.br`, horário de segunda a sexta, das 9h às 18h,
+Outros campos do perfil: e-mail `nextrotta@gmail.com`, site `https://nextrotta.app`, horário de segunda a sexta, das 9h às 18h,
 categoria "Software" (ou a mais próxima que o app oferecer). Endereço e localização: deixar em branco enquanto não houver
 endereço comercial (o CNPJ ainda não foi definido).

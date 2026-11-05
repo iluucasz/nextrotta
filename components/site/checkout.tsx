@@ -159,7 +159,7 @@ export function MarketingCheckout() {
   const [acceptTerms, setAcceptTerms] = useState(false);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  const [rootDomain, setRootDomain] = useState('nextrotta.com.br');
+  const [rootDomain, setRootDomain] = useState('nextrotta.app');
   const formRef = useRef<HTMLFormElement>(null);
 
   const set = (key: keyof typeof values, value: string) => setValues((current) => ({ ...current, [key]: value }));

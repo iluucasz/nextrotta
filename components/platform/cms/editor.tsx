@@ -942,7 +942,7 @@ export function VisualSiteEditor({ preview = false }: { preview?: boolean }) {
               <span className="cms-status-dot" />
               {previewing ? 'Pré-visualização' : 'Edição visual'}
               <span className="cms-url">
-                nextrotta.com.br
+                nextrotta.app
                 {page === 'home'
                   ? ''
                   : `/${({ plans: 'planos', terms: 'termos', privacy: 'privacidade', contact: 'contato', custom: 'sob-medida', news: 'novidades' } as Record<string, string>)[page]}`}

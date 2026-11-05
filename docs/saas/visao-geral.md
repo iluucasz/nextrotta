@@ -10,14 +10,14 @@ Transformar o Central Operacional (sistema dedicado de um cliente) na plataforma
 
 | Superfície | Endereço | Quem usa |
 |---|---|---|
-| Site de marketing + login | `nextrotta.com.br` | visitantes, todos os usuários (login) |
-| Painel do dono | `nextrotta.com.br/plataforma` | só `platform_owner` |
-| Sistema da organização | `<slug>.nextrotta.com.br` | admin e usuários da organização |
+| Site de marketing + login | `nextrotta.app` | visitantes, todos os usuários (login) |
+| Painel do dono | `nextrotta.app/plataforma` | só `platform_owner` |
+| Sistema da organização | `<slug>.nextrotta.app` | admin e usuários da organização |
 
-- Login sempre em `nextrotta.com.br`: o e-mail (único na plataforma) identifica a organização e o usuário é redirecionado para o subdomínio dela. O dono vai para o painel.
-- Cookie de sessão no domínio `.nextrotta.com.br`; o token carrega `organizationId` e o middleware recusa token de uma organização usado no subdomínio de outra.
+- Login sempre em `nextrotta.app`: o e-mail (único na plataforma) identifica a organização e o usuário é redirecionado para o subdomínio dela. O dono vai para o painel.
+- Cookie de sessão no domínio `.nextrotta.app`; o token carrega `organizationId` e o middleware recusa token de uma organização usado no subdomínio de outra.
 - Subdomínios reservados (não podem ser slug): `www`, `app`, `api`, `admin`, `painel`, `plataforma`, `login`, `suporte`, `status`, `blog`, `docs`, `mail`.
-- Vercel: wildcard `*.nextrotta.com.br` com os nameservers da Vercel. Em desenvolvimento, `<slug>.localhost:3000`.
+- Vercel: wildcard `*.nextrotta.app` com os nameservers da Vercel. Em desenvolvimento, `<slug>.localhost:3000`.
 
 ## 3. Papéis
 

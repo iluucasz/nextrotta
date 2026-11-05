@@ -2,7 +2,7 @@
 
 Plataforma SaaS multi-cliente, por assinatura, para gestão de equipes técnicas em campo: técnicos, serviços (OS), escala, horas, folha, financeiro, controle de peças, automação do Portal do Prestador (Porto Seguro), notificações por WhatsApp e assistente de IA.
 
-Cada empresa-cliente (organização) tem o próprio endereço, `<slug>.nextrotta.com.br`, e os dados ficam isolados por `organization_id` num banco único. O dono da plataforma administra tudo pelo painel em `/plataforma`.
+Cada empresa-cliente (organização) tem o próprio endereço, `<slug>.nextrotta.app`, e os dados ficam isolados por `organization_id` num banco único. O dono da plataforma administra tudo pelo painel em `/plataforma`.
 
 ## Stack
 

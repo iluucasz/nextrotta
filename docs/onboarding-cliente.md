@@ -7,7 +7,7 @@ Padrão para empresas **vitalícias** (sem cobrança, sem plano a contratar). Ma
 - [ ] CNPJ ou CPF
 - [ ] Endereço completo
 - [ ] WhatsApp e e-mail de contato
-- [ ] Subdomínio desejado (vira `<slug>.nextrotta.com.br`; confira se está livre)
+- [ ] Subdomínio desejado (vira `<slug>.nextrotta.app`; confira se está livre)
 - [ ] Logo e o nome que deve sair nos termos impressos
 
 ## 2. Pessoas e acessos

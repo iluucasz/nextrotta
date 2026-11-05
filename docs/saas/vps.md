@@ -149,7 +149,7 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 > - Worker do NextRotta (`nextrotta-worker:20261007-3`, `WORKER_ID=vps-blackhosting`, `--memory=3g
 >   --shm-size=512m`), segredos em `/opt/nextrotta/worker.env` (600). Conferido: `/health` 401 sem
 >   segredo e 200 com ele (pelo Caddy), sinal de vida a cada minuto e `vps_metrics` gravando. Usa o
->   banco do NextRotta, Asaas em sandbox e `ROOT_DOMAIN=nextrotta.com.br`. Sem worker da produção nesta VPS.
+>   banco do NextRotta, Asaas em sandbox e `ROOT_DOMAIN=nextrotta.app`. Sem worker da produção nesta VPS.
 > - Sem limpeza do sistema antigo aqui (`vps-cleanup.timer` não existe na VPS nova): a limpeza do painel
 >   é a única; a imagem do worker ocupa ~3,6 GB (disco em 49%).
 > - Falta: worker da produção (com autorização do dono), `EVOLUTION_API_KEY` nova na Vercel da produção

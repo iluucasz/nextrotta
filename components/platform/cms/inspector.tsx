@@ -316,7 +316,7 @@ export function GlobalInspector({
         ))}
         {id === '@seo' && (
           <div className="cms-search-preview">
-            <span>nextrotta.com.br</span>
+            <span>nextrotta.app</span>
             <h3>{document.seoTitle}</h3>
             <p>{document.seoDescription}</p>
           </div>

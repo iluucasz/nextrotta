@@ -93,12 +93,12 @@ export function chargeStatusLabel(status: string) {
 }
 
 /**
- * Builds an organization's address on the domain the panel is served from (nextrotta.com.br, or
+ * Builds an organization's address on the domain the panel is served from (nextrotta.app, or
  * nextrotta.localhost:3000 in development). Read after mount: there's no window while rendering
  * on the server.
  */
 export function useOrganizationHost() {
-  const [rootHost, setRootHost] = useState('nextrotta.com.br');
+  const [rootHost, setRootHost] = useState('nextrotta.app');
   useEffect(() => setRootHost(window.location.host), []);
   return useCallback((slug: string) => `${slug}.${rootHost}`, [rootHost]);
 }

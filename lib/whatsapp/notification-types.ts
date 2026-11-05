@@ -71,7 +71,7 @@ export const NOTIFICATION_DEFINITIONS: Record<NotificationType, NotificationDefi
       NAME_VARIABLE,
       { key: 'competencia', description: 'Mês da folha', example: 'setembro de 2026' },
       { key: 'valor_em_conta', description: 'Valor líquido pago em conta', example: 'R$ 2.450,00' },
-      { key: 'link', description: 'Link da tela de pagamento do técnico no sistema da empresa', example: 'https://suaempresa.nextrotta.com.br/dashboard/payroll' },
+      { key: 'link', description: 'Link da tela de pagamento do técnico no sistema da empresa', example: 'https://suaempresa.nextrotta.app/dashboard/payroll' },
     ],
     help: {
       purpose: 'Avisa o técnico de que o pagamento do mês foi fechado e já pode ser conferido no sistema.',

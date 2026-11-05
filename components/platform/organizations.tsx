@@ -778,7 +778,7 @@ export function Provisioning({ id }: { id: string }) {
       {password && (
         <SecretNotice
           title="Senha temporária do administrador"
-          description="Envie ao administrador junto com o endereço da empresa. No primeiro acesso, ele entra em nextrotta.com.br com o e-mail dele e esta senha."
+          description="Envie ao administrador junto com o endereço da empresa. No primeiro acesso, ele entra em nextrotta.app com o e-mail dele e esta senha."
           secret={password}
           onClose={() => setPassword(null)}
         />

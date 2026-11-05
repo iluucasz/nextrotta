@@ -8,12 +8,12 @@
 
 Você vai criar a interface de duas partes do **NextRotta**, um SaaS brasileiro de gestão de equipes técnicas de campo (prestadores de serviço). O produto já existe para os clientes: cadastro de técnicos, ordens de serviço (OS), importação de planilhas, horas e banco de horas, escala, folha de pagamento com comissão, financeiro, biblioteca de documentos, automação do portal da seguradora Porto Seguro, notificações por WhatsApp, dashboard gerencial e recursos de IA.
 
-Cada cliente é uma **organização**, com o próprio sistema em `<empresa>.nextrotta.com.br`. Uma única pessoa, o **dono da plataforma**, administra todas as organizações.
+Cada cliente é uma **organização**, com o próprio sistema em `<empresa>.nextrotta.app`. Uma única pessoa, o **dono da plataforma**, administra todas as organizações.
 
 Você vai criar:
 
-1. **Painel do dono** (`nextrotta.com.br/plataforma`): área privada, usada só pelo dono, para administrar organizações, planos, cobrança, créditos de IA, recursos, bugs, leads, conteúdo do site e a saúde do sistema.
-2. **Site de marketing** (`nextrotta.com.br`): site público para vender o produto, com página de login. Todo o conteúdo do site é editável pelo painel do dono.
+1. **Painel do dono** (`nextrotta.app/plataforma`): área privada, usada só pelo dono, para administrar organizações, planos, cobrança, créditos de IA, recursos, bugs, leads, conteúdo do site e a saúde do sistema.
+2. **Site de marketing** (`nextrotta.app`): site público para vender o produto, com página de login. Todo o conteúdo do site é editável pelo painel do dono.
 
 **Não** crie o sistema usado pelos clientes (ele já existe) nem lógica de servidor.
 
@@ -94,7 +94,7 @@ Botão **Nova organização**.
 
 ### 1.3 Nova organização (assistente em etapas)
 1. **Empresa:** razão social, nome fantasia, CNPJ, e-mail, telefone/WhatsApp, cidade/UF e nº aproximado de técnicos.
-2. **Subdomínio:** sugerido a partir do nome, editável e com verificação de disponibilidade em tempo real. Mostra a prévia `empresa.nextrotta.com.br`. Recusa nomes reservados (`www`, `app`, `api`, `admin`, `painel`, `plataforma`, `login`, `suporte`, `status`, `blog`, `docs`, `mail`) e aceita só letras minúsculas, números e hífen.
+2. **Subdomínio:** sugerido a partir do nome, editável e com verificação de disponibilidade em tempo real. Mostra a prévia `empresa.nextrotta.app`. Recusa nomes reservados (`www`, `app`, `api`, `admin`, `painel`, `plataforma`, `login`, `suporte`, `status`, `blog`, `docs`, `mail`) e aceita só letras minúsculas, números e hífen.
 3. **Plano:** Essencial, Pro ou Sob medida; ciclo mensal ou anual; cupom/desconto opcional; cobrar implantação (sim/não, valor pré-preenchido pelo plano e editável). Mostra o resumo do valor da primeira cobrança.
 4. **Administrador:** nome e e-mail do admin da organização; opção de enviar convite por e-mail.
 5. **Recursos sob medida (opcional):** liberar recursos sob medida do catálogo.
@@ -344,7 +344,7 @@ Lista das publicações marcadas para o site (seção 1.12), da mais recente par
 ### 2.6 Login (`/login`)
 - E-mail e senha, **Esqueci minha senha** (fluxo: informar e-mail → mensagem de que o link foi enviado).
 - Mensagens de erro: credenciais inválidas; usuário inativo; organização suspensa ("Acesso pausado por pendência na assinatura — o administrador pode regularizar e exportar os dados").
-- Após o login, o usuário é levado ao sistema da empresa dele (`empresa.nextrotta.com.br`) ou, se for o dono, ao painel. Mostre um estado de "redirecionando".
+- Após o login, o usuário é levado ao sistema da empresa dele (`empresa.nextrotta.app`) ou, se for o dono, ao painel. Mostre um estado de "redirecionando".
 
 ### 2.7 Termos de uso e Política de privacidade
 Páginas de texto com o conteúdo configurado em 1.13.
