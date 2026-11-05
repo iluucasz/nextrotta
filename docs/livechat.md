@@ -19,10 +19,13 @@ webhook dela para `https://<ROOT_DOMAIN>/api/webhooks/evolution` e mostra o QR C
 O token do webhook é derivado de `JWT_SECRET` (`webhookToken()`, nada novo para configurar). Em desenvolvimento
 (`*.localhost`) não há endereço público: dá para conectar, mas as mensagens só chegam no site publicado.
 
-**Pendência (05/11/2026):** a `EVOLUTION_API_KEY` do `.env` recebe **401** do servidor `evolution-whatsapp.duckdns.org` (o
-`docs/saas/vps.md` registra que a chave global foi trocada na reconstrução do Evolution). Enquanto a chave certa não estiver no
-`.env`, na Vercel e no `worker.env`, o Livechat mostra "O servidor do WhatsApp recusou a chave" e só o chat dos chamados
-funciona. O recebimento e o envio pelo WhatsApp foram testados só com mensagens simuladas do webhook, nunca com o Evolution real.
+**Pendência (05/11/2026): o NextRotta ainda não tem Evolution.** Conferido na VPS: os únicos servidores Evolution são
+`porto-evolution-api` (produção do Central Operacional) e `essencialcentro-evolution` (outro projeto do dono); não existe
+`nextrotta-evolution`. O `EVOLUTION_API_URL` do `.env` (`https://evolution-whatsapp.duckdns.org`) aponta para esta mesma VPS e quem
+responde é o `essencialcentro` (`clientName` na raiz do servidor); por isso a chave do `.env` recebe **401**, e é bom que receba:
+**não se deve usar esse servidor** (nem criar a instância `nextrotta-suporte` nele). Enquanto não houver um Evolution do
+NextRotta, o Livechat mostra "O servidor do WhatsApp recusou a chave" e só o chat dos chamados funciona. O recebimento e o envio
+pelo WhatsApp foram testados só com mensagens simuladas do webhook, nunca com um Evolution real.
 
 ## O que há de código
 
