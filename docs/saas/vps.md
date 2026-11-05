@@ -104,6 +104,18 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 >   `VPS_AGENT_SECRET` (os mesmos dos arquivos `.env` da VPS).
 > - Falta: Evolution próprio. (O redeploy do worker com os backups e o token foi feito em 05/11.)
 
+> **05/11/2026 (noite) — manager, domínio e worker recriado.** Rotas novas no `nextrotta-proxy` (Caddyfile, cópia
+> `Caddyfile.bak-manager-20261105`): `/manager*` e `/assets/*` → `nextrotta-evolution-api:8080`, que publicam a interface web do
+> Evolution em `https://nextrotta-infra.duckdns.org:8443/manager/` (no login: "Server URL" = `https://nextrotta-infra.duckdns.org:8443/nextrotta-evolution`
+> e a chave global de `/opt/nextrotta/evolution/evolution.env`). `ROOT_DOMAIN` do `worker.env` corrigido para `nextrotta.app` (era
+> `nextrotta.com.br`; cópia `worker.env.bak-rootdomain-20261105`). **Um container lê o `--env-file` só ao ser criado**, então o worker foi
+> recriado, não reiniciado: `docker stop -t 30 nextrotta-worker && docker rename … nextrotta-worker-prev`, depois `docker run -d --name
+> nextrotta-worker --restart unless-stopped --memory=3g --shm-size=512m --network nextrotta-net --env-file /opt/nextrotta/worker.env
+> --log-driver json-file --log-opt max-size=20m --log-opt max-file=5 nextrotta-worker:<imagem>` (só quando o log mostrar o worker ocioso;
+> a manutenção das :00 e :30 grava métricas e não conta). Os containers parados `nextrotta-worker-old` e `-prev` foram removidos; a
+> imagem `20261105-1` continua. A instância `nextrotta-suporte` está conectada ao número oficial e com o webhook em
+> `https://nextrotta.app/api/webhooks/evolution`.
+>
 > **05/11/2026 — Evolution do NextRotta.** `nextrotta-evolution-api` (evoapicloud/evolution-api v2.3.7, `--memory` 1g),
 > `nextrotta-evolution-postgres` (postgres:16-alpine, 512m) e `nextrotta-evolution-redis` (redis:7-alpine, 256m), em
 > `/opt/nextrotta/evolution/` (`docker-compose.yml` e `evolution.env`, 600; projeto `nextrotta-evolution`; volumes
@@ -114,7 +126,7 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 > (`DATABASE_SAVE_DATA_*=false`, só a instância). `worker.env` ganhou `EVOLUTION_API_URL=http://nextrotta-evolution-api:8080` e a
 > chave (cópia `worker.env.bak-evolution-20261105`); o worker **não** foi reiniciado (vale no próximo restart). **Atenção:** o
 > `evolution-whatsapp.duckdns.org` do `.env` do dono é o Evolution do `essencialcentro`, não do NextRotta.
-> Voltar atrás: `cd /opt/nextrotta/evolution && docker compose down` (os volumes ficam; `down -v` apaga) e restaurar o Caddyfile.
+> Voltar atrás do Evolution: `cd /opt/nextrotta/evolution && docker compose down` (os volumes ficam; `down -v` apaga) e restaurar o Caddyfile.
 >
 > **14/10/2026 — VPS compartilhada atual (164.163.11.159, Ubuntu 24.04, 8 vCPU, 8 GB, 55 GB).** A
 > VPS da BlackHosting (143.20.50.58) caiu e **não deve mais ser usada**; o texto abaixo sobre ela é

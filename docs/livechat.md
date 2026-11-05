@@ -30,13 +30,13 @@ webhook dela para `https://<ROOT_DOMAIN>/api/webhooks/evolution` e mostra o QR C
 O token do webhook é derivado de `JWT_SECRET` (`webhookToken()`, nada novo para configurar). Em desenvolvimento
 (`*.localhost`) não há endereço público: dá para conectar, mas as mensagens só chegam no site publicado.
 
-**O Evolution do NextRotta** foi criado em 05/11/2026 na VPS (ver `docs/saas/vps.md`): `nextrotta-evolution-api`, em
-`https://nextrotta-infra.duckdns.org:8443/nextrotta-evolution`. **Falta o dono pôr no `.env` e na Vercel** `EVOLUTION_API_URL` (esse
-endereço) e `EVOLUTION_API_KEY` (o `AUTHENTICATION_API_KEY` de `/opt/nextrotta/evolution/evolution.env` na VPS). Hoje o `.env`
-ainda aponta para `evolution-whatsapp.duckdns.org`, que é do projeto `essencialcentro`: por isso a chave recebe **401**, e **esse
-servidor não deve ser usado**. Sem a troca, o Livechat mostra "O servidor do WhatsApp recusou a chave" e só o chat dos chamados
-funciona. Testado contra o Evolution novo: a criação da instância `nextrotta-suporte` e o QR Code (a instância já existe, sem número
-conectado). Nunca testados com um número de verdade: o recebimento (webhook, só com mensagens simuladas) e o envio.
+**O Evolution do NextRotta** roda na VPS (ver `docs/saas/vps.md`) em `https://nextrotta-infra.duckdns.org:8443/nextrotta-evolution`, com a
+interface web (manager) em `https://nextrotta-infra.duckdns.org:8443/manager/`. A instância `nextrotta-suporte` está **conectada** ao
+número oficial e com o webhook em `https://nextrotta.app/api/webhooks/evolution` (o token vem do `JWT_SECRET` de produção).
+`EVOLUTION_API_URL`/`EVOLUTION_API_KEY` já estão na Vercel e no worker; o `.env` local de desenvolvimento ainda aponta para o Evolution do
+`essencialcentro`, que **não deve ser usado**. A criação da instância, o QR Code e a conexão foram feitos de verdade; **ainda não provados
+com mensagens reais**: o recebimento (um cliente escrevendo para o número), a resposta pelo Livechat e o espelho de um chamado urgente
+(só testados com mensagens simuladas).
 
 ## O que há de código
 
