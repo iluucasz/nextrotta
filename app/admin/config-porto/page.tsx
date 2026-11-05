@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { CalendarClock, CircleHelp, Clock3, FlaskConical, History, LoaderCircle, Users } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { AccountDialog } from '@/components/porto/account-dialog';
@@ -9,8 +10,10 @@ import { JobDialog } from '@/components/porto/job-dialog';
 import { MatchDialog } from '@/components/porto/match-dialog';
 import { LiveConfirm, SimulateDialog } from '@/components/porto/panels';
 import { Settings } from '@/components/porto/settings';
+import { Recovery } from '@/components/porto/recovery';
 import { Hero, Problems, type PortoAction } from '@/components/porto/status';
 import { usePorto } from '@/components/porto/use-porto';
+import { usePortoRecovery } from '@/components/porto/use-recovery';
 import '@/components/porto/porto.css';
 import '../dashboard-gerencial/management-dashboard.css';
 import { useAppSession } from '@/hooks/use-app-session';
@@ -23,6 +26,7 @@ type Dialog = 'account' | 'match' | 'live' | 'simulate' | null;
 export default function ConfigPortoPage() {
   const { user, loading: sessionLoading } = useAppSession();
   const { settings } = useOrganizationSettings();
+  const router = useRouter();
   const api = usePorto();
   const { config, logs, technicians, serverDown, loaded, error, loading } = api;
 
@@ -47,14 +51,26 @@ export default function ConfigPortoPage() {
   }, []);
 
   const times = useMemo(() => ({ hours: settings.portoHoursImportTime, schedule: settings.portoScheduleImportTime }), [settings.portoHoursImportTime, settings.portoScheduleImportTime]);
-  const status = useMemo(
-    () => buildPortoStatus({ config, logs, technicians, times, now, serverDown }),
-    [config, logs, technicians, times, now, serverDown],
-  );
 
   const hasCredentials = Boolean(config.cpf) && config.has_password;
   const loginFailed = hasCredentials && config.last_login_test_ok === false;
   const mode = modeOf(config);
+
+  // A failed import (today or yesterday) is redone on its own once the login works again.
+  const recovery = usePortoRecovery({
+    logs,
+    live: mode === 'live',
+    loginFailed,
+    loginOkAt: config.last_login_test_ok === true ? config.last_login_test_at ?? null : null,
+    loaded,
+    load: api.load,
+    notify,
+  });
+  const status = useMemo(
+    () => buildPortoStatus({ config, logs, technicians, times, now, serverDown, recovering: recovery.jobs }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [config, logs, technicians, times, now, serverDown, recovery.jobs.join(',')],
+  );
   const lastRun = status.recent[0];
   const metrics = [
     { title: 'Próxima das horas', value: status.nextRun.hours ?? '—', hint: mode === 'off' ? 'Importação desligada' : `Todo dia às ${times.hours}`, icon: Clock3 },
@@ -103,6 +119,8 @@ export default function ConfigPortoPage() {
         return setWizardSignal((value) => value + 1);
       case 'logs':
         return document.getElementById('atividade')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      case 'support':
+        return router.push('/admin/suporte');
     }
   }
 
@@ -165,7 +183,9 @@ export default function ConfigPortoPage() {
 
         {loaded ? (
           <div className="po-stack" aria-busy={loading}>
-            <Hero status={status} hasCredentials={hasCredentials} loginFailed={loginFailed} onAction={act} />
+            <Recovery view={recovery.view} onRetry={recovery.retry} />
+            {/* While a failed import is being redone (or did not work again) its card says it; "Funcionando" would contradict it. */}
+            {recovery.view.state === 'none' ? <Hero status={status} hasCredentials={hasCredentials} loginFailed={loginFailed} onAction={act} /> : null}
             <Problems problems={listed} onAction={act} />
             <div className="mg-metrics po-metrics">
               {metrics.map((metric) => (

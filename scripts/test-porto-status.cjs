@@ -134,3 +134,19 @@ test('suggesting a technician by name only when it is unambiguous', () => {
   assert.equal(p.suggestTechnician('Maria Souza', list), null, 'two with the same name: no guess');
   assert.equal(p.suggestTechnician('Pedro', list), null);
 });
+
+test('errors the company cannot fix point to Suporte; the one the recovery card handles is not listed twice', () => {
+  const timeout = 'Erro inesperado ao importar horas do Porto: frame.selectOption: Timeout 30000ms exceeded.';
+  const failed = build({ logs: [log({ status: 'error', error_message: timeout, started_at: '2026-10-31T10:00:00Z' })] });
+  assert.equal(failed.problems[0].action, 'support');
+  assert.equal(failed.problems[0].actionLabel, 'Abrir chamado');
+  assert.doesNotMatch(failed.problems[0].detail, /selectOption/);
+
+  assert.equal(build({ logs: [log({ status: 'error', error_message: timeout })], recovering: ['hours'] }).problems.some((problem) => problem.key === 'error-hours'), false);
+
+  // A refused password is the company's to fix: the button is the account, not a ticket.
+  const refused = build({ config: config({ last_login_test_ok: false, last_login_test_message: 'A senha do Porto expirou. Entre no Portal do Prestador, escolha uma nova senha e depois atualize aqui em “Alterar”.' }) });
+  assert.equal(refused.problems[0].action, 'account');
+  const blocked = build({ config: config({ last_login_test_ok: false, last_login_test_message: 'O Porto bloqueou o acesso do robô por enquanto. Tente de novo mais tarde. Se continuar, abra um chamado em Suporte.' }) });
+  assert.equal(blocked.problems[0].action, 'support');
+});

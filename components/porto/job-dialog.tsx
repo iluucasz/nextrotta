@@ -1,12 +1,13 @@
 'use client';
 
+import Link from 'next/link';
 import { useMemo, useState } from 'react';
 import { CheckCircle2, Clock3, Loader2, XCircle } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS, ModalNotice } from '@/components/modal-kit';
 import { countWarnings } from '@/lib/porto-status';
 import { formatDetailExtra, jobDetailActionLabel, type PortoJobResult } from '@/lib/porto-ui-helpers';
-import { describePortoError } from '@/lib/porto-login-errors';
+import { describePortoError, needsSupport } from '@/lib/porto-login-errors';
 import { formatDate } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 
@@ -81,6 +82,11 @@ export function JobDialog({ job, result, running, onClose }: { job: 'hours' | 's
                   <span>
                     <strong>{verdict.text}</strong>
                     {verdict.extra ? <span className="block">{verdict.extra}</span> : null}
+                    {result?.status === 'error' && needsSupport(verdict.extra) ? (
+                      <Link href="/admin/suporte" className="mt-1 inline-block font-semibold underline">
+                        Abrir chamado no Suporte
+                      </Link>
+                    ) : null}
                   </span>
                 </span>
               </ModalNotice>

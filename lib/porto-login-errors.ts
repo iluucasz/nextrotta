@@ -20,24 +20,32 @@ export type PortoLoginReason =
   | 'no_answer'
   | 'unexpected';
 
+/** Said where the company cannot fix it alone: the screens turn it into a button to /admin/suporte. */
+export const SUPPORT_HINT = 'Se continuar, abra um chamado em Suporte.';
+
+/** Whether a message ends by sending the company to Suporte (screens show an "Abrir chamado" button then). */
+export function needsSupport(message: string | null | undefined): boolean {
+  return (message ?? '').includes(SUPPORT_HINT);
+}
+
 export const PORTO_LOGIN_MESSAGES: Record<PortoLoginReason, string> = {
   credentials_rejected: 'O Porto não aceitou o CPF ou a senha. Se você trocou a senha no Portal do Prestador, atualize aqui em “Alterar”.',
   password_expired:
     'A senha do Porto expirou. Entre no Portal do Prestador, escolha uma nova senha e depois atualize aqui em “Alterar”.',
   no_confirmation:
-    'O Porto não confirmou o CPF e a senha. Se a senha expirou ou foi trocada no portal, atualize em “Alterar”; se estiver certa, o portal pode estar instável — tente em alguns minutos.',
+    `O Porto não confirmou o CPF e a senha. Se a senha expirou ou foi trocada no portal, atualize em “Alterar”; se estiver certa, o portal pode estar instável — tente em alguns minutos. ${SUPPORT_HINT}`,
   no_qra: 'O Porto aceitou a senha, mas esse CPF não tem QRA ativo. Confira o CPF em “Alterar”.',
   // The QRA lookup only checks CPF and password, so it answers normally even when the password has expired:
   // the portal asks for a new one in the next step, and that is what keeps the robot out.
   session_not_opened:
-    'O Porto reconheceu o CPF e a senha, mas não deixou o robô entrar. Costuma ser senha expirada: entre no Portal do Prestador pelo navegador e, se pedir uma nova senha, troque e atualize aqui em “Alterar”. Se não pedir, o portal pode estar instável; tente em alguns minutos.',
-  blocked: 'O Porto bloqueou o acesso do robô por enquanto. Tente de novo mais tarde; se continuar, fale com o suporte.',
-  no_answer: 'O Porto não respondeu. O portal pode estar fora do ar ou lento; tente de novo em alguns minutos.',
-  unexpected: 'O Porto respondeu de um jeito inesperado e o robô não conseguiu entrar. A tela de login pode ter mudado; se continuar, fale com o suporte.',
+    `O Porto reconheceu o CPF e a senha, mas não deixou o robô entrar. Costuma ser senha expirada: entre no Portal do Prestador pelo navegador e, se pedir uma nova senha, troque e atualize aqui em “Alterar”. Se não pedir, o portal pode estar instável; tente em alguns minutos. ${SUPPORT_HINT}`,
+  blocked: `O Porto bloqueou o acesso do robô por enquanto. Tente de novo mais tarde. ${SUPPORT_HINT}`,
+  no_answer: `O Porto não respondeu. O portal pode estar fora do ar ou lento; tente de novo em alguns minutos. ${SUPPORT_HINT}`,
+  unexpected: `O Porto respondeu de um jeito inesperado e o robô não conseguiu entrar. A tela de login pode ter mudado. ${SUPPORT_HINT}`,
 };
 
 const LOGIN_PAGE_NOT_OPENED = 'Não foi possível abrir a página de login do Porto.';
-const LOGIN_PAGE_MESSAGE = 'O Portal do Prestador não abriu. Ele pode estar fora do ar ou lento; tente de novo em alguns minutos.';
+const LOGIN_PAGE_MESSAGE = `O Portal do Prestador não abriu. Ele pode estar fora do ar ou lento; tente de novo em alguns minutos. ${SUPPORT_HINT}`;
 const MISSING_CREDENTIALS = 'Credenciais não configuradas.';
 const MISSING_CREDENTIALS_MESSAGE = 'Falta cadastrar o CPF e a senha do Porto.';
 const LEGACY_LOGIN_PREFIX = 'Login no Porto falhou';
@@ -144,8 +152,8 @@ export function describePortoError(raw: string | null | undefined): PortoErrorTe
   if (wrapped) {
     return {
       message: wrapped[1].includes('testar')
-        ? 'Não foi possível testar o login agora. Tente de novo em alguns minutos.'
-        : 'Não foi possível buscar os técnicos no Porto agora. Tente de novo em alguns minutos.',
+        ? `Não foi possível testar o login agora. Tente de novo em alguns minutos. ${SUPPORT_HINT}`
+        : `Não foi possível buscar os técnicos no Porto agora. Tente de novo em alguns minutos. ${SUPPORT_HINT}`,
       technical: wrapped[2].split('\n')[0].slice(0, 300) || null,
     };
   }
@@ -156,6 +164,7 @@ export function describePortoError(raw: string | null | undefined): PortoErrorTe
   if (unexpected && TECHNICAL_CAUSE.test(unexpected[2])) {
     return { message: PORTO_RUN_FAILED_MESSAGE, technical: unexpected[2].split('\n')[0].slice(0, 300) };
   }
+  if (unexpected) return { message: `${text.replace(/\s+$/, '')} ${SUPPORT_HINT}`, technical: null };
 
   return { message: text, technical: null };
 }
@@ -163,7 +172,7 @@ export function describePortoError(raw: string | null | undefined): PortoErrorTe
 const TECHNICAL_CAUSE = /Timeout \d+ms|waiting for|locator|selector|selectOption|Target (page|closed)|browser has been closed|net::ERR|\b(page|frame|locator|browser|context)\.[a-zA-Z]+/i;
 
 export const PORTO_RUN_FAILED_MESSAGE =
-  'O robô não conseguiu usar uma tela do Portal do Prestador a tempo. Pode ser lentidão do portal ou senha expirada (entre no portal pelo navegador: se pedir nova senha, troque e atualize em “Alterar”). Se estiver tudo certo, tente de novo em alguns minutos.';
+  `O robô não conseguiu usar uma tela do Portal do Prestador a tempo. Pode ser lentidão do portal ou senha expirada (entre no portal pelo navegador: se pedir nova senha, troque e atualize em “Alterar”). Se estiver tudo certo, tente de novo em alguns minutos. ${SUPPORT_HINT}`;
 
 export type PortoLoginProblemInput = {
   hasCredentials: boolean;

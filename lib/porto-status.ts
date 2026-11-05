@@ -2,7 +2,7 @@
 // technicians, the clock): where the robot stands, what is left to set up, what needs attention and when it runs
 // next. Pure (no database, no React), so it is tested and the screen only draws it.
 import { jobDetailActionLabel, type PortoJobDetail } from './porto-ui-helpers';
-import { describePortoError } from './porto-login-errors';
+import { describePortoError, needsSupport } from './porto-login-errors';
 
 export type PortoConfigLite = {
   cpf: string;
@@ -155,7 +155,7 @@ export function describeRun(log: PortoLogLite, now: Date): RunSummary {
 export type StepKey = 'account' | 'technicians' | 'simulation' | 'live';
 export type Step = { key: StepKey; title: string; description: string; done: boolean; current: boolean };
 
-export type ProblemAction = 'account' | 'match' | 'logs' | 'wizard';
+export type ProblemAction = 'account' | 'match' | 'logs' | 'wizard' | 'support';
 export type Problem = { key: string; tone: Tone; title: string; detail: string; action?: ProblemAction; actionLabel?: string };
 
 export type PortoStatus = {
@@ -182,6 +182,8 @@ export function buildPortoStatus(input: {
   times: { hours: string; schedule: string };
   now: Date;
   serverDown?: boolean;
+  /** Jobs the recovery card is already redoing: their failure is not listed twice. */
+  recovering?: Array<'hours' | 'schedule'>;
 }): PortoStatus {
   const { config, logs, now } = input;
   const mode = modeOf(config);
@@ -213,7 +215,12 @@ export function buildPortoStatus(input: {
   // What needs attention, most serious first.
   const problems: Problem[] = [];
   if (hasCredentials && config.last_login_test_ok === false) {
-    problems.push({ key: 'login', tone: 'danger', title: 'O login no Porto não funcionou', detail: config.last_login_test_message ? describePortoError(config.last_login_test_message).message : 'Confira o CPF e a senha. Se trocou a senha no Porto, troque aqui também.', action: 'account', actionLabel: 'Atualizar a senha' });
+    const loginDetail = config.last_login_test_message ? describePortoError(config.last_login_test_message).message : 'Confira o CPF e a senha. Se trocou a senha no Porto, troque aqui também.';
+    problems.push(
+      needsSupport(loginDetail)
+        ? { key: 'login', tone: 'danger', title: 'O login no Porto não funcionou', detail: loginDetail, action: 'support', actionLabel: 'Abrir chamado' }
+        : { key: 'login', tone: 'danger', title: 'O login no Porto não funcionou', detail: loginDetail, action: 'account', actionLabel: 'Atualizar a senha' },
+    );
   }
   if (input.serverDown) {
     problems.push({ key: 'server', tone: 'warning', title: 'O servidor do robô está em manutenção', detail: 'As importações ficam paradas até ele voltar.' });
@@ -221,11 +228,17 @@ export function buildPortoStatus(input: {
   for (const job of ['hours', 'schedule'] as const) {
     const log = latest(job);
     if (!log || mode === 'off') continue;
+    if (input.recovering?.includes(job)) continue;
     const name = job === 'hours' ? 'das horas' : 'da escala';
     if (log.layout_suspect) {
       problems.push({ key: `layout-${job}`, tone: 'danger', title: 'O Portal do Porto parece ter mudado de tela', detail: 'O robô não leu o portal como esperado. A equipe já foi avisada.', action: 'logs', actionLabel: 'Ver o que aconteceu' });
     } else if (log.status === 'error') {
-      problems.push({ key: `error-${job}`, tone: 'danger', title: `A última importação ${name} falhou`, detail: describePortoError(log.error_message).message, action: 'logs', actionLabel: 'Ver detalhes' });
+      const message = describePortoError(log.error_message).message;
+      problems.push(
+        needsSupport(message)
+          ? { key: `error-${job}`, tone: 'danger', title: `A última importação ${name} falhou`, detail: message, action: 'support', actionLabel: 'Abrir chamado' }
+          : { key: `error-${job}`, tone: 'danger', title: `A última importação ${name} falhou`, detail: message, action: 'logs', actionLabel: 'Ver detalhes' },
+      );
     } else if (log.status === 'partial') {
       problems.push({ key: `partial-${job}`, tone: 'warning', title: `A importação ${name} terminou com avisos`, detail: 'Parte dos dados não entrou.', action: 'logs', actionLabel: 'Ver avisos' });
     }
@@ -292,7 +305,7 @@ export function buildPortoStatus(input: {
     overall = 'ok';
     tone = 'success';
     headline = 'Funcionando';
-    detail = lastRun.hours ? `Última importação de horas ${lastRun.hours.when}: ${lastRun.hours.summary || lastRun.hours.label.toLowerCase()}.` : 'Ligada. A primeira importação é no próximo horário.';
+    detail = lastRun.hours ? `Última importação de horas ${lastRun.hours.when}: ${(lastRun.hours.summary || lastRun.hours.label.toLowerCase()).replace(/\.$/, '')}.` : 'Ligada. A primeira importação é no próximo horário.';
   }
 
   return {

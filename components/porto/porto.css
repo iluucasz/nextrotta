@@ -389,3 +389,59 @@
   font-size: 26px;
   white-space: nowrap;
 }
+
+/* the import that failed and is being redone, or did not work again */
+.mg-dashboard .po-recovery {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--card);
+}
+.mg-dashboard .po-recovery.running {
+  border-color: #c9c2f5;
+  background: #f7f6ff;
+}
+.mg-dashboard .po-recovery.failed {
+  border-color: #f2c4c0;
+  background: #fff6f5;
+}
+.mg-dashboard .po-recovery-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  background: #fff;
+  color: var(--primary);
+}
+.mg-dashboard .po-recovery.failed .po-recovery-icon {
+  color: #b42318;
+}
+.mg-dashboard .po-recovery-text strong {
+  display: block;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mg-dashboard .po-recovery-text p {
+  margin: 2px 0 0;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.mg-dashboard .po-recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+@media (max-width: 640px) {
+  .mg-dashboard .po-recovery {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mg-dashboard .po-recovery-actions {
+    grid-column: 1 / -1;
+  }
+}

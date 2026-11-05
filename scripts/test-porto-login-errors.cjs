@@ -70,7 +70,18 @@ test('a technical Playwright error becomes a sentence; plain causes stay as they
   assert.equal(timeout.message, e.PORTO_RUN_FAILED_MESSAGE);
   assert.equal(timeout.technical, 'frame.selectOption: Timeout 30000ms exceeded.');
   const plain = 'Erro inesperado ao importar horas do Porto: A busca de serviços do Porto não terminou em tempo hábil.';
-  assert.deepEqual(e.describePortoError(plain), { message: plain, technical: null });
+  assert.deepEqual(e.describePortoError(plain), { message: `${plain} ${e.SUPPORT_HINT}`, technical: null });
+});
+
+test('which messages send the company to Suporte', () => {
+  const M = e.PORTO_LOGIN_MESSAGES;
+  // What the company can fix alone does not ask for a ticket; the rest does.
+  for (const fixable of ['credentials_rejected', 'password_expired', 'no_qra']) assert.equal(e.needsSupport(M[fixable]), false, fixable);
+  for (const other of ['no_confirmation', 'session_not_opened', 'blocked', 'no_answer', 'unexpected']) assert.equal(e.needsSupport(M[other]), true, other);
+  assert.equal(e.needsSupport(e.PORTO_RUN_FAILED_MESSAGE), true);
+  assert.equal(e.needsSupport(e.describePortoError('Não foi possível abrir a página de login do Porto.').message), true);
+  assert.equal(e.needsSupport(e.describePortoError('Credenciais não configuradas.').message), false);
+  assert.equal(e.needsSupport(null), false);
 });
 
 test('findPortoLoginProblem: failing only while the newest evidence is a failure', () => {
