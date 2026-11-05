@@ -150,3 +150,20 @@ test('errors the company cannot fix point to Suporte; the one the recovery card 
   const blocked = build({ config: config({ last_login_test_ok: false, last_login_test_message: 'O Porto bloqueou o acesso do robô por enquanto. Tente de novo mais tarde. Se continuar, abra um chamado em Suporte.' }) });
   assert.equal(blocked.problems[0].action, 'support');
 });
+
+test('a failure that a later good run fixed stays in the history, marked as concluded with when', () => {
+  const failed = log({ id: 'f', status: 'error', error_message: 'Erro inesperado ao importar horas do Porto: frame.selectOption: Timeout 30000ms exceeded.', started_at: '2026-10-31T01:00:00Z', finished_at: '2026-10-31T01:05:00Z' });
+  const fixed = log({ id: 'ok', status: 'success', started_at: '2026-11-01T01:10:00Z', finished_at: '2026-11-01T01:13:00Z' });
+  const other = log({ id: 's', job_type: 'schedule', status: 'error', started_at: '2026-10-31T01:30:00Z' });
+
+  const status = build({ logs: [fixed, other, failed] });
+  const row = (id) => status.recent.find((run) => run.id === id);
+  assert.equal(row('f').kind, 'recovered');
+  assert.equal(row('f').label, 'Concluída hoje às 22:13', 'the time of the run that fixed it, in Brasília');
+  assert.equal(row('f').problem, false, 'a fixed failure is no longer a problem');
+  assert.equal(row('f').resolvedAt, '2026-11-01T01:13:00Z');
+  assert.equal(row('s').kind, 'error', 'another job is not fixed by this one');
+  assert.equal(row('ok').kind, 'ok');
+  // Without a later good run it stays a failure.
+  assert.equal(build({ logs: [failed] }).recent[0].kind, 'error');
+});

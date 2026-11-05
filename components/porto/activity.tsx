@@ -7,7 +7,7 @@ import type { PortoStatus, RunKind } from '@/lib/porto-status';
 import type { PortoSyncLog } from '@/lib/porto-ui-helpers';
 import { cn } from '@/lib/utils';
 
-const KIND_ICON: Record<RunKind, LucideIcon> = { ok: CheckCircle2, warning: TriangleAlert, error: XCircle, test: FlaskConical, running: Loader2, skipped: Clock3 };
+const KIND_ICON: Record<RunKind, LucideIcon> = { ok: CheckCircle2, recovered: CheckCircle2, warning: TriangleAlert, error: XCircle, test: FlaskConical, running: Loader2, skipped: Clock3 };
 
 /**
  * What the robot has been doing: the two jobs at a glance, then the latest runs in plain words. A run opens in a

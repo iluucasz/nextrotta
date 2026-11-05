@@ -185,7 +185,7 @@ export default function ConfigPortoPage() {
           <div className="po-stack" aria-busy={loading}>
             <Recovery view={recovery.view} onRetry={recovery.retry} />
             {/* While a failed import is being redone (or did not work again) its card says it; "Funcionando" would contradict it. */}
-            {recovery.view.state === 'none' ? <Hero status={status} hasCredentials={hasCredentials} loginFailed={loginFailed} onAction={act} /> : null}
+            {recovery.view.state === 'none' || recovery.view.state === 'done' ? <Hero status={status} hasCredentials={hasCredentials} loginFailed={loginFailed} onAction={act} /> : null}
             <Problems problems={listed} onAction={act} />
             <div className="mg-metrics po-metrics">
               {metrics.map((metric) => (

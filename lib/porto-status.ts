@@ -98,7 +98,7 @@ export function countWarnings(details: PortoJobDetail[] | null | undefined) {
   return (details ?? []).filter((detail) => typeof detail.action === 'string' && WARNING_ACTIONS.has(detail.action)).length;
 }
 
-export type RunKind = 'ok' | 'warning' | 'error' | 'test' | 'running' | 'skipped';
+export type RunKind = 'ok' | 'warning' | 'error' | 'test' | 'running' | 'skipped' | 'recovered';
 
 export type RunSummary = {
   id: string;
@@ -111,11 +111,13 @@ export type RunSummary = {
   trigger: 'Automática' | 'Manual' | 'Teste' | '';
   warnings: number;
   problem: boolean;
+  /** A failed run that a later good run of the same job fixed: when that one finished. */
+  resolvedAt: string | null;
 };
 
 const plural = (count: number, one: string, many: string) => `${count} ${count === 1 ? one : many}`;
 
-export function describeRun(log: PortoLogLite, now: Date): RunSummary {
+export function describeRun(log: PortoLogLite, now: Date, resolvedAt: string | null = null): RunSummary {
   const warnings = countWarnings(log.details);
   const title = log.job_type === 'hours' ? 'Horas trabalhadas' : 'Escala';
   const technicians = plural(log.technicians_processed, 'técnico', 'técnicos');
@@ -123,6 +125,7 @@ export function describeRun(log: PortoLogLite, now: Date): RunSummary {
   let kind: RunKind;
   let label: string;
   if (log.status === 'running') (kind = 'running'), (label = 'Em andamento');
+  else if (log.status === 'error' && resolvedAt) (kind = 'recovered'), (label = `Concluída ${whenLabel(resolvedAt, now)}`);
   else if (log.status === 'error') (kind = 'error'), (label = 'Falhou');
   else if (log.status === 'skipped') (kind = 'skipped'), (label = 'Não rodou (desligado)');
   else if (log.status === 'dry_run') (kind = 'test'), (label = warnings ? 'Teste, com avisos' : 'Teste: nada foi gravado');
@@ -130,7 +133,7 @@ export function describeRun(log: PortoLogLite, now: Date): RunSummary {
   else (kind = 'ok'), (label = 'Tudo certo');
 
   let summary = '';
-  if (kind === 'error') summary = describePortoError(log.error_message).message;
+  if (kind === 'error' || kind === 'recovered') summary = describePortoError(log.error_message).message;
   else if (kind === 'running') summary = 'Importando agora…';
   else if (kind === 'skipped') summary = '';
   else if (kind === 'test') summary = `${technicians} conferidos`;
@@ -147,6 +150,7 @@ export function describeRun(log: PortoLogLite, now: Date): RunSummary {
     trigger: log.status === 'dry_run' ? 'Teste' : log.run_trigger === 'manual' ? 'Manual' : log.run_trigger === 'auto' ? 'Automática' : '',
     warnings,
     problem: kind === 'error' || kind === 'warning',
+    resolvedAt: kind === 'recovered' ? resolvedAt : null,
   };
 }
 
@@ -193,7 +197,15 @@ export function buildPortoStatus(input: {
   const unlinked = active.filter((technician) => !String(technician.qra ?? '').trim());
   const technicians = { active: active.length, linked: active.length - unlinked.length, unlinked };
 
-  const recent = logs.map((log) => describeRun(log, now));
+  // A failure stays in the history, marked as concluded once a later good run of the same job fixed it.
+  const resolvedAt = (log: PortoLogLite) => {
+    if (log.status !== 'error') return null;
+    const fixedBy = logs
+      .filter((other) => other.job_type === log.job_type && (other.status === 'success' || other.status === 'partial') && other.started_at > log.started_at)
+      .sort((a, b) => a.started_at.localeCompare(b.started_at))[0];
+    return fixedBy ? fixedBy.finished_at ?? fixedBy.started_at : null;
+  };
+  const recent = logs.map((log) => describeRun(log, now, resolvedAt(log)));
   const latest = (job: 'hours' | 'schedule') => logs.find((log) => log.job_type === job && FINISHED.has(log.status));
   const lastHours = latest('hours');
   const lastSchedule = latest('schedule');

@@ -272,7 +272,8 @@
   background: var(--secondary);
   color: var(--muted-foreground);
 }
-.mg-dashboard .po-run.ok .po-run-label {
+.mg-dashboard .po-run.ok .po-run-label,
+.mg-dashboard .po-run.recovered .po-run-label {
   background: #e3f5ec;
   color: #166a45;
 }
@@ -294,7 +295,8 @@
   background: var(--secondary);
   color: var(--muted-foreground);
 }
-.mg-dashboard .po-run.ok .po-run-icon {
+.mg-dashboard .po-run.ok .po-run-icon,
+.mg-dashboard .po-run.recovered .po-run-icon {
   background: #e3f5ec;
   color: #166a45;
 }
@@ -443,5 +445,69 @@
   }
   .mg-dashboard .po-recovery-actions {
     grid-column: 1 / -1;
+  }
+}
+
+/* the card after the import was redone: a check and when it finished, like the steps of a deploy */
+.mg-dashboard .po-recovery.done {
+  border-color: #b9e3cc;
+  background: #f3fbf6;
+}
+.mg-dashboard .po-recovery.done .po-recovery-icon {
+  color: #166a45;
+}
+.mg-dashboard .po-recovery-steps {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.mg-dashboard .po-recovery-step {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+}
+.mg-dashboard .po-recovery-step-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+.mg-dashboard .po-recovery-step.done .po-recovery-step-icon {
+  background: #d5f0e1;
+  color: #166a45;
+}
+.mg-dashboard .po-recovery-step.running .po-recovery-step-icon {
+  background: #e7e3fb;
+  color: var(--primary);
+}
+.mg-dashboard .po-recovery-step.failed .po-recovery-step-icon {
+  background: #fde4e1;
+  color: #b42318;
+}
+.mg-dashboard .po-recovery-step-label {
+  font-weight: 550;
+}
+.mg-dashboard .po-recovery-step-state {
+  color: var(--muted-foreground);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.mg-dashboard .po-recovery-step.done .po-recovery-step-state {
+  color: #166a45;
+}
+@media (max-width: 640px) {
+  .mg-dashboard .po-recovery-step {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mg-dashboard .po-recovery-step-state {
+    grid-column: 2;
+    white-space: normal;
   }
 }

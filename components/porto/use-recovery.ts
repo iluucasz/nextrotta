@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { findPortoRecovery, recoveryJobLabel, type PortoRecovery, type RecoveryJob } from '@/lib/porto-recovery';
+import { findPortoRecovery, recoveryJobLabel, type PortoRecovery, type RecoveryJob, type RecoveryStep } from '@/lib/porto-recovery';
 import { pollJobLog, type PortoJobResult, type PortoSyncLog } from '@/lib/porto-ui-helpers';
 import { describePortoError, needsSupport } from '@/lib/porto-login-errors';
 
 export type RecoveryView =
   | { state: 'none' }
-  | { state: 'running'; label: string }
-  | { state: 'failed'; message: string; support: boolean; retried: boolean };
+  | { state: 'running'; label: string; steps: RecoveryStep[] }
+  /** Everything that failed has worked since: stays on screen (until the failure is two days old) saying when. */
+  | { state: 'done'; steps: RecoveryStep[] }
+  | { state: 'failed'; message: string; support: boolean; retried: boolean; steps: RecoveryStep[] };
 
 /**
  * Redoes the Porto import that failed today or yesterday once the login works again: the robot starts on its own
@@ -83,24 +85,31 @@ export function usePortoRecovery(input: {
     return () => clearInterval(timer);
   }, [recovery.state, busy, load]);
 
-  const next = recovery.state === 'none' ? null : recovery.jobs[0] ?? null;
+  const todo = recovery.state === 'running' || recovery.state === 'auto' || recovery.state === 'failed' ? recovery.jobs : [];
+  const next = todo[0] ?? null;
+  const steps = recovery.state === 'none' ? [] : recovery.steps;
+  const withStatus = (list: RecoveryStep[], job: string | null, status: RecoveryStep['status']) => list.map((step) => (step.job === job && step.status !== 'done' ? { ...step, status } : step));
+
   const view: RecoveryView = useMemo(() => {
-    if (busy) return { state: 'running', label: recoveryJobLabel(busy) };
-    if (recovery.state === 'running') return { state: 'running', label: next ? recoveryJobLabel(next) : 'a importação' };
+    if (busy) return { state: 'running', label: recoveryJobLabel(busy), steps: withStatus(steps, busy.job, 'running') };
+    if (recovery.state === 'running') return { state: 'running', label: next ? recoveryJobLabel(next) : 'a importação', steps };
     if (recovery.state === 'auto' && next && localFailure?.key === keyOf(next)) {
-      return { state: 'failed', message: localFailure.message, support: true, retried: true };
+      return { state: 'failed', message: localFailure.message, support: true, retried: true, steps: withStatus(steps, next.job, 'failed') };
     }
-    if (recovery.state === 'auto' && next) return { state: 'running', label: recoveryJobLabel(next) };
-    if (recovery.state === 'failed') return { state: 'failed', message: localFailure?.message ?? recovery.message, support: recovery.support || needsSupport(localFailure?.message), retried: recovery.retried };
+    if (recovery.state === 'auto' && next) return { state: 'running', label: recoveryJobLabel(next), steps: withStatus(steps, next.job, 'running') };
+    if (recovery.state === 'failed') {
+      return { state: 'failed', message: localFailure?.message ?? recovery.message, support: recovery.support || needsSupport(localFailure?.message), retried: recovery.retried, steps };
+    }
+    if (recovery.state === 'done') return { state: 'done', steps };
     return { state: 'none' };
-  }, [busy, recovery, next, localFailure]);
+  }, [busy, recovery, next, steps, localFailure]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const retry = useCallback(() => {
     if (next && !busy) void run(next);
   }, [next, busy, run]);
 
-  /** Jobs the card is handling, so the problem list does not repeat them. */
-  const jobs = recovery.state === 'none' ? [] : recovery.jobs.map((job) => job.job);
+  /** Jobs still to redo, so the problem list does not repeat their failure. */
+  const jobs = todo.map((job) => job.job);
 
   return { view, retry, jobs };
 }

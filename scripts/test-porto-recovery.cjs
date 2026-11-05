@@ -31,8 +31,33 @@ test('a failure of yesterday or today is recoverable; an older one is not', () =
   assert.equal(find([log('hours', 'error', at('2026-11-02'))]).state, 'none');
 });
 
-test('a later success recovers it', () => {
-  assert.equal(find([log('hours', 'success', at('2026-11-05', '14:00')), log('hours', 'error', at('2026-11-04'))]).state, 'none');
+test('a later success recovers it: done, with when it finished and how long it took', () => {
+  const done = find([
+    log('hours', 'success', '2026-11-05T14:30:00Z', { finished_at: '2026-11-05T14:33:10Z' }),
+    log('hours', 'error', at('2026-11-04'), { range_start: '2026-11-04', range_end: '2026-11-04' }),
+  ]);
+  assert.equal(done.state, 'done');
+  assert.deepEqual(done.steps, [{ job: 'hours', label: 'as horas de 04/11', status: 'done', finishedAt: '2026-11-05T14:33:10Z', durationMs: 190_000 }]);
+  assert.equal(r.formatDuration(190_000), '3 min');
+  assert.equal(r.formatDuration(45_000), '45 s');
+  assert.equal(r.formatDuration(3_900_000), '1h05');
+});
+
+test('a failure that was fixed long ago is not shown at all', () => {
+  assert.equal(find([log('hours', 'success', at('2026-11-04')), log('hours', 'error', at('2026-11-02'))]).state, 'none');
+});
+
+test('the steps follow the order hours then escala, each with its own state', () => {
+  const found = find(
+    [log('schedule', 'running', '2026-11-05T14:45:00Z'), log('hours', 'success', '2026-11-05T14:40:00Z', { finished_at: '2026-11-05T14:44:00Z' }), log('hours', 'error', at('2026-11-04')), log('schedule', 'error', at('2026-11-04', '23:30'))],
+    { loginOkAt: '2026-11-05T14:00:00Z' },
+  );
+  assert.equal(found.state, 'running');
+  assert.deepEqual(found.steps.map((step) => [step.job, step.status]), [['hours', 'done'], ['schedule', 'running']]);
+  const waiting = find([log('hours', 'error', at('2026-11-04')), log('schedule', 'error', at('2026-11-04', '23:30'))], { loginOkAt: '2026-11-05T14:00:00Z' });
+  assert.deepEqual(waiting.steps.map((step) => step.status), ['waiting', 'waiting']);
+  const failed = find([log('hours', 'error', at('2026-11-04'))]);
+  assert.deepEqual(failed.steps.map((step) => step.status), ['failed']);
 });
 
 test('only an import that writes for real, and only without a login problem', () => {
