@@ -10,6 +10,7 @@ import {
 } from '../whatsapp/evolution';
 import { evolutionServer } from '../whatsapp/store';
 import { PlatformError } from '../platform/errors';
+import { getSupportContact } from '../support-contact';
 import { getConversation, storeOwnerMessage } from './store';
 
 /**
@@ -90,12 +91,26 @@ export async function connectLivechatWhatsApp(): Promise<{ status: LivechatWhats
     if (!hook.ok) throw new PlatformError(`A instância foi criada, mas não consegui configurar o recebimento de mensagens. ${hook.error ?? ''}`.trim(), 502);
   }
 
-  if (!qr?.base64) {
-    const connected = await connectEvolutionInstance(server, LIVECHAT_INSTANCE);
+  if (!qr?.base64 || !qr.pairingCode) {
+    // The number the platform publishes as its official WhatsApp: also gives a pairing code besides the QR.
+    const number = (await getSupportContact().catch(() => null))?.whatsapp ?? null;
+    const connected = await connectEvolutionInstance(server, LIVECHAT_INSTANCE, number);
     if (!connected.ok) throw new PlatformError(`Não foi possível gerar o QR Code. ${connected.error ?? ''}`.trim(), 502);
     qr = connected.state === 'open' ? null : connected.qr;
   }
   return { status: await getLivechatWhatsAppStatus(), qr };
+}
+
+/**
+ * A fresh QR code (and pairing code). WhatsApp renews the code every ~20 seconds, so the one on screen goes stale: the panel asks
+ * again while the window is open. Does not touch the instance or its webhook.
+ */
+export async function refreshLivechatQr(): Promise<{ status: LivechatWhatsAppStatus; qr: EvolutionQrCode | null }> {
+  const server = requireServer();
+  const number = (await getSupportContact().catch(() => null))?.whatsapp ?? null;
+  const connected = await connectEvolutionInstance(server, LIVECHAT_INSTANCE, number);
+  if (!connected.ok) throw new PlatformError(`Não foi possível gerar o QR Code. ${connected.error ?? ''}`.trim(), 502);
+  return { status: await getLivechatWhatsAppStatus(), qr: connected.state === 'open' ? null : connected.qr };
 }
 
 export async function disconnectLivechatWhatsApp(): Promise<LivechatWhatsAppStatus> {

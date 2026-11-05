@@ -84,3 +84,7 @@
 }
 
 .lc-tab-badge { margin-left: 8px; background: #25a56a; color: #fff; border-radius: 999px; min-width: 19px; padding: 0 6px; font-size: 12px; line-height: 19px; display: inline-block; text-align: center; }
+
+.lc-pairing { display: grid; justify-items: center; gap: 6px; margin-top: 14px; text-align: center; }
+.lc-pairing small { color: #6b7c77; font-size: 13px; max-width: 360px; }
+.lc-pairing strong { font-size: 26px; letter-spacing: 4px; font-weight: 650; color: #152b28; }

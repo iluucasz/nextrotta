@@ -69,6 +69,8 @@ export function Livechat() {
   const [whatsapp, setWhatsapp] = useState<WhatsAppStatus | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [qr, setQr] = useState<string | null>(null);
+  const [pairing, setPairing] = useState<string | null>(null);
+  const [qrAt, setQrAt] = useState(0);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
 
   const loadList = useCallback(async () => {
@@ -101,11 +103,29 @@ export function Livechat() {
     void loadStatus();
   }, [loadStatus]);
 
-  // While the QR code is on screen: check every 4 s whether it was read.
+  // While the QR code is on screen: check every 4 s whether it was read, and ask for a new code every 18 s
+  // (WhatsApp renews it about every 20 s; an old one is refused by the phone as "could not connect the device").
+  const open = Boolean(qr);
   useEffect(() => {
-    if (!qr) return;
+    if (!open) return;
+    let ticks = 0;
     const timer = setInterval(async () => {
+      ticks += 1;
       try {
+        if (ticks % 4 === 0) {
+          const fresh = await api<{ status: WhatsAppStatus; qr: { base64: string | null; pairingCode: string | null } | null }>('/livechat/whatsapp', { method: 'PUT' });
+          setWhatsapp(fresh.status);
+          if (fresh.qr?.base64) {
+            setQr(fresh.qr.base64);
+            setPairing(fresh.qr.pairingCode);
+            setQrAt(Date.now());
+          }
+          if (fresh.status.state === 'connected') {
+            setQr(null);
+            notify('WhatsApp conectado. As mensagens do número oficial chegam aqui.');
+          }
+          return;
+        }
         const status = await api<WhatsAppStatus>('/livechat/whatsapp');
         setWhatsapp(status);
         if (status.state === 'connected') {
@@ -115,17 +135,21 @@ export function Livechat() {
       } catch {
         /* try again on the next tick */
       }
-    }, 4_000);
+    }, 4_500);
     return () => clearInterval(timer);
-  }, [qr, notify]);
+  }, [open, notify]);
 
   async function connect() {
     setConnecting(true);
     try {
-      const result = await api<{ status: WhatsAppStatus; qr: { base64: string | null } | null }>('/livechat/whatsapp', { method: 'POST' });
+      const result = await api<{ status: WhatsAppStatus; qr: { base64: string | null; pairingCode: string | null } | null }>('/livechat/whatsapp', { method: 'POST' });
       setWhatsapp(result.status);
       if (result.status.state === 'connected' || !result.qr?.base64) notify(result.status.state === 'connected' ? 'O WhatsApp já está conectado.' : 'O servidor não devolveu o QR Code. Tente de novo.');
-      else setQr(result.qr.base64);
+      else {
+        setQr(result.qr.base64);
+        setPairing(result.qr.pairingCode);
+        setQrAt(Date.now());
+      }
     } catch (reason) {
       notify(errorMessage(reason));
     } finally {
@@ -243,9 +267,15 @@ export function Livechat() {
         <Dialog open onOpenChange={(open) => !open && setQr(null)}>
           <DialogContent className="nr-dialog sm:max-w-lg">
             <DialogTitle>Conectar o WhatsApp oficial</DialogTitle>
-            <DialogDescription>No celular do número oficial: WhatsApp → Dispositivos conectados → Conectar dispositivo, e aponte para o código. Esta janela fecha sozinha quando conectar.</DialogDescription>
+            <DialogDescription>No celular do número oficial: WhatsApp → Dispositivos conectados → Conectar dispositivo, e aponte para o código. O código se renova sozinho a cada poucos segundos e esta janela fecha quando conectar.</DialogDescription>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={qr} alt="QR Code para conectar o WhatsApp oficial" className="mx-auto h-64 w-64 rounded-lg border bg-white p-2" />
+            <img key={qrAt} src={qr} alt="QR Code para conectar o WhatsApp oficial" className="mx-auto h-64 w-64 rounded-lg border bg-white p-2" />
+            {pairing ? (
+              <div className="lc-pairing">
+                <small>Se o celular recusar o QR Code, use o código: no WhatsApp, Dispositivos conectados → Conectar dispositivo → Conectar com número de telefone.</small>
+                <strong>{pairing.length === 8 ? `${pairing.slice(0, 4)}-${pairing.slice(4)}` : pairing}</strong>
+              </div>
+            ) : null}
             <div className="nr-dialog-actions">
               <button className="nr-btn" onClick={() => setQr(null)}>Fechar</button>
               <button className="nr-btn primary" disabled={connecting} onClick={() => void connect()}>Gerar novo código</button>

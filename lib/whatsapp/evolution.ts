@@ -246,9 +246,11 @@ export async function fetchEvolutionInstance(server: EvolutionServer, instance: 
 }
 
 /** A fresh QR code to connect the instance (Evolution renews it every ~40 seconds). */
-export async function connectEvolutionInstance(server: EvolutionServer, instance: string): Promise<EvolutionResult & { qr: EvolutionQrCode | null; state: string | null }> {
+export async function connectEvolutionInstance(server: EvolutionServer, instance: string, number?: string | null): Promise<EvolutionResult & { qr: EvolutionQrCode | null; state: string | null }> {
   try {
-    const response = await request(asConnection(server, instance), `/instance/connect/${encodeURIComponent(instance)}`, { method: 'GET' });
+    // With the number, Evolution also returns a pairing code ("connect with phone number" in WhatsApp).
+    const query = number ? `?number=${encodeURIComponent(number)}` : '';
+    const response = await request(asConnection(server, instance), `/instance/connect/${encodeURIComponent(instance)}${query}`, { method: 'GET' });
     if (!response.ok) return { ok: false, error: await failure(response), qr: null, state: null };
     const data = (await response.json().catch(() => null)) as Record<string, unknown> | null;
     const state = (data?.instance as { state?: string } | undefined)?.state ?? null;
