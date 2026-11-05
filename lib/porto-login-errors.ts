@@ -27,7 +27,10 @@ export const PORTO_LOGIN_MESSAGES: Record<PortoLoginReason, string> = {
   no_confirmation:
     'O Porto não confirmou o CPF e a senha. Se a senha expirou ou foi trocada no portal, atualize em “Alterar”; se estiver certa, o portal pode estar instável — tente em alguns minutos.',
   no_qra: 'O Porto aceitou a senha, mas esse CPF não tem QRA ativo. Confira o CPF em “Alterar”.',
-  session_not_opened: 'O Porto aceitou o CPF e a senha, mas não abriu a sessão. O portal pode estar instável; tente de novo em alguns minutos.',
+  // The QRA lookup only checks CPF and password, so it answers normally even when the password has expired:
+  // the portal asks for a new one in the next step, and that is what keeps the robot out.
+  session_not_opened:
+    'O Porto reconheceu o CPF e a senha, mas não deixou o robô entrar. Costuma ser senha expirada: entre no Portal do Prestador pelo navegador e, se pedir uma nova senha, troque e atualize aqui em “Alterar”. Se não pedir, o portal pode estar instável; tente em alguns minutos.',
   blocked: 'O Porto bloqueou o acesso do robô por enquanto. Tente de novo mais tarde; se continuar, fale com o suporte.',
   no_answer: 'O Porto não respondeu. O portal pode estar fora do ar ou lento; tente de novo em alguns minutos.',
   unexpected: 'O Porto respondeu de um jeito inesperado e o robô não conseguiu entrar. A tela de login pode ter mudado; se continuar, fale com o suporte.',
@@ -86,10 +89,13 @@ export function buildLoginFailureMessage(reason: PortoLoginReason, diagnostics: 
  * A rejected login is not tried again: it is already attempted twice inside a run, and repeating a
  * wrong password risks locking the Porto account. Recognises the old wording too (rows already stored).
  */
+/** Wordings already stored in the history before they were rewritten. */
+const PREVIOUS_SENTENCES = ['O Porto aceitou o CPF e a senha, mas não abriu a sessão.'];
+
 export function isPortoLoginRejection(message: string | null | undefined): boolean {
   const text = message ?? '';
   if (text.startsWith(LEGACY_LOGIN_PREFIX)) return true;
-  return Object.values(PORTO_LOGIN_MESSAGES).some((sentence) => text.startsWith(sentence));
+  return [...Object.values(PORTO_LOGIN_MESSAGES), ...PREVIOUS_SENTENCES].some((sentence) => text.startsWith(sentence));
 }
 
 export type PortoErrorText = { message: string; technical: string | null };

@@ -37,6 +37,7 @@ test('a login rejection is recognised, old wording included, so it is never retr
   assert.equal(e.isPortoLoginRejection(stored), true);
   assert.equal(e.isPortoLoginRejection('Login no Porto falhou — verifique CPF e senha (url=x)'), true);
   assert.equal(e.isPortoLoginRejection('Não foi possível abrir a página de login do Porto.'), false);
+  assert.equal(e.isPortoLoginRejection('O Porto aceitou o CPF e a senha, mas não abriu a sessão. (url=x)'), true);
   assert.equal(e.isPortoLoginRejection(null), false);
 });
 

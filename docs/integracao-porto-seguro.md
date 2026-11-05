@@ -542,7 +542,7 @@ expediente"), `scripts/test-porto-login.cjs` (~40s) e `scripts/test-porto-servic
 | consulta de QRA `{"status":"invalid"}` | CPF ou senha recusados | "O Porto não aceitou o CPF ou a senha…" |
 | a página abre a janela "ALTERAR SENHA" ("A sua senha expirou…"; a consulta de QRA volta vazia) — confirmado em 05/11/2026 | senha expirada | "A senha do Porto expirou. Entre no Portal do Prestador, escolha uma nova senha e depois atualize aqui…" |
 | consulta de QRA 200 com corpo vazio (visto após troca de senha) | sem confirmação (senha/CPF trocado ou portal instável) | "O Porto não confirmou o CPF e a senha…" |
-| QRA ok, sessão não abre | portal instável | "…aceitou o CPF e a senha, mas não abriu a sessão…" |
+| QRA ok, sessão não abre | portal instável | "…reconheceu o CPF e a senha, mas não deixou o robô entrar. Costuma ser senha expirada…" (a consulta de QRA só confere CPF e senha e responde normal mesmo com a senha expirada; sem a janela na página, não dá para afirmar) |
 | 403/429 ou texto Incapsula | bloqueio do robô | "…bloqueou o acesso do robô por enquanto…" |
 | sem resposta / 5xx | portal fora do ar | "O Porto não respondeu…" |
 | resposta fora do formato | tela de login mudou | "…respondeu de um jeito inesperado…" |

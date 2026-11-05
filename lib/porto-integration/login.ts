@@ -118,7 +118,7 @@ export async function loginToPorto(page: Page, credentials: { cpf: string; passw
     const passwordExpired = await page
       .locator('body')
       .innerText({ timeout: 3000 })
-      .then((text) => /senha expirou/i.test(text))
+      .then((text) => /senha expirou|escolha uma nova|digite sua nova senha/i.test(text))
       .catch(() => false);
     const reason = classifyLoginFailure({ qraStatus, qraBody, sessionStatus: session.status, passwordExpired });
     throw new PortoLoginError(buildLoginFailureMessage(reason, diagnostics));
