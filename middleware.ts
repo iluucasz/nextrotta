@@ -28,7 +28,7 @@ const publicRoutes = ['/login', '/api/auth/login', '/api/auth/logout', '/api/aut
  * Mercado Pago OAuth return lands on the root domain without the subdomain's session: its single-use
  * state says who started it.
  */
-const webhookRoutes = ['/api/webhooks/asaas', '/api/webhooks/mercadopago', '/api/mercadopago/oauth/callback'];
+const webhookRoutes = ['/api/webhooks/asaas', '/api/webhooks/mercadopago', '/api/webhooks/evolution', '/api/mercadopago/oauth/callback'];
 
 /** Endpoints the public marketing site calls (plans, contact forms). */
 const PUBLIC_API_PREFIX = '/api/public/';
@@ -65,7 +65,7 @@ const previewAdminRoutes = ['/api/technician-visibility'];
 /** Writes still allowed while the organization is read-only (suspended or canceled). */
 const readOnlyAllowedRoutes = ['/api/auth/logout', '/api/auth/password', '/api/auth/impersonation/exit', '/api/auth/preview/exit'];
 // Reporting a problem (and talking about it) stays possible while the organization is read-only.
-const readOnlyAllowedPrefixes = ['/api/bug-reports', '/api/notifications'];
+const readOnlyAllowedPrefixes = ['/api/bug-reports', '/api/notifications', '/api/support/livechat'];
 const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 
 /**
@@ -75,8 +75,8 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
 const EXPORT_ONLY_PAGE = '/acesso-encerrado';
 const exportOnlyAllowedRoutes = [EXPORT_ONLY_PAGE, '/api/organization/access', '/api/organization/export'];
 // To get its data and to ask for help: the backups only to read and download (making or restoring one is blocked), tickets to open and answer.
-const exportOnlyReadPrefixes = ['/api/organization/backups', '/api/organization/files'];
-const exportOnlyWritePrefixes = ['/api/bug-reports', '/api/organization/billing/verify'];
+const exportOnlyReadPrefixes = ['/api/organization/backups', '/api/organization/files', '/api/support/livechat'];
+const exportOnlyWritePrefixes = ['/api/bug-reports', '/api/organization/billing/verify', '/api/support/livechat'];
 
 /**
  * A company that subscribed on the site: until the setup fee is paid it only reaches the welcome

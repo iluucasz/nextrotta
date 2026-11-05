@@ -19,7 +19,7 @@ import { getPlatformSettings } from './settings';
  * key makes each incident alert once — also across worker restarts. Never throws.
  */
 
-export type OwnerAlertKind = 'porto_layout' | 'porto_stuck' | 'porto_queue_late' | 'vps' | 'worker' | 'ai_balance' | 'privacy_request';
+export type OwnerAlertKind = 'porto_layout' | 'porto_stuck' | 'porto_queue_late' | 'vps' | 'worker' | 'ai_balance' | 'privacy_request' | 'livechat';
 
 /** Fixed name of the platform's instance on the shared Evolution server (reserved as a subdomain). */
 export const PLATFORM_ALERTS_INSTANCE = 'nextrotta-alertas';

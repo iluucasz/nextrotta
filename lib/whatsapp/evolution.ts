@@ -51,7 +51,8 @@ function describeError(error: unknown) {
   return `Erro ao chamar a Evolution API: ${error instanceof Error ? error.message : String(error)}`;
 }
 
-export async function sendEvolutionText(connection: EvolutionConnection, phone: string, text: string): Promise<EvolutionResult> {
+/** `messageId` is WhatsApp's own id of the sent message (lets a webhook echo of it be recognized). */
+export async function sendEvolutionText(connection: EvolutionConnection, phone: string, text: string): Promise<EvolutionResult & { messageId?: string | null }> {
   const number = normalizePhone(phone);
   if (!number) return { ok: false, error: 'Telefone inválido para WhatsApp.' };
 
@@ -67,7 +68,8 @@ export async function sendEvolutionText(connection: EvolutionConnection, phone: 
       return { ok: false, error: `Evolution API respondeu ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}` };
     }
 
-    return { ok: true, error: null };
+    const sent = (await response.json().catch(() => null)) as { key?: { id?: unknown } } | null;
+    return { ok: true, error: null, messageId: typeof sent?.key?.id === 'string' ? sent.key.id : null };
   } catch (error) {
     console.error('[whatsapp] Evolution sendText error:', error);
     return { ok: false, error: describeError(error) };
@@ -185,6 +187,32 @@ export async function createEvolutionInstance(server: EvolutionServer, instance:
     return { ok: true, error: null, qr: readQr(await response.json().catch(() => null)) };
   } catch (error) {
     return { ok: false, error: describeError(error), qr: null };
+  }
+}
+
+/**
+ * Points the instance's webhook at the app, for incoming messages and connection changes. Safe to repeat (it replaces the
+ * previous setting); `token` travels in a header the webhook route checks.
+ */
+export async function setEvolutionWebhook(server: EvolutionServer, instance: string, config: { url: string; token: string }): Promise<EvolutionResult> {
+  try {
+    const response = await request(asConnection(server, instance), `/webhook/set/${encodeURIComponent(instance)}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        webhook: {
+          enabled: true,
+          url: config.url,
+          byEvents: false,
+          base64: false,
+          headers: { 'x-webhook-token': config.token },
+          events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+        },
+      }),
+    });
+    if (!response.ok) return { ok: false, error: await failure(response) };
+    return { ok: true, error: null };
+  } catch (error) {
+    return { ok: false, error: describeError(error) };
   }
 }
 

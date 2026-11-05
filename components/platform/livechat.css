@@ -1,0 +1,86 @@
+/* Livechat (Reports): the inbox in the shape of WhatsApp. Everything under .lc-root. */
+.lc-root { --lc-green: #147d63; --lc-wa: #25a56a; --lc-bubble-out: #d9fdd3; --lc-bg: #efeae2; --lc-line: #e5ebe7; }
+.lc-status { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 12px 16px; margin-bottom: 14px; background: #fff; border: 1px solid var(--lc-line); border-radius: 12px; font-size: 15px; }
+.lc-status small { color: #8a5a00; font-size: 13px; flex-basis: 100%; }
+.lc-status-actions { margin-left: auto; }
+.lc-dot { width: 10px; height: 10px; border-radius: 50%; background: #b7c4bd; flex-shrink: 0; }
+.lc-dot.on { background: var(--lc-wa); box-shadow: 0 0 0 4px #25a56a26; }
+.lc-dot.wait { background: #e6a817; }
+.lc-dot.off { background: #c9534a; }
+
+.lc-shell { display: grid; grid-template-columns: 360px minmax(0, 1fr); height: min(720px, calc(100vh - 230px)); min-height: 520px; background: #fff; border: 1px solid var(--lc-line); border-radius: 12px; overflow: hidden; }
+.lc-list { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--lc-line); background: #fff; }
+.lc-list-head { padding: 14px 14px 10px; border-bottom: 1px solid var(--lc-line); display: grid; gap: 10px; }
+.lc-search { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: #f3f6f4; border-radius: 10px; color: #7a897e; }
+.lc-search input { flex: 1; min-width: 0; background: none; outline: none; font-size: 14px; color: #152b28; }
+.lc-filters { display: flex; gap: 6px; }
+.lc-filters button { padding: 5px 12px; border-radius: 999px; font-size: 13.5px; color: #5d6d65; background: #f3f6f4; display: inline-flex; align-items: center; gap: 6px; }
+.lc-filters [aria-selected=true] { background: #dcf3e7; color: #0f6a52; font-weight: 600; }
+.lc-filters b { background: var(--lc-wa); color: #fff; border-radius: 999px; min-width: 18px; padding: 0 5px; font-size: 11.5px; line-height: 18px; text-align: center; }
+.lc-list-body { flex: 1; min-height: 0; overflow-y: auto; }
+.lc-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 48px 28px; text-align: center; color: #7a897e; font-size: 14.5px; }
+
+.lc-item { display: flex; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; border-bottom: 1px solid #f0f3f0; align-items: center; }
+.lc-item:hover { background: #f7faf8; }
+.lc-item.active { background: #e8f3ed; }
+.lc-avatar { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; flex-shrink: 0; font-weight: 650; font-size: 15px; color: #fff; background: #6f8f82; }
+.lc-avatar.web { background: #3f7fbf; }
+.lc-avatar.whatsapp { background: var(--lc-wa); }
+.lc-item-main { min-width: 0; flex: 1; display: grid; gap: 3px; }
+.lc-item-top, .lc-item-bottom { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.lc-item-top strong { font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-item-top time { font-size: 12px; color: #8a9690; flex-shrink: 0; }
+.lc-preview { font-size: 13.5px; color: #6b7c77; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.lc-preview em { font-style: normal; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .4px; padding: 1px 6px; border-radius: 4px; margin-right: 6px; }
+.lc-urgent { background: #fde8e6; color: #b3261e; }
+.lc-closed { background: #eef1ef; color: #6b7c77; }
+.lc-unread { background: var(--lc-wa); color: #fff; border-radius: 999px; min-width: 21px; padding: 0 6px; font-size: 12px; line-height: 21px; text-align: center; flex-shrink: 0; }
+
+.lc-thread { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--lc-bg); }
+.lc-placeholder { margin: auto; text-align: center; color: #6f7f78; display: grid; gap: 10px; justify-items: center; padding: 24px; }
+.lc-placeholder h3 { font-size: 22px; font-weight: 600; color: #264334; }
+.lc-thread-head { display: flex; align-items: center; gap: 12px; padding: 10px 16px; background: #f7f9f8; border-bottom: 1px solid var(--lc-line); }
+.lc-thread-title { min-width: 0; flex: 1; display: grid; }
+.lc-thread-title strong { font-size: 16px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-thread-title small { font-size: 13px; color: #6b7c77; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lc-thread-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.lc-thread-actions .nr-btn { min-height: 36px; padding: 6px 12px; font-size: 14px; }
+.lc-back { display: none; padding: 4px; color: #405a4f; }
+
+.lc-messages { flex: 1; min-height: 0; overflow-y: auto; padding: 16px clamp(12px, 5%, 56px); background-image: radial-gradient(#00000008 1px, transparent 1px); background-size: 18px 18px; }
+.lc-day { display: flex; justify-content: center; margin: 14px 0 10px; }
+.lc-day span { background: #fff; color: #6b7c77; font-size: 12.5px; padding: 4px 12px; border-radius: 8px; box-shadow: 0 1px 1px #0000000f; }
+.lc-system { display: flex; justify-content: center; margin: 8px 0; }
+.lc-system span { background: #fdf3cf; color: #6b5b1f; font-size: 12.5px; padding: 4px 12px; border-radius: 8px; text-align: center; }
+.lc-row { display: flex; margin: 3px 0; }
+.lc-row.out { justify-content: flex-end; }
+.lc-bubble { max-width: min(78%, 620px); padding: 7px 10px 5px; border-radius: 10px; box-shadow: 0 1px 1px #0000001a; font-size: 15px; line-height: 1.4; position: relative; }
+.lc-bubble.in { background: #fff; border-top-left-radius: 2px; }
+.lc-bubble.out { background: var(--lc-bubble-out); border-top-right-radius: 2px; }
+.lc-bubble.media .lc-text { font-style: italic; color: #4b5d55; }
+.lc-sender { display: block; font-size: 12.5px; font-weight: 650; color: #1f7bb8; margin-bottom: 2px; }
+.lc-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.lc-bubble time { display: block; text-align: right; font-size: 11px; color: #7d8b85; margin-top: 2px; }
+.lc-hint { text-align: center; font-size: 12.5px; color: #6b7c77; margin: 14px 0 4px; }
+
+.lc-composer { padding: 10px 14px; background: #f7f9f8; border-top: 1px solid var(--lc-line); }
+.lc-composer-row { display: flex; align-items: flex-end; gap: 10px; }
+.lc-composer textarea { flex: 1; resize: none; max-height: 140px; min-height: 42px; padding: 10px 14px; border-radius: 22px; border: 1px solid #dfe6e1; background: #fff; font-size: 15px; outline: none; field-sizing: content; }
+.lc-composer textarea:focus { border-color: var(--lc-wa); box-shadow: 0 0 0 3px #25a56a22; }
+.lc-send { width: 44px; height: 44px; border-radius: 50%; background: var(--lc-wa); color: #fff; display: grid; place-items: center; flex-shrink: 0; }
+.lc-send:disabled { background: #b8c9c0; cursor: not-allowed; }
+.lc-error { color: #b3261e; font-size: 13.5px; margin-bottom: 8px; }
+
+@media (max-width: 900px) {
+  .lc-shell { grid-template-columns: 1fr; height: calc(100vh - 250px); min-height: 480px; }
+  .lc-shell.has-thread .lc-list { display: none; }
+  .lc-shell:not(.has-thread) .lc-thread { display: none; }
+  .lc-back { display: inline-flex; }
+  .lc-thread-actions .nr-btn { padding: 6px 10px; }
+  .lc-btn-text { display: none; }
+  .lc-status-actions { margin-left: 0; flex-basis: 100%; }
+  .lc-status-actions .nr-btn { width: 100%; }
+  .lc-bubble { max-width: 88%; }
+}
+
+.lc-tab-badge { margin-left: 8px; background: #25a56a; color: #fff; border-radius: 999px; min-width: 19px; padding: 0 6px; font-size: 12px; line-height: 19px; display: inline-block; text-align: center; }

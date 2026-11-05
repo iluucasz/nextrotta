@@ -1,8 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, date, errorMessage, useResource } from './api';
+import { Livechat } from './livechat';
 import { useNotify } from './notice';
 import {
   formatTicketNumber,
@@ -196,14 +197,32 @@ export function BugTable({
 
 export function Bugs({ id }: { id?: string }) {
   const bugs = useResource<{ bugs: BugRow[] }>(id ? null : '/bugs');
-  const [type, setType] = useState<ReportType | 'all'>('all');
+  const [type, setType] = useState<ReportType | 'all' | 'livechat'>('all');
+  // Messages waiting in the live chat: shown on the tab from any other tab of Reports.
+  const [chatUnread, setChatUnread] = useState(0);
+  useEffect(() => {
+    if (id) return;
+    let active = true;
+    const check = () => {
+      if (document.visibilityState !== 'visible') return;
+      api<{ unread: { messages: number } }>('/livechat?status=open')
+        .then((data) => active && setChatUnread(data.unread.messages))
+        .catch(() => undefined);
+    };
+    check();
+    const timer = setInterval(check, 15_000);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
+  }, [id]);
   if (id) return <BugDetail id={id} />;
   if (bugs.loading && !bugs.data) return <Loading />;
   if (bugs.error)
     return <ErrorState message={bugs.error} onRetry={bugs.reload} />;
 
   const list = bugs.data!.bugs.filter(
-    (report) => type === 'all' || (report.type ?? 'bug') === type,
+    (report) => type === 'all' || type === 'livechat' || (report.type ?? 'bug') === type,
   );
   const labels =
     type === 'suggestion' || type === 'support'
@@ -223,17 +242,20 @@ export function Bugs({ id }: { id?: string }) {
         description="Chamados de suporte, bugs e sugestões dos clientes, com acompanhamento e conversa em um só lugar."
       />
       <div className="nr-tabs" role="tablist" aria-label="Tipo de report">
-        {(['all', 'support', 'bug', 'suggestion'] as const).map((value) => (
+        {(['all', 'support', 'bug', 'suggestion', 'livechat'] as const).map((value) => (
           <button
             key={value}
             role="tab"
             aria-selected={type === value}
             onClick={() => setType(value)}
           >
-            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : 'Sugestões'}
+            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : value === 'suggestion' ? 'Sugestões' : 'Livechat'}
+            {value === 'livechat' && chatUnread ? <b className="lc-tab-badge">{chatUnread}</b> : null}
           </button>
         ))}
       </div>
+      {type === 'livechat' ? <Livechat /> : (
+        <>
       <div className="nr-metrics">
         {(
           ['new', 'investigating', 'resolved', 'not_reproduced'] as BugStatus[]
@@ -259,6 +281,8 @@ export function Bugs({ id }: { id?: string }) {
       >
         <BugTable key={type} bugs={list} />
       </Panel>
+        </>
+      )}
     </>
   );
 }

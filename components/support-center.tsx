@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { LiveChatPanel } from '@/components/livechat/customer-chat';
 import { ArrowLeft, Bug, ImagePlus, LifeBuoy, Lightbulb, Loader2, MessageSquare, Plus, Search, Send } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import { PageHeader } from '@/components/page-header';
@@ -136,7 +137,9 @@ export function NewTicketForm({
   const [screenshot, setScreenshot] = useState<{ name: string; dataUrl: string } | null>(null);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  const [created, setCreated] = useState<{ id: string; ticketNumber: number; type: ReportType } | null>(null);
+  const [created, setCreated] = useState<{ id: string; ticketNumber: number; type: ReportType; urgent: boolean } | null>(null);
+  // An urgent support ticket goes on to the live chat.
+  const [urgent, setUrgent] = useState(false);
   const copy = TYPE_COPY[type];
 
   async function pickImage(file: File | undefined) {
@@ -165,7 +168,8 @@ export function NewTicketForm({
         userAgent: navigator.userAgent,
         appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? null,
       });
-      setCreated({ ...ticket, type });
+      setCreated({ ...ticket, type, urgent: type === 'support' && urgent });
+      setUrgent(false);
       setTitle('');
       setDescription('');
       setScreenshot(null);
@@ -186,7 +190,7 @@ export function NewTicketForm({
         <p className="text-sm text-muted-foreground">Guarde este número. Nossa equipe responde por aqui e você acompanha tudo na central de suporte.</p>
         <div className="flex flex-wrap justify-center gap-2 pt-2">
           <Button asChild>
-            <Link href={`${basePath}/${created.id}`}>Acompanhar chamado</Link>
+            <Link href={created.urgent ? `${basePath}/${created.id}?chat=1` : `${basePath}/${created.id}`}>{created.urgent ? 'Abrir o chat ao vivo' : 'Acompanhar chamado'}</Link>
           </Button>
           <Button type="button" variant="outline" onClick={() => setCreated(null)}>
             Abrir outro
@@ -278,6 +282,15 @@ export function NewTicketForm({
           onChange={(event) => setDescription(event.target.value)}
         />
       </div>
+      {type === 'support' ? (
+        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border px-3 py-2.5 text-sm hover:bg-secondary">
+          <input type="checkbox" checked={urgent} onChange={(event) => setUrgent(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
+          <span>
+            <span className="block font-medium">É urgente: quero falar agora no chat ao vivo</span>
+            <span className="block text-xs text-muted-foreground">Depois de enviar, abrimos o chat para você conversar com a nossa equipe.</span>
+          </span>
+        </label>
+      ) : null}
       <div className="space-y-1.5">
         <Label htmlFor={`ticket-screenshot-${type}`}>Captura de tela (opcional, até 2 MB)</Label>
         <label
@@ -577,6 +590,8 @@ export function TicketPage({ id, basePath }: { id: string; basePath: string }) {
               <img src={`/api/bug-reports/${id}/screenshot`} alt="Captura de tela enviada" className="mt-4 max-h-96 rounded-md border" />
             ) : null}
           </DataPanel>
+
+          <LiveChatPanel ticketId={id} ticketClosed={closed} startOpen={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chat') === '1'} />
 
           <DataPanel title="Conversa" description="As respostas da equipe NextRotta aparecem aqui.">
             <ol className="space-y-3">

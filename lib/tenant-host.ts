@@ -6,7 +6,7 @@
 
 /** Subdomains that can never be an organization slug. Keep in sync with scripts/create-organization.mjs. */
 export const RESERVED_SUBDOMAINS = new Set([
-  'www', 'app', 'api', 'admin', 'painel', 'plataforma', 'login', 'suporte', 'status', 'blog', 'docs', 'mail', 'nextrotta-alertas',
+  'www', 'app', 'api', 'admin', 'painel', 'plataforma', 'login', 'suporte', 'status', 'blog', 'docs', 'mail', 'nextrotta-alertas', 'nextrotta-suporte',
 ]);
 
 const SLUG_PATTERN = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/;
