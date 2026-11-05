@@ -119,7 +119,7 @@ export const siteContent: SiteContent = {
     {
       id: 'seg1',
       title: 'Dados preservados',
-      text: 'Se a assinatura atrasar, o acesso é pausado. Nenhum dado é apagado.',
+      text: 'Se a assinatura atrasar, o acesso é pausado e você baixa seus dados. Pagando, volta na hora. Sem regularização em 3 meses, eles são excluídos, conforme a LGPD.',
     },
     {
       id: 'seg2',

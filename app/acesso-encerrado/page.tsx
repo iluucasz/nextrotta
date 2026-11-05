@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, CreditCard, Download, ExternalLink, FileSpreadsheet, FileText, ImageIcon, LifeBuoy, Loader2, LockKeyhole, LogOut, MessageCircle, Scale, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, CreditCard, Download, ExternalLink, FileSpreadsheet, FileText, ImageIcon, LifeBuoy, Loader2, LockKeyhole, LogOut, MessageCircle, RefreshCw, Scale, ShieldCheck } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/ui/button';
 import { dataDeletionDate, LOCKED_DATA_RETENTION_MONTHS } from '@/lib/data-retention';
@@ -65,6 +65,42 @@ export default function ClosedAccessPage() {
     window.location.assign('/login');
   }
 
+  // "Já paguei": asks the payment gateway now; once nothing is overdue the access is released and the page opens the system.
+  const [checking, setChecking] = useState(false);
+  const [checkMessage, setCheckMessage] = useState<{ tone: 'ok' | 'wait' | 'error'; text: string } | null>(null);
+  const verifyPayment = useCallback(
+    async (manual: boolean) => {
+      if (manual) {
+        setChecking(true);
+        setCheckMessage(null);
+      }
+      try {
+        const response = await fetch('/api/organization/billing/verify', { method: 'POST' });
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.error || 'Não foi possível verificar agora.');
+        if (data.released) {
+          setCheckMessage({ tone: 'ok', text: 'Pagamento confirmado! Abrindo o sistema…' });
+          await load();
+        } else if (manual) {
+          setCheckMessage({ tone: 'wait', text: 'Ainda não identificamos o pagamento. Pix e cartão costumam confirmar em poucos minutos; boleto pode levar até 2 dias úteis. Se já pagou, tente de novo daqui a pouco.' });
+        }
+      } catch (reason) {
+        if (manual) setCheckMessage({ tone: 'error', text: reason instanceof Error ? reason.message : 'Não foi possível verificar agora.' });
+      } finally {
+        if (manual) setChecking(false);
+      }
+    },
+    [load],
+  );
+  const awaitingPayment = Boolean(access?.payment && access.isAdmin);
+  useEffect(() => {
+    if (!awaitingPayment) return;
+    // Once on arrival (paid in another tab?) and then every minute while the page stays open.
+    void verifyPayment(false);
+    const timer = setInterval(() => void verifyPayment(false), 60_000);
+    return () => clearInterval(timer);
+  }, [awaitingPayment, verifyPayment]);
+
   const canceled = access?.status === 'canceled';
   const deletionDate = access?.since ? dataDeletionDate(access.since) : null;
 
@@ -97,11 +133,19 @@ export default function ClosedAccessPage() {
                 <Scale className="mt-0.5 h-5 w-5 shrink-0" />
                 <div>
                   <strong className="block">Prazo para não perder os dados</strong>
-                  Conforme a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), não guardamos dados de empresas sem contrato ativo. Se até{' '}
-                  <strong>{longDate(deletionDate.toISOString())}</strong> ({LOCKED_DATA_RETENTION_MONTHS} meses após o bloqueio) o acesso não for reativado
-                  {access.payment ? ' e a cobrança em aberto não for paga' : ''}, todos os dados da empresa e os backups serão{' '}
-                  <strong>excluídos de forma permanente e irreversível</strong>. Depois disso não é possível reativar esta conta: será preciso criar uma conta completamente nova.
-                  Baixe seus dados abaixo enquanto há tempo.
+                  Conforme a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), não guardamos dados de empresas sem contrato ativo.{' '}
+                  {access.payment ? (
+                    <>
+                      Pagando a cobrança em aberto, o acesso volta na hora e nada se perde. Se até <strong>{longDate(deletionDate.toISOString())}</strong> ({LOCKED_DATA_RETENTION_MONTHS} meses após o
+                      bloqueio) o pagamento não for feito, todos os dados da empresa e os backups serão <strong>excluídos de forma permanente e irreversível</strong>.
+                    </>
+                  ) : (
+                    <>
+                      Se até <strong>{longDate(deletionDate.toISOString())}</strong> ({LOCKED_DATA_RETENTION_MONTHS} meses após o bloqueio) o acesso não for reativado, todos os dados da empresa e os backups serão{' '}
+                      <strong>excluídos de forma permanente e irreversível</strong>.
+                    </>
+                  )}{' '}
+                  Depois disso não é possível reativar esta conta: será preciso criar uma conta completamente nova. Baixe seus dados abaixo enquanto há tempo.
                 </div>
               </div>
             ) : null}
@@ -113,14 +157,31 @@ export default function ClosedAccessPage() {
                     {access.payment.description ? `${access.payment.description}: ` : 'Cobrança em aberto: '}
                     <strong>{money(access.payment.value)}</strong>, vencida em {shortDate(access.payment.dueDate)}.
                   </p>
-                  <p className="mt-1" style={{ color: COLORS.soft }}>Assim que o pagamento for confirmado o sistema abre sozinho: esta página confere a cada poucos segundos.</p>
-                  {access.isAdmin && access.payment.invoiceUrl ? (
-                    <Button asChild size="lg" className="mt-3 w-full text-white hover:opacity-90 sm:w-auto" style={{ background: COLORS.green }}>
-                      <a href={access.payment.invoiceUrl} target="_blank" rel="noreferrer">
-                        <CreditCard className="h-5 w-5" />
-                        Pagar agora
-                      </a>
-                    </Button>
+                  <p className="mt-1" style={{ color: COLORS.soft }}>Pagou? O acesso volta na hora: clique em “Verificar pagamento” e o sistema abre sozinho.</p>
+                  {access.isAdmin ? (
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                      {access.payment.invoiceUrl ? (
+                        <Button asChild size="lg" className="w-full text-white hover:opacity-90 sm:w-auto" style={{ background: COLORS.green }}>
+                          <a href={access.payment.invoiceUrl} target="_blank" rel="noreferrer">
+                            <CreditCard className="h-5 w-5" />
+                            Pagar agora
+                          </a>
+                        </Button>
+                      ) : null}
+                      <Button type="button" size="lg" variant="outline" className="w-full sm:w-auto" onClick={() => void verifyPayment(true)} disabled={checking}>
+                        {checking ? <Loader2 className="h-5 w-5 animate-spin" /> : <RefreshCw className="h-5 w-5" />}
+                        {checking ? 'Verificando…' : 'Verificar pagamento'}
+                      </Button>
+                    </div>
+                  ) : null}
+                  {checkMessage ? (
+                    <p
+                      role="status"
+                      className="mt-3 rounded-lg p-3"
+                      style={checkMessage.tone === 'ok' ? { background: COLORS.greenBg, color: COLORS.greenInk } : checkMessage.tone === 'error' ? { background: '#fef2f2', color: '#b91c1c' } : { background: COLORS.warnBg, color: COLORS.warnInk }}
+                    >
+                      {checkMessage.text}
+                    </p>
                   ) : null}
                   {!access.isAdmin ? <p className="mt-2 text-sm" style={{ color: COLORS.soft }}>Peça ao administrador da sua empresa para pagar.</p> : null}
                 </Section>

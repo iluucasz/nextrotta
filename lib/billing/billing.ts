@@ -494,7 +494,7 @@ export async function evaluateBillingStatus(organizationId: string) {
       kind: 'billing',
       severity: 'critical',
       title: 'Pagamento em atraso',
-      body: 'Regularize em Assinatura. Se não for resolvido até o fim da carência, o acesso é bloqueado (nada é apagado e você poderá baixar o último backup).',
+      body: 'Regularize em Assinatura. Se não for resolvido até o fim da carência, o acesso é bloqueado (você poderá baixar o último backup). Sem regularização em 3 meses após o bloqueio, os dados são excluídos de forma permanente.',
       href: '/admin/assinatura',
       dedupeKey: `billing:past_due:${oldest}`,
     });
@@ -571,7 +571,7 @@ export async function runBillingMaintenance() {
       kind: 'billing',
       severity: 'critical',
       title: 'Acesso pausado por falta de pagamento',
-      body: 'O sistema foi bloqueado e nada foi apagado. Regularize o pagamento ou abra um chamado para voltar ao normal; você pode baixar o último backup na tela de acesso.',
+      body: 'O sistema foi bloqueado. Pague a cobrança em aberto ou abra um chamado para voltar ao normal na hora; você pode baixar o último backup na tela de acesso. Sem regularização em 3 meses, os dados são excluídos de forma permanente.',
       href: '/admin/assinatura',
       dedupeKey: `billing:suspended:${oldest}`,
     });

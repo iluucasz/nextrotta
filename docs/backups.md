@@ -64,7 +64,7 @@ Empresa suspensa (falta de pagamento, depois da carência `grace_days`, ou pelo 
 Configurações). A empresa só chega a `/acesso-encerrado` (`middleware.ts`: `exportOnlyAllowed*`), que mostra o motivo, a
 cobrança em aberto com **Pagar agora**, **Abrir chamado** (um chamado de suporte, a única escrita liberada, mais o WhatsApp
 publicado), e **Baixar planilha** do último backup (e o arquivo completo); sem backup, "Gerar e baixar a planilha" lê a
-empresa na hora. A página confere o acesso a cada 20 s e abre o sistema sozinha quando o pagamento é confirmado. Nessa tela a
+empresa na hora. A página confere o acesso a cada 20 s e abre o sistema sozinha quando o pagamento é confirmado. **Verificar pagamento** (só quem bloqueou por falta de pagamento, só o administrador): `POST /api/organization/billing/verify` consulta o Asaas na hora (`refreshCharges` → `evaluateBillingStatus`), sem esperar o webhook, e libera o acesso no mesmo instante se não restar cobrança vencida; a página também verifica sozinha ao abrir e a cada 1 min, e o servidor segura consultas mais próximas que 8 s. O `middleware.ts` não guarda em cache o acesso de empresa bloqueada, para a liberação valer na requisição seguinte. Um bloqueio feito pelo dono nunca é desfeito por pagamento. Teste: `node scripts/test-billing-release.cjs`. Nessa tela a
 empresa só *baixa* (GET em `/api/organization/backups`); fazer backup e restaurar ficam bloqueados. `past_due` (carência)
 usa o sistema normalmente. Teste: `node scripts/test-backup-flow.cjs`.
 

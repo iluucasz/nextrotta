@@ -76,7 +76,7 @@ const EXPORT_ONLY_PAGE = '/acesso-encerrado';
 const exportOnlyAllowedRoutes = [EXPORT_ONLY_PAGE, '/api/organization/access', '/api/organization/export'];
 // To get its data and to ask for help: the backups only to read and download (making or restoring one is blocked), tickets to open and answer.
 const exportOnlyReadPrefixes = ['/api/organization/backups', '/api/organization/files'];
-const exportOnlyWritePrefixes = ['/api/bug-reports'];
+const exportOnlyWritePrefixes = ['/api/bug-reports', '/api/organization/billing/verify'];
 
 /**
  * A company that subscribed on the site: until the setup fee is paid it only reaches the welcome
@@ -94,8 +94,8 @@ async function organizationAccess(slug: string) {
   const cached = accessCache.get(slug);
   if (cached && Date.now() - cached.at < ACCESS_CACHE_MS) return cached.access;
   const access = await getAccessBySlug(slug);
-  // Not cached while onboarding: the release must open the system on the very next request.
-  if (access?.onboarding) accessCache.delete(slug);
+  // Not cached while onboarding or locked: a release (the setup or an overdue charge paid) must open the system on the very next request.
+  if (access?.onboarding || (access && access.level !== 'full')) accessCache.delete(slug);
   else accessCache.set(slug, { at: Date.now(), access });
   return access;
 }

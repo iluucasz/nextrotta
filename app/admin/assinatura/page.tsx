@@ -200,7 +200,7 @@ export default function SubscriptionPage() {
 
             <SectionPanel
               title="Como o valor é calculado"
-              description="Novos recursos chegam sem custo extra. Se um pagamento atrasar, nada é apagado: o acesso fica em modo somente leitura até a regularização."
+              description="Novos recursos chegam sem custo extra. Se um pagamento atrasar, o acesso é bloqueado depois da carência e você baixa seus dados; pagando, volta na hora. Sem regularização em 3 meses, os dados são excluídos (LGPD)."
             >
               <dl className="st-summary">
                 <div>
