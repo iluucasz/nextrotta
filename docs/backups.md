@@ -108,6 +108,15 @@ confere), só administrador (nunca o modo preview) e é bloqueada nos estados de
 - De ponta a ponta (API real, banco e armazenamento de desenvolvimento, empresa `kappa`): fazer backup, alterar dados,
   restaurar, conferir, desfazer a restauração, conferir isolamento entre empresas e rotina de vencimento.
 
+## Quem agenda (Vercel Cron, não depende da VPS)
+
+`vercel.json` agenda, em UTC: `/api/cron/backups` às 03:00 (00:00 Brasília) e de novo às 05:00 (pega o que falhou; o índice
+único impede dois diários no mesmo dia) e `/api/cron/billing` às 08:50 (05:50 Brasília, antes do worker das 06:00: o backup do
+dia anterior ao bloqueio e o final da suspensão saem com o token do app). As rotas só respondem com
+`Authorization: Bearer $CRON_SECRET` (a Vercel manda sozinha quando a variável existe); **sem `CRON_SECRET` (mínimo 16
+caracteres) no ambiente da Vercel tudo recusa e nada roda**. Cada execução entra em `worker_runs`. Teste:
+`node scripts/test-cron-secret.cjs`.
+
 ## Worker
 
 `worker/index.ts`: `cron '0 0 * * *'` (fuso Brasília) → `runBackups()` = `runDailyBackups()` + `cleanupExpiredBackups()`,
