@@ -1,3 +1,4 @@
+import { isPlatformRole } from './platform-access'
 import { SignJWT, jwtVerify } from 'jose'
 import { cookies } from 'next/headers'
 import bcrypt from 'bcryptjs'
@@ -158,7 +159,7 @@ async function loadSessionUser(payload: TokenPayload): Promise<SessionRow | null
   if (row.role !== payload.role) return null
   if ((row.organization_id ?? null) !== (payload.organizationId ?? null)) return null
 
-  if (row.role !== 'platform_owner') {
+  if (!isPlatformRole(row.role)) {
     if (!row.organization_slug || row.organization_status === 'provisioning') return null
   }
 
@@ -250,6 +251,12 @@ export async function verifyOrganizationAuth(request: Request): Promise<Organiza
 export async function verifyPlatformOwner(request: Request): Promise<TokenPayload | null> {
   const auth = await verifyAuth(request)
   return auth?.role === 'platform_owner' && !auth.impersonationId ? auth : null
+}
+
+/** The people of the NextRotta itself: the owner or a support user ("atendente"), never an owner acting inside a company. */
+export async function verifyPlatformStaff(request: Request): Promise<TokenPayload | null> {
+  const auth = await verifyAuth(request)
+  return auth && isPlatformRole(auth.role) && !auth.impersonationId ? auth : null
 }
 
 export async function verifyAuth(

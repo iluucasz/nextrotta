@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { ATTACHMENT_TYPES, attachmentProblem, chatClosingMessage, isImageType } from '@/lib/livechat/rules';
 import { api, errorMessage } from './api';
 import { useNotify } from './notice';
+import { useIsOwner } from './role';
 import './livechat.css';
 
 type Conversation = {
@@ -62,6 +63,8 @@ const THREAD_POLL_MS = 3_000;
 
 /** The platform's live chat inbox: the web chats opened from tickets and the conversations of the official WhatsApp number. */
 export function Livechat({ initialId = null }: { initialId?: string | null }) {
+  // Connecting or disconnecting the official number is the owner's; a support user only answers.
+  const isOwner = useIsOwner();
   const notify = useNotify();
   // Coming from a ticket, the conversation may be closed: start on "Todas" so it is in the list.
   const [filter, setFilter] = useState<'open' | 'closed' | 'all'>(initialId ? 'all' : 'open');
@@ -195,7 +198,7 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
         ) : null}
         {whatsapp && !whatsapp.webhookUrl && whatsapp.serverConfigured && !whatsapp.error ? <small>Sem endereço público: o recebimento de mensagens só funciona no site publicado.</small> : null}
         <span className="lc-status-actions">
-          {connected ? (
+          {!isOwner ? null : connected ? (
             <button className="nr-btn" onClick={() => setConfirmDisconnect(true)}>
               <Unplug size={16} />
               Desconectar
@@ -407,7 +410,7 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
         form.append('mirror', mirror ? '1' : '0');
         const response = await fetch(`/api/platform/livechat/${conversation.id}/upload`, { method: 'POST', body: form });
         if (response.status === 401) {
-          window.location.assign('/login');
+          window.location.assign('/login?sessao=expirada');
           return;
         }
         const result = await response.json().catch(() => null);

@@ -14,14 +14,17 @@ import { Plans } from './plans';
 import { PrivacyRequests } from './privacy';
 import { PlatformSettings } from './settings';
 import { SiteEditor } from './site-editor';
+import { useIsOwner } from './role';
+import { SupportOrganizationDetail, SupportOrganizations, Team } from './team';
 import { Empty } from './ui';
 
 /** Every screen reads real data from /api/platform. */
 export function PlatformRouter({ segments = [] }: { segments?: string[] }) {
   const [section, id, view] = segments;
+  const owner = useIsOwner();
   switch (section) {
     case undefined: return <Dashboard />;
-    case 'organizacoes': return !id ? <Organizations /> : id === 'nova' ? <OrganizationWizard /> : view === 'provisionamento' ? <Provisioning id={id} /> : <OrganizationDetail id={id} />;
+    case 'organizacoes': if (!owner) return id ? <SupportOrganizationDetail id={id} /> : <SupportOrganizations />; return !id ? <Organizations /> : id === 'nova' ? <OrganizationWizard /> : view === 'provisionamento' ? <Provisioning id={id} /> : <OrganizationDetail id={id} />;
     case 'financeiro': return <Finance />;
     case 'planos': return <Plans />;
     case 'cupons': return <Coupons id={id} />;
@@ -36,6 +39,7 @@ export function PlatformRouter({ segments = [] }: { segments?: string[] }) {
     case 'operacao': return <OperationsScreen />;
     case 'privacidade': return <PrivacyRequests />;
     case 'auditoria': return <AuditScreen />;
+    case 'equipe': return owner ? <Team /> : <Empty title="Página não encontrada" text="Use o menu ao lado para navegar pelo painel." />;
     case 'configuracoes': return <PlatformSettings />;
     default: return <Empty title="Página não encontrada" text="Use o menu ao lado para navegar pelo painel." />;
   }

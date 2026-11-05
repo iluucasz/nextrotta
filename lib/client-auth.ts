@@ -2,7 +2,7 @@ export interface SessionUser {
   userId: string;
   email: string;
   name: string;
-  role: 'platform_owner' | 'admin' | 'technician';
+  role: 'platform_owner' | 'platform_support' | 'admin' | 'technician';
   technicianId?: string;
   /** Null only for the platform owner. */
   organizationSlug: string | null;

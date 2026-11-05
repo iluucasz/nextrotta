@@ -23,7 +23,7 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
 
   // The owner's session expired: back to the login instead of a broken screen.
   if (response.status === 401) {
-    window.location.assign('/login');
+    window.location.assign('/login?sessao=expirada');
     throw new ApiError('Sessão expirada. Entre novamente.', 401);
   }
   if (!response.ok) throw new ApiError(data?.error || 'Não foi possível concluir a ação.', response.status);
@@ -188,6 +188,11 @@ Object.assign(AUDIT_LABELS, {
   'ai_credits.adjusted': 'Créditos de IA ajustados',
   'ai_credits.purchase_requested': 'Compra de créditos solicitada',
   'bug.updated': 'Relato de bug atualizado',
+  'team.created': 'Atendente criado',
+  'team.updated': 'Atendente alterado',
+  'team.activated': 'Atendente reativado',
+  'team.deactivated': 'Atendente desativado',
+  'team.password_reset': 'Nova senha temporária de atendente',
   'news.created': 'Novidade criada',
   'news.updated': 'Novidade alterada',
   'news.published': 'Novidade publicada',

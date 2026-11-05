@@ -1,3 +1,4 @@
+import { isPlatformRole } from '@/lib/platform-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { get } from '@vercel/blob';
 import { verifyOrganizationAuth } from '@/lib/auth';
@@ -13,7 +14,7 @@ const INLINE_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'ima
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   try {
     const auth = await verifyOrganizationAuth(request);
-    if (!auth || auth.role === 'platform_owner') {
+    if (!auth || isPlatformRole(auth.role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

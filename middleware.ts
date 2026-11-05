@@ -1,3 +1,4 @@
+import { isPlatformRole, mayOpenPanelPath, SUPPORT_HOME } from '@/lib/platform-access';
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 import { getAccessBySlug, type OrganizationAccess } from '@/lib/organization-access';
@@ -172,12 +173,16 @@ export async function middleware(request: NextRequest) {
   if (host.kind === 'root' && path === '/login') {
     const stay = LOGIN_STAY_PARAMS.some((param) => request.nextUrl.searchParams.has(param));
     const auth = await verifyAuthMiddleware(request);
-    if (auth?.role === 'platform_owner') return NextResponse.redirect(sameHostUrl('/plataforma', request));
+    // With ?sessao=expirada the panel already found this session dead (a person made inactive, for one): sending them back
+    // to the panel would loop, so the form is shown and the cookie is dropped.
+    if (!stay && auth?.role === 'platform_owner') return NextResponse.redirect(sameHostUrl('/plataforma', request));
+    if (!stay && auth?.role === 'platform_support') return NextResponse.redirect(sameHostUrl(SUPPORT_HOME, request));
 
     const lastOrganization = request.cookies.get(LAST_ORGANIZATION_COOKIE)?.value ?? '';
     if (stay) {
       const response = NextResponse.next();
       if (lastOrganization) response.cookies.delete(LAST_ORGANIZATION_COOKIE);
+      if (isPlatformRole(auth?.role) && request.nextUrl.searchParams.has('sessao')) response.cookies.delete(COOKIE_NAME);
       return response;
     }
     if (lastOrganization && isValidOrganizationSlug(lastOrganization)) {
@@ -196,8 +201,8 @@ export async function middleware(request: NextRequest) {
   }
 
   if (host.kind === 'root') {
-    // Only the platform owner has a session on the root domain.
-    if (auth.role !== 'platform_owner') {
+    // Only the NextRotta's own people (the owner, the support users) have a session on the root domain.
+    if (!isPlatformRole(auth.role)) {
       return rejectSession(request, { clearCookie: true });
     }
 
@@ -208,7 +213,12 @@ export async function middleware(request: NextRequest) {
     }
 
     if (!startsWithAny(path, platformRoutes)) {
-      return NextResponse.redirect(sameHostUrl('/plataforma', request));
+      return NextResponse.redirect(sameHostUrl(auth.role === 'platform_support' ? SUPPORT_HOME : '/plataforma', request));
+    }
+
+    // A support user opens only what an attendant needs; the rest of the panel (money, plans, operation) sends them back to Reports.
+    if (!mayOpenPanelPath(auth.role, path)) {
+      return NextResponse.redirect(sameHostUrl(SUPPORT_HOME, request));
     }
 
     return NextResponse.next();

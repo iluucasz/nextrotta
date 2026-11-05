@@ -1,3 +1,4 @@
+import { isPlatformRole } from '@/lib/platform-access';
 import { randomUUID } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { put } from '@vercel/blob';
@@ -54,7 +55,7 @@ function getDocumentType(fileName: string, mimeType: string) {
 export async function GET(request: NextRequest) {
   try {
     const auth = await verifyOrganizationAuth(request);
-    if (!auth || auth.role === 'platform_owner') {
+    if (!auth || isPlatformRole(auth.role)) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 

@@ -3,13 +3,13 @@ import { recordAudit } from '@/lib/audit';
 import { hashPassword, verifyPassword } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { PlatformError } from '@/lib/platform/errors';
-import { readJson, withPlatformOwner } from '@/lib/platform/route';
+import { readJson, withPlatformStaff } from '@/lib/platform/route';
 
 export const runtime = 'nodejs';
 
 /** The owner's own account. */
 export async function GET(request: NextRequest) {
-  return withPlatformOwner(request, async (owner) => {
+  return withPlatformStaff(request, async (owner) => {
     const rows = await sql`SELECT name, email, last_login_at AS "lastLoginAt" FROM users WHERE id = ${owner.userId}`;
     return NextResponse.json({ account: rows[0] });
   });
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
 /** { currentPassword, newPassword } — changes the owner's password (at least 10 characters). */
 export async function PUT(request: NextRequest) {
-  return withPlatformOwner(request, async (owner) => {
+  return withPlatformStaff(request, async (owner) => {
     const body = await readJson(request);
     const currentPassword = typeof body.currentPassword === 'string' ? body.currentPassword : '';
     const newPassword = typeof body.newPassword === 'string' ? body.newPassword : '';
@@ -31,14 +31,14 @@ export async function PUT(request: NextRequest) {
     }
 
     await sql`UPDATE users SET password_hash = ${await hashPassword(newPassword)}, updated_at = NOW() WHERE id = ${owner.userId}`;
-    await recordAudit({ organizationId: null, actorId: owner.userId, actorRole: 'platform_owner', action: 'account.password_changed' });
+    await recordAudit({ organizationId: null, actorId: owner.userId, actorRole: owner.role, action: 'account.password_changed' });
     return NextResponse.json({ success: true });
   });
 }
 
 /** { name, email } — the owner's name and login e-mail (unique across the platform). */
 export async function PATCH(request: NextRequest) {
-  return withPlatformOwner(request, async (owner) => {
+  return withPlatformStaff(request, async (owner) => {
     const body = await readJson(request);
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
@@ -53,7 +53,7 @@ export async function PATCH(request: NextRequest) {
     await recordAudit({
       organizationId: null,
       actorId: owner.userId,
-      actorRole: 'platform_owner',
+      actorRole: owner.role,
       action: 'account.updated',
       details: { before, after: { name, email } },
     });

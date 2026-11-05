@@ -3,7 +3,7 @@ import { attachmentProblem, cleanMessage } from '@/lib/livechat/rules';
 import { getConversation, getMessages, markReadByOwner, reopenConversation } from '@/lib/livechat/store';
 import { sendOwnerAttachment } from '@/lib/livechat/whatsapp';
 import { PlatformError } from '@/lib/platform/errors';
-import { withPlatformOwner } from '@/lib/platform/route';
+import { withPlatformStaff } from '@/lib/platform/route';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -13,7 +13,7 @@ export const maxDuration = 60;
  * customer's WhatsApp). On a WhatsApp conversation it goes through the official number.
  */
 export async function POST(request: NextRequest, context: { params: Promise<{ id: string }> }) {
-  return withPlatformOwner(request, async () => {
+  return withPlatformStaff(request, async () => {
     const { id } = await context.params;
     const form = await request.formData().catch(() => null);
     const file = form?.get('file');

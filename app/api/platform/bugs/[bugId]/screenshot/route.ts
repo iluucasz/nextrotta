@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getBugScreenshot } from '@/lib/platform/bugs';
-import { withPlatformOwner } from '@/lib/platform/route';
+import { withPlatformStaff } from '@/lib/platform/route';
 
 export const runtime = 'nodejs';
 
@@ -15,5 +15,5 @@ function imageResponse(dataUrl: string | null) {
 }
 
 export async function GET(request: NextRequest, context: Context) {
-  return withPlatformOwner(request, async () => imageResponse(await getBugScreenshot((await context.params).bugId, { kind: 'owner' })));
+  return withPlatformStaff(request, async () => imageResponse(await getBugScreenshot((await context.params).bugId, { kind: 'owner' })));
 }

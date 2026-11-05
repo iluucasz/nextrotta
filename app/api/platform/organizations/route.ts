@@ -1,16 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createOrganization, listOrganizations } from '@/lib/platform/organizations';
-import { readJson, withPlatformOwner } from '@/lib/platform/route';
+import { createOrganization, listOrganizations, listOrganizationsForSupport } from '@/lib/platform/organizations';
+import { readJson, withPlatformOwner, withPlatformStaff } from '@/lib/platform/route';
 
 export const runtime = 'nodejs';
 
 /** ?status=active|provisioning|...&search=texto */
 export async function GET(request: NextRequest) {
-  return withPlatformOwner(request, async () => {
-    const organizations = await listOrganizations({
-      status: request.nextUrl.searchParams.get('status'),
-      search: request.nextUrl.searchParams.get('search'),
-    });
+  // The owner sees everything (plans, values); a support user ("atendente") only who the companies are and how to reach them.
+  return withPlatformStaff(request, async (staff) => {
+    const filters = { status: request.nextUrl.searchParams.get('status'), search: request.nextUrl.searchParams.get('search') };
+    const organizations = staff.role === 'platform_owner' ? await listOrganizations(filters) : await listOrganizationsForSupport(filters);
     return NextResponse.json({ organizations });
   });
 }

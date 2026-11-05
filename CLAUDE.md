@@ -13,7 +13,7 @@
 ## Arquitetura SaaS decidida
 
 - **Banco único** (Neon novo, próprio do NextRotta, já no `.env`). Isolamento por `organization_id` em todas as tabelas de domínio; tabela `organizations` é a raiz. Toda query filtra pela organização — esquecer o filtro vaza dados entre clientes.
-- **Papéis:** `platform_owner` (dono, acesso total a todas as organizações, inclusive entrar na conta delas e alterar) → `admin` (só a própria organização) → `technician` e demais usuários.
+- **Papéis:** `platform_owner` (dono, acesso total a todas as organizações, inclusive entrar na conta delas e alterar) → `platform_support` (**atendente** da equipe NextRotta, sem organização: só Reports, Livechat e consulta das empresas, sem valores nem entrar na conta; criado pelo dono em `/plataforma/equipe`, `docs/saas/equipe.md`) → `admin` (só a própria organização) → `technician` e demais usuários.
 - **Tenant pelo login + subdomínio:** login em `nextrotta.app` acha a organização do usuário (e-mail é único na plataforma inteira) e redireciona para `<slug>.nextrotta.app`. Token carrega a organização; o middleware confere com o subdomínio. Vercel com wildcard exige os nameservers da Vercel.
 - **Usuários:** tabela própria com `organization_id`, não mais `neon_auth."user"` (era do banco da produção e nada no código a cria). O schema do clone pode ser redesenhado — não é preciso manter compatibilidade com o banco da produção.
 - **Planos:** pacotes prontos (Essencial, Pro) e **"Monte o seu"** (a antiga "Sob medida" foi arquivada em 26/10/2026): o cliente parte de uma base (cópia do Essencial) e soma só os módulos que quer, cada um com preço e implantação próprios (veja "Monte o seu" em `docs/saas/estado-atual.md`); ciclo mensal ou anual; implantação cobrada à parte. Preços, limites e recursos ficam no banco, editados pelo dono — nunca fixos no código.
@@ -117,6 +117,7 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/prompts/` — prompts de trabalho já executados ou para reaproveitar em outros projetos (configurações, assistente, WhatsApp na produção, venda de peças).
 - `docs/notificacoes.md` — sino e página de notificações (`/admin/notificacoes`: Crítico, Atenção, Concluído, Aviso; limpar/restaurar por pessoa, migração `0039`): avisos da empresa (cobrança, chamados, Porto, folha, técnicos, peças, créditos, escala) e avisos gerais do NextRotta; como criar um novo.
 - `docs/lgpd-seguranca-contratos.md` — LGPD, segurança e contratos: papéis, o que existe, o que o advogado revisa, riscos, fluxo de pedido de titular e de incidente.
+- `docs/saas/equipe.md` — equipe da NextRotta (dono e atendentes): o que cada papel vê, como o dono gerencia, onde a regra mora (`lib/platform-access.ts`, `withPlatformStaff`).
 - `docs/livechat.md` — Livechat: chat ao vivo dos chamados urgentes + WhatsApp oficial (instância `nextrotta-suporte`, webhook `/api/webhooks/evolution`) numa caixa só em Reports → Livechat; limites e como conectar.
 - `docs/whatsapp-oficial.md` — número e e-mail oficiais, foto, capa e descrição do WhatsApp Business (imagens em `public/brand/`).
 - `docs/backups.md` — backups diários por empresa (00h, Blob privado, retenção do plano) e restauração pelo administrador.

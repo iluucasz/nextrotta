@@ -1,3 +1,4 @@
+import { isPlatformRole } from '@/lib/platform-access';
 import bcrypt from 'bcryptjs';
 import { NextRequest, NextResponse } from 'next/server';
 import { createToken } from '@/lib/auth';
@@ -75,7 +76,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Acesso inativo. Fale com o administrador.' }, { status: 403 });
     }
 
-    if (user.role !== 'platform_owner') {
+    if (!isPlatformRole(user.role)) {
       if (!user.organization_slug) {
         return NextResponse.json({ error: INVALID_CREDENTIALS }, { status: 401 });
       }
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
 
     await sql`UPDATE users SET last_login_at = NOW() WHERE id = ${user.id}`;
 
-    if (user.role !== 'platform_owner') {
+    if (!isPlatformRole(user.role)) {
       const code = await createLoginHandoff(user.id, user.organization_id);
       const redirectTo = organizationUrl(
         user.organization_slug,
@@ -113,7 +114,7 @@ export async function POST(request: NextRequest) {
       return response;
     }
 
-    // The owner's session only exists on the root domain.
+    // The session of the NextRotta's own people (the owner, the support users) only exists on the root domain.
     if (resolveHost(request.headers.get('host')).kind !== 'root') {
       return NextResponse.json({ error: 'Entre pelo endereço principal da plataforma.' }, { status: 403 });
     }
@@ -121,7 +122,7 @@ export async function POST(request: NextRequest) {
     const token = await createToken({
       userId: user.id,
       email: user.email,
-      role: 'platform_owner',
+      role: user.role,
       organizationId: null,
       organizationSlug: null,
     });

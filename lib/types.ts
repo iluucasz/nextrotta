@@ -1,4 +1,4 @@
-export type UserRole = 'platform_owner' | 'admin' | 'technician'
+export type UserRole = 'platform_owner' | 'platform_support' | 'admin' | 'technician'
 export type OrganizationStatus = 'provisioning' | 'active' | 'past_due' | 'suspended' | 'canceled'
 export type TechnicianStatus = 'active' | 'inactive'
 export type DiscountType = 'discount' | 'advance' | 'other'

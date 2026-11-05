@@ -11,13 +11,14 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-export type OwnerProfile = { name: string; email: string };
+export type OwnerProfile = { name: string; email: string; role?: 'platform_owner' | 'platform_support' };
 
 /** The owner's profile in the header: one button that opens settings, account and sign-out. */
 export function ProfileMenu({ owner, active }: { owner: OwnerProfile; active: boolean }) {
   const [leaving, setLeaving] = useState(false);
   const [error, setError] = useState('');
   const initial = owner.name.trim()[0]?.toUpperCase() ?? 'D';
+  const support = owner.role === 'platform_support';
 
   async function logout() {
     setLeaving(true);
@@ -39,7 +40,7 @@ export function ProfileMenu({ owner, active }: { owner: OwnerProfile; active: bo
           <span className="nr-profile-avatar">{initial}</span>
           <span className="nr-profile-text">
             {owner.name}
-            <small>Dono da plataforma</small>
+            <small>{support ? 'Atendente' : 'Dono da plataforma'}</small>
           </span>
           <ChevronDown size={16} className="nr-profile-chevron" />
         </DropdownMenuTrigger>
@@ -52,12 +53,14 @@ export function ProfileMenu({ owner, active }: { owner: OwnerProfile; active: bo
             </span>
           </div>
           <DropdownMenuSeparator />
-          <DropdownMenuItem asChild>
-            <Link href="/plataforma/configuracoes">
-              <Settings2 size={17} />
-              Configurações da plataforma
-            </Link>
-          </DropdownMenuItem>
+          {support ? null : (
+            <DropdownMenuItem asChild>
+              <Link href="/plataforma/configuracoes">
+                <Settings2 size={17} />
+                Configurações da plataforma
+              </Link>
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem asChild>
             <Link href="/plataforma/configuracoes?aba=conta">
               <UserRound size={17} />

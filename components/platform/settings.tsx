@@ -5,6 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { RESERVED_SUBDOMAINS } from '@/lib/tenant-host';
 import { api, date, errorMessage, useResource } from './api';
 import { useNotify } from './notice';
+import { useIsOwner } from './role';
 import { Badge, Confirm, ErrorState, Fields, Loading, Metric, Panel, Title, type FormValues } from './ui';
 
 type PlatformSettings = {
@@ -36,6 +37,17 @@ const STATE_LABELS = { ok: 'Conectado', error: 'Falha', missing: 'Não configura
 const TABS = ['Cobrança', 'Integrações', 'Alertas e robô', 'Subdomínios', 'Minha conta'] as const;
 
 export function PlatformSettings() {
+  // A support user has only their own account here; the platform settings are the owner's.
+  const owner = useIsOwner();
+  return owner ? <OwnerSettings /> : (
+    <>
+      <Title title="Minha conta" />
+      <AccountTab />
+    </>
+  );
+}
+
+function OwnerSettings() {
   const notify = useNotify();
   const data = useResource<{ settings: PlatformSettings; integrations: Integration[] }>('/settings');
   const [tab, setTab] = useState<(typeof TABS)[number]>('Cobrança');

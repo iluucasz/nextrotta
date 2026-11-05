@@ -4,5 +4,5 @@
  */
 export const PLATFORM_SECTIONS = [
   'organizacoes', 'financeiro', 'planos', 'cupons', 'creditos-ia', 'recursos', 'reports', 'bugs', 'leads',
-  'novidades', 'site', 'operacao', 'privacidade', 'auditoria', 'configuracoes',
+  'novidades', 'site', 'operacao', 'privacidade', 'auditoria', 'equipe', 'configuracoes',
 ];

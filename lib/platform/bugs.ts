@@ -306,7 +306,7 @@ export async function updateBugReport(
   await recordAudit({
     organizationId: report.organizationId,
     actorId: actor.id,
-    actorRole: 'platform_owner',
+    actorRole: actor.role ?? 'platform_owner',
     action: 'bug.updated',
     targetType: 'bug_report',
     targetId: id,

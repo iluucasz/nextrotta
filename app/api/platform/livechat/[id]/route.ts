@@ -3,7 +3,7 @@ import { chatClosingMessage, cleanMessage } from '@/lib/livechat/rules';
 import { getConversation, getMessages, markReadByOwner, reopenConversation, setUrgent } from '@/lib/livechat/store';
 import { endConversation, sendOwnerReply } from '@/lib/livechat/whatsapp';
 import { PlatformError } from '@/lib/platform/errors';
-import { readJson, withPlatformOwner } from '@/lib/platform/route';
+import { readJson, withPlatformStaff } from '@/lib/platform/route';
 
 export const runtime = 'nodejs';
 
@@ -11,7 +11,7 @@ type Context = { params: Promise<{ id: string }> };
 
 /** The conversation with its messages. ?after=<timestamp> returns only the newer messages; ?read=1 marks it as read. */
 export async function GET(request: NextRequest, context: Context) {
-  return withPlatformOwner(request, async () => {
+  return withPlatformStaff(request, async () => {
     const { id } = await context.params;
     if (request.nextUrl.searchParams.get('read') === '1') {
       await getConversation(id);
@@ -24,7 +24,7 @@ export async function GET(request: NextRequest, context: Context) {
 
 /** { text, mirror?: false } — the owner's answer. On WhatsApp it is sent through the official number; on a web chat it is also mirrored to the customer's WhatsApp when there is one (unless mirror is false). */
 export async function POST(request: NextRequest, context: Context) {
-  return withPlatformOwner(request, async () => {
+  return withPlatformStaff(request, async () => {
     const { id } = await context.params;
     const body = await readJson(request);
     const text = cleanMessage(body.text);
@@ -39,7 +39,7 @@ export async function POST(request: NextRequest, context: Context) {
 
 /** { status?: 'open' | 'closed', thanks?: string | null, urgent?: boolean } — closing sends the thank-you (the default text, the given one, or none with null or ""). */
 export async function PATCH(request: NextRequest, context: Context) {
-  return withPlatformOwner(request, async () => {
+  return withPlatformStaff(request, async () => {
     const { id } = await context.params;
     const body = await readJson(request);
     const current = await getConversation(id);

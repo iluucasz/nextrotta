@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getOrganizationDetail, updateOrganization } from '@/lib/platform/organizations';
-import { readJson, withPlatformOwner } from '@/lib/platform/route';
+import { getOrganizationDetail, getOrganizationForSupport, updateOrganization } from '@/lib/platform/organizations';
+import { readJson, withPlatformOwner, withPlatformStaff } from '@/lib/platform/route';
 
 export const runtime = 'nodejs';
 
@@ -8,9 +8,10 @@ type Context = { params: Promise<{ id: string }> };
 
 /** Organization data, usage, integrations, settings and provisioning state. */
 export async function GET(request: NextRequest, context: Context) {
-  return withPlatformOwner(request, async () => {
+  // A support user gets the reduced view (no plans, values, integrations or usage), decided here and not in the screen.
+  return withPlatformStaff(request, async (staff) => {
     const { id } = await context.params;
-    return NextResponse.json(await getOrganizationDetail(id));
+    return NextResponse.json(staff.role === 'platform_owner' ? await getOrganizationDetail(id) : await getOrganizationForSupport(id));
   });
 }
 

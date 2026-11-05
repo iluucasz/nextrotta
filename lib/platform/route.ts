@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { verifyPlatformOwner, type TokenPayload } from '../auth';
+import { verifyPlatformOwner, verifyPlatformStaff, type TokenPayload } from '../auth';
 import { PlatformError } from './errors';
 
 /**
@@ -12,7 +12,9 @@ export async function withPlatformOwner(
 ): Promise<Response> {
   const owner = await verifyPlatformOwner(request);
   if (!owner) {
-    return NextResponse.json({ error: 'Acesso exclusivo do dono da plataforma.' }, { status: 401 });
+    // A support user is signed in but not allowed here: 403 (not 401, which would send them to the login page).
+    const staff = await verifyPlatformStaff(request);
+    return NextResponse.json({ error: 'Acesso exclusivo do dono da plataforma.' }, { status: staff ? 403 : 401 });
   }
 
   try {
@@ -24,6 +26,26 @@ export async function withPlatformOwner(
     console.error('[platform] unexpected error:', error);
     return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
   }
+}
+
+/**
+ * Wraps a handler open to the NextRotta's own people: the owner and the support users ("atendentes"). Everything not wrapped
+ * in this stays owner-only. A handler that must be the owner's for some of its methods calls `requireOwnerRole`.
+ */
+export async function withPlatformStaff(request: Request, handler: (staff: TokenPayload) => Promise<Response>): Promise<Response> {
+  const staff = await verifyPlatformStaff(request);
+  if (!staff) return NextResponse.json({ error: 'Acesso restrito à equipe da NextRotta.' }, { status: 401 });
+  try {
+    return await handler(staff);
+  } catch (error) {
+    if (error instanceof PlatformError) return NextResponse.json({ error: error.message }, { status: error.status });
+    console.error('[platform] unexpected error:', error);
+    return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });
+  }
+}
+
+export function requireOwnerRole(staff: TokenPayload) {
+  if (staff.role !== 'platform_owner') throw new PlatformError('Esta ação é exclusiva do dono da plataforma.', 403);
 }
 
 export async function readJson(request: Request): Promise<Record<string, unknown>> {

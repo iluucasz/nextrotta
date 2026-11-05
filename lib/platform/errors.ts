@@ -11,4 +11,4 @@ export function isUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_PATTERN.test(value);
 }
 
-export type Actor = { id: string };
+export type Actor = { id: string; /** 'platform_owner' or 'platform_support'; the owner when absent. */ role?: string };

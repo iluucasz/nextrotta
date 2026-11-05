@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectLivechatWhatsApp, disconnectLivechatWhatsApp, getLivechatWhatsAppStatus, refreshLivechatQr } from '@/lib/livechat/whatsapp';
-import { withPlatformOwner } from '@/lib/platform/route';
+import { withPlatformOwner, withPlatformStaff } from '@/lib/platform/route';
 
 export const runtime = 'nodejs';
 
 /** The official WhatsApp of the live chat (instance `nextrotta-suporte`): is it connected, and to which number. */
 export async function GET(request: NextRequest) {
-  return withPlatformOwner(request, async () => NextResponse.json(await getLivechatWhatsAppStatus()));
+  return withPlatformStaff(request, async () => NextResponse.json(await getLivechatWhatsAppStatus()));
 }
 
 /** Creates the instance when needed, points its webhook at the app and returns a QR code (call again for a fresh code). */
