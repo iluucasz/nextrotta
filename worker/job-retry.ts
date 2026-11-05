@@ -1,3 +1,5 @@
+import { isPortoLoginRejection } from '../lib/porto-login-errors';
+
 /** What an unattended run must report for the retry decision (HoursJobResult / ScheduleJobResult). */
 export type RetryableResult = {
   status: string;
@@ -18,13 +20,13 @@ export const AUTO_RETRY_DELAYS_MS = [5 * 60_000, 15 * 60_000];
  * run (launchAuthenticatedPortoSession), and repeating a wrong password risks locking the Porto
  * account; missing credentials need a person in Configurações.
  */
-const NON_RETRYABLE_ERRORS = [/^Login no Porto falhou/, /^Credenciais não configuradas/];
+const NON_RETRYABLE_ERRORS = [/^Credenciais não configuradas/];
 
 /** Why a finished run should be tried again, or null when the result is final. */
 export function retryReason(result: RetryableResult): string | null {
   if (result.status === 'error') {
     const error = result.error ?? '';
-    if (NON_RETRYABLE_ERRORS.some((pattern) => pattern.test(error))) return null;
+    if (isPortoLoginRejection(error) || NON_RETRYABLE_ERRORS.some((pattern) => pattern.test(error))) return null;
     return error ? `erro: ${error}` : 'erro sem detalhe';
   }
   // Only real runs: manual tests and paused automation have nothing to retry.

@@ -2,6 +2,7 @@
 // technicians, the clock): where the robot stands, what is left to set up, what needs attention and when it runs
 // next. Pure (no database, no React), so it is tested and the screen only draws it.
 import { jobDetailActionLabel, type PortoJobDetail } from './porto-ui-helpers';
+import { describePortoError } from './porto-login-errors';
 
 export type PortoConfigLite = {
   cpf: string;
@@ -129,7 +130,7 @@ export function describeRun(log: PortoLogLite, now: Date): RunSummary {
   else (kind = 'ok'), (label = 'Tudo certo');
 
   let summary = '';
-  if (kind === 'error') summary = log.error_message ?? 'Sem detalhe do erro.';
+  if (kind === 'error') summary = describePortoError(log.error_message).message;
   else if (kind === 'running') summary = 'Importando agora…';
   else if (kind === 'skipped') summary = '';
   else if (kind === 'test') summary = `${technicians} conferidos`;
@@ -212,7 +213,7 @@ export function buildPortoStatus(input: {
   // What needs attention, most serious first.
   const problems: Problem[] = [];
   if (hasCredentials && config.last_login_test_ok === false) {
-    problems.push({ key: 'login', tone: 'danger', title: 'O Porto recusou o login', detail: 'Confira o CPF e a senha. Se trocou a senha no Porto, troque aqui também.', action: 'account', actionLabel: 'Atualizar a senha' });
+    problems.push({ key: 'login', tone: 'danger', title: 'O login no Porto não funcionou', detail: config.last_login_test_message ? describePortoError(config.last_login_test_message).message : 'Confira o CPF e a senha. Se trocou a senha no Porto, troque aqui também.', action: 'account', actionLabel: 'Atualizar a senha' });
   }
   if (input.serverDown) {
     problems.push({ key: 'server', tone: 'warning', title: 'O servidor do robô está em manutenção', detail: 'As importações ficam paradas até ele voltar.' });
@@ -224,7 +225,7 @@ export function buildPortoStatus(input: {
     if (log.layout_suspect) {
       problems.push({ key: `layout-${job}`, tone: 'danger', title: 'O Portal do Porto parece ter mudado de tela', detail: 'O robô não leu o portal como esperado. A equipe já foi avisada.', action: 'logs', actionLabel: 'Ver o que aconteceu' });
     } else if (log.status === 'error') {
-      problems.push({ key: `error-${job}`, tone: 'danger', title: `A última importação ${name} falhou`, detail: log.error_message ?? 'Sem detalhe do erro.', action: 'logs', actionLabel: 'Ver detalhes' });
+      problems.push({ key: `error-${job}`, tone: 'danger', title: `A última importação ${name} falhou`, detail: describePortoError(log.error_message).message, action: 'logs', actionLabel: 'Ver detalhes' });
     } else if (log.status === 'partial') {
       problems.push({ key: `partial-${job}`, tone: 'warning', title: `A importação ${name} terminou com avisos`, detail: 'Parte dos dados não entrou.', action: 'logs', actionLabel: 'Ver avisos' });
     }

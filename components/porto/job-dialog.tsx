@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS, ModalNotice } from '@/components/modal-kit';
 import { countWarnings } from '@/lib/porto-status';
 import { formatDetailExtra, jobDetailActionLabel, type PortoJobResult } from '@/lib/porto-ui-helpers';
+import { describePortoError } from '@/lib/porto-login-errors';
 import { formatDate } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 
@@ -47,7 +48,7 @@ export function JobDialog({ job, result, running, onClose }: { job: 'hours' | 's
 
   const verdict =
     result?.status === 'error'
-      ? { tone: 'error' as const, icon: XCircle, text: 'A importação falhou.', extra: result.error }
+      ? { tone: 'error' as const, icon: XCircle, text: 'A importação falhou.', extra: result.error ? describePortoError(result.error).message : undefined }
       : result?.status === 'skipped'
         ? { tone: 'warning' as const, icon: Clock3, text: 'Não rodou: a importação estava desligada.', extra: undefined }
         : dry

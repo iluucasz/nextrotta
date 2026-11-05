@@ -107,7 +107,7 @@ export function Settings({
               CPF {maskCpf(config.cpf)} ·{' '}
               <span className={cn('po-state', tested === true && 'ok', tested === false && 'bad')}>
                 {tested === true ? <CheckCircle2 size={14} /> : tested === false ? <XCircle size={14} /> : null}
-                {tested === true ? `Login funcionou ${whenLabel(config.last_login_test_at ?? null, now)}` : tested === false ? `O Porto recusou ${whenLabel(config.last_login_test_at ?? null, now)}` : 'Login ainda não testado'}
+                {tested === true ? `Login funcionou ${whenLabel(config.last_login_test_at ?? null, now)}` : tested === false ? `O login falhou ${whenLabel(config.last_login_test_at ?? null, now)}` : 'Login ainda não testado'}
               </span>
             </>
           ) : (

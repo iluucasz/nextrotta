@@ -3,6 +3,7 @@ import { verifyAuth } from '@/lib/auth';
 import { callPortoWorker } from '@/lib/porto-worker-client';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
 import { sql } from '@/lib/db';
+import { describePortoError } from '@/lib/porto-login-errors';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -21,14 +22,17 @@ export async function POST(request: NextRequest) {
 
     // The screen shows "conectado" or "recusou o login" from this, without trying again every time it opens.
     const ok = status >= 200 && status < 300;
-    const message = String((body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? '').slice(0, 300);
+    const raw = String((body as { message?: string; error?: string } | null)?.message ?? (body as { error?: string } | null)?.error ?? '');
+    // The worker (an older one included) may send the technical trace; the company only gets the sentence.
+    const { message, technical } = ok ? { message: raw, technical: null } : describePortoError(raw);
+    if (!ok && technical) console.error('[porto-config/test-login] login failed:', auth.organizationId, technical);
     await sql`
       UPDATE porto_config
-      SET last_login_test_at = NOW(), last_login_test_ok = ${ok}, last_login_test_message = ${message || null}
+      SET last_login_test_at = NOW(), last_login_test_ok = ${ok}, last_login_test_message = ${message.slice(0, 300) || null}
       WHERE organization_id = ${auth.organizationId}
     `.catch((error) => console.error('[porto-config/test-login] could not record the result:', error));
 
-    return NextResponse.json(body, { status });
+    return NextResponse.json(ok ? body : { error: message }, { status });
   } catch (error) {
     console.error('[porto-config/test-login] proxy error:', error);
     return NextResponse.json({ error: error instanceof Error ? error.message : 'Falha ao contatar o worker da VPS.' }, { status: 502 });

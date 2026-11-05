@@ -532,3 +532,18 @@ expediente"), `scripts/test-porto-login.cjs` (~40s) e `scripts/test-porto-servic
 - **Vincular técnicos**: lista os socorristas do Porto, sugere o técnico pelo nome quando é único e grava o QRA (libera antes de atribuir, para trocas).
 - **Execuções** abrem em linguagem simples (avisos em destaque, "Ver todos" para o técnico por técnico). Explicações ficam atrás do "?" (`HelpDot`, `Panel help`).
 - "Importar agora" continua sendo o assistente em passos (`porto-run-wizard.tsx`), que grava de verdade. O `GET /api/porto-config` manteve o formato (Escala e o assistente dependem dele).
+
+## Mensagens de falha de login (05/11/2026)
+
+`lib/porto-login-errors.ts` (puro, teste `scripts/test-porto-login-errors.cjs`) traduz o que o portal respondeu em uma frase que a empresa entende, em vez do rastro técnico (`url=… qraLookup(…) sessionCheck(…)`):
+
+| Resposta do portal | Causa | O que a empresa lê |
+| --- | --- | --- |
+| consulta de QRA `{"status":"invalid"}` | CPF ou senha recusados | "O Porto não aceitou o CPF ou a senha…" |
+| consulta de QRA 200 com corpo vazio (visto após troca de senha) | sem confirmação (senha/CPF trocado ou portal instável) | "O Porto não confirmou o CPF e a senha…" |
+| QRA ok, sessão não abre | portal instável | "…aceitou o CPF e a senha, mas não abriu a sessão…" |
+| 403/429 ou texto Incapsula | bloqueio do robô | "…bloqueou o acesso do robô por enquanto…" |
+| sem resposta / 5xx | portal fora do ar | "O Porto não respondeu…" |
+| resposta fora do formato | tela de login mudou | "…respondeu de um jeito inesperado…" |
+
+O texto gravado no histórico continua sendo `frase (rastro técnico)`; as telas mostram só a frase (`describePortoError`), que também reclassifica linhas antigas ("Login no Porto falhou — …") pelo próprio rastro. As rotas `/api/porto-config/test-login` e `/socorristas` limpam a resposta mesmo quando o worker da VPS ainda é a versão antiga e logam o rastro no servidor. Falha de login (frase nova ou antiga) nunca é repetida automaticamente (`isPortoLoginRejection`, usado em `worker/job-retry.ts`). O formato da resposta do Porto para senha errada foi observado em duas ocasiões; se aparecer uma resposta nova, acrescente o caso em `classifyLoginFailure`.

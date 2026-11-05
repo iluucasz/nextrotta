@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth';
 import { callPortoWorker } from '@/lib/porto-worker-client';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
+import { describePortoError } from '@/lib/porto-login-errors';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -22,6 +23,12 @@ export async function POST(request: NextRequest) {
 
   try {
     const { status, body } = await callPortoWorker(auth.organizationId, '/socorristas', { method: 'POST' });
+    const raw = (body as { error?: unknown } | null)?.error;
+    if (status >= 400 && typeof raw === 'string') {
+      const { message, technical } = describePortoError(raw);
+      if (technical) console.error('[porto-config/socorristas] worker error:', auth.organizationId, technical);
+      return NextResponse.json({ ...(body as object), error: message }, { status });
+    }
     return NextResponse.json(body, { status });
   } catch (error) {
     console.error('[porto-config/socorristas] proxy error:', error);

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { modeFlags, type PortoConfigLite, type PortoMode, type TechnicianLite } from '@/lib/porto-status';
 import { logToJobResult, pollJobLog, type PortoJobResult, type PortoSyncLog } from '@/lib/porto-ui-helpers';
+import { describePortoError } from '@/lib/porto-login-errors';
 
 export type PortoConfig = PortoConfigLite & {
   last_hours_import_at: string | null;
@@ -105,7 +106,7 @@ export function usePorto() {
       const response = await fetch('/api/porto-config/test-login', { method: 'POST' });
       const data = await readJson(response);
       await load();
-      if (!response.ok) return { success: false, message: typeof data.error === 'string' ? data.error : 'Não foi possível entrar no Porto.', screenshotUrl: (data.screenshotUrl as string | null) ?? null };
+      if (!response.ok) return { success: false, message: typeof data.error === 'string' ? describePortoError(data.error).message : 'Não foi possível entrar no Porto.', screenshotUrl: (data.screenshotUrl as string | null) ?? null };
       return { success: true, message: typeof data.message === 'string' ? data.message : 'Login realizado com sucesso.' };
     } catch {
       return { success: false, message: 'Não foi possível falar com o servidor do robô. Tente de novo em instantes.' };

@@ -1,5 +1,6 @@
 // Pure display helpers shared between app/admin/config-porto (test runs, history) and
 // app/admin/config-porto's "Rodar importação agora" wizard — both render the same job-result/job-log shape.
+import { describePortoError } from './porto-login-errors';
 
 export type PortoJobDetail = Record<string, unknown> & {
   qra?: string;
@@ -137,7 +138,7 @@ export function logToJobResult(log: PortoSyncLog): PortoJobResult {
     range: log.range_start ? { start: log.range_start, end: log.range_end || log.range_start } : undefined,
     summary: details.length ? summarizeDetails(details) : undefined,
     details,
-    error: log.error_message || undefined,
+    error: log.error_message ? describePortoError(log.error_message).message : undefined,
   };
 }
 

@@ -25,6 +25,7 @@ test('retryReason: what is worth another attempt', () => {
 test('retryReason: what must never be repeated', () => {
   // A rejected login is already tried twice inside a run; more tries risk locking the account.
   assert.equal(retryReason({ status: 'error', error: 'Login no Porto falhou — verifique CPF e senha, ou o portal pode ter mudado. (url=...)' }), null);
+  assert.equal(retryReason({ status: 'error', error: 'O Porto não aceitou o CPF ou a senha. Se você trocou a senha no Portal do Prestador, atualize aqui em “Alterar”. (url=...)' }), null);
   assert.equal(retryReason({ status: 'error', error: 'Credenciais não configuradas.' }), null);
   assert.equal(retryReason({ status: 'skipped', error: 'Automação desligada.' }), null);
   assert.equal(retryReason({ status: 'dry_run', layout_suspect: true }), null);

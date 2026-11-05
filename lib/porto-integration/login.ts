@@ -1,4 +1,5 @@
 import type { Page } from 'playwright-core';
+import { buildLoginFailureMessage, classifyLoginFailure } from '../porto-login-errors';
 
 export class PortoLoginError extends Error {
   constructor(message: string, public readonly cause?: unknown) {
@@ -110,7 +111,10 @@ export async function loginToPorto(page: Page, credentials: { cpf: string; passw
 
   const session = await verifyPortoSession(page);
   if (!session.ok) {
+    // The sentence is what the company reads; the trace after it stays in the history for support
+    // (screens cut it off with describePortoError).
     const diagnostics = `url=${page.url()} qraLookup(status=${qraStatus}, body="${qraBody.slice(0, 200)}") modalVisible=${modalVisible} sessionCheck(status=${session.status}, body="${session.bodySnippet}")`;
-    throw new PortoLoginError(`Login no Porto falhou — verifique CPF e senha, ou o portal pode ter mudado. (${diagnostics})`);
+    const reason = classifyLoginFailure({ qraStatus, qraBody, sessionStatus: session.status });
+    throw new PortoLoginError(buildLoginFailureMessage(reason, diagnostics));
   }
 }
