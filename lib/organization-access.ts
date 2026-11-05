@@ -11,7 +11,8 @@ import { sql } from './db';
  */
 export type AccessLevel = 'full' | 'read_only' | 'export_only';
 
-export const DEFAULT_READ_ONLY_DAYS = 90;
+/** A suspended or canceled company is locked at once; the owner can grant a period of consultation in Configurações. */
+export const DEFAULT_READ_ONLY_DAYS = 0;
 
 const DAY_MS = 86_400_000;
 
@@ -20,6 +21,9 @@ export function computeAccess(status: string, changedAt: string | Date | null, r
   const days = Number.isFinite(Number(readOnlyDays)) && readOnlyDays !== null ? Number(readOnlyDays) : DEFAULT_READ_ONLY_DAYS;
   const since = changedAt ? new Date(changedAt) : new Date();
   const until = new Date(since.getTime() + days * DAY_MS);
+  // No period of consultation means locked from the first moment, whatever the clocks say (the database may be a few
+  // seconds ahead of the server, and "now < the moment of the lock" must not open a window).
+  if (days <= 0) return { level: 'export_only' as AccessLevel, readOnlyUntil: until.toISOString() };
   return { level: (Date.now() < until.getTime() ? 'read_only' : 'export_only') as AccessLevel, readOnlyUntil: until.toISOString() };
 }
 

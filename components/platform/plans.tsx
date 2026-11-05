@@ -62,7 +62,7 @@ function toForm(plan: PlanWithUsage | null, features: Feature[]): FormValues {
       visible: true,
       aiMonthlyCredits: 0,
       aiBonusCredits: 0,
-      backupRetentionDays: 90,
+      backupRetentionDays: 30,
     };
   }
   return {

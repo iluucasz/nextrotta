@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto';
 import { hashPassword } from '../auth';
 import { createLoginHandoff } from '../auth-handoff';
 import { recordAudit } from '../audit';
+import { createClosingBackup } from '../backup/service';
 import { cancelBilling } from '../billing/billing';
 import { checkLimit } from '../billing/entitlements';
 import { sql } from '../db';
@@ -597,6 +598,9 @@ export async function changeOrganizationStatus(
   if (!rule.from.includes(organization.status as OrganizationStatus)) {
     throw new PlatformError('Essa ação não se aplica ao estado atual da organização.', 409);
   }
+
+  // The company loses access: its data as of now is saved first, for it to download.
+  if (action === 'suspend' || action === 'cancel') await createClosingBackup(organizationId);
 
   if (action === 'cancel') await cancelBilling(organizationId, actor);
 

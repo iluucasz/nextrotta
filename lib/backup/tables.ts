@@ -77,13 +77,14 @@ export const RESTORE_LABELS: Record<string, string> = {
   technician_visibility_settings: 'Visibilidade do técnico',
 };
 
-export type BackupKind = 'daily' | 'manual' | 'before_restore';
+export type BackupKind = 'daily' | 'manual' | 'before_restore' | 'closing';
 export type BackupStatus = 'running' | 'completed' | 'failed' | 'expired';
 
 export const BACKUP_KIND_LABELS: Record<BackupKind, string> = {
   daily: 'Diário',
   manual: 'Manual',
   before_restore: 'Antes de restaurar',
+  closing: 'Antes de bloquear',
 };
 
 /** The shape of the backup file (before gzip). */

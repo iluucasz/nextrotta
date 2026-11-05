@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CalendarClock, CheckCircle2, DatabaseBackup, Download, HardDrive, History, Loader2, RotateCcw, ShieldCheck, TriangleAlert } from 'lucide-react';
+import { CalendarClock, CheckCircle2, DatabaseBackup, Download, FileSpreadsheet, HardDrive, Loader2, RotateCcw, ShieldCheck, TriangleAlert, Undo2 } from 'lucide-react';
 import { LoadingShell } from '@/components/page-skeleton';
 import { Panel } from '@/components/management-ui';
 import { Frame } from '@/components/settings/kit';
@@ -14,8 +14,10 @@ import { BACKUP_KIND_LABELS, type BackupKind } from '@/lib/backup/tables';
 import { cn } from '@/lib/utils';
 
 type Backup = { id: string; kind: BackupKind; status: string; createdAt: string; sizeBytes: number; rowCounts: Record<string, number>; restoredAt: string | null };
-type Overview = { configured: boolean; retentionDays: number | null; nextBackupAt: string; backups: Backup[] };
-type RestoreResult = { backupCreatedAt: string; tables: Array<{ table: string; label: string; restored: number; archived: number }> };
+type LastRestore = { backupCreatedAt: string; restoredAt: string; safetyBackupId: string };
+type Overview = { configured: boolean; retentionDays: number | null; nextBackupAt: string; backups: Backup[]; lastRestore: LastRestore | null };
+type Preview = { daysBack: number; tables: Array<{ table: string; label: string; inBackup: number; willArchive: number }> };
+type RestoreResult = { backupCreatedAt: string; safetyBackupId: string | null; tables: Array<{ table: string; label: string; restored: number; archived: number }> };
 
 const timeZone = 'America/Sao_Paulo';
 const dayKey = (date: Date) => new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
@@ -43,6 +45,7 @@ export default function BackupsPage() {
   const [making, setMaking] = useState(false);
   const [notice, setNotice] = useState<{ text: string; bad?: boolean } | null>(null);
   const [restoring, setRestoring] = useState<Backup | null>(null);
+  const [undoing, setUndoing] = useState<LastRestore | null>(null);
   const [now, setNow] = useState(() => new Date());
 
   const load = useCallback(async () => {
@@ -124,6 +127,19 @@ export default function BackupsPage() {
         </div>
       ) : null}
 
+      {overview?.lastRestore ? (
+        <div className="bk-undo" role="status">
+          <Undo2 size={20} />
+          <span>
+            <strong>Você restaurou o backup de {whenLabel(overview.lastRestore.backupCreatedAt, now)}</strong>, {whenLabel(overview.lastRestore.restoredAt, now)}. Se não era isso, desfaça: a empresa volta para como estava antes da restauração.
+          </span>
+          <Button type="button" variant="outline" size="sm" onClick={() => setUndoing(overview.lastRestore)}>
+            <Undo2 className="h-4 w-4" />
+            Desfazer restauração
+          </Button>
+        </div>
+      ) : null}
+
       {notice ? (
         <div className={cn('bk-notice', notice.bad && 'bad')} role="status">
           {notice.bad ? <TriangleAlert size={18} /> : <CheckCircle2 size={18} />}
@@ -151,7 +167,7 @@ export default function BackupsPage() {
 
         <Panel
           title="Seus backups"
-          help="Cada backup guarda a empresa como estava naquele momento. Restaurar devolve técnicos, ordens de serviço, horas, escala, folhas, descontos, contas, documentos e configurações. Antes de restaurar, guardamos uma cópia de agora, para você poder desfazer."
+          help={`Cada backup guarda a empresa inteira como estava naquele momento, e você pode baixá-lo em planilha. Restaurar leva técnicos, ordens de serviço, horas, escala, folhas, descontos, contas, documentos e configurações de volta para aquela data; o que foi feito depois é arquivado, nada é apagado. Antes de restaurar guardamos uma cópia de agora, para você poder desfazer. Os backups diários ficam guardados por ${retention === null || retention === undefined ? 'tempo ilimitado' : `${retention} dias`}, conforme o seu plano.`}
         >
           {backups.length ? (
             <div className="bk-table" role="table" aria-label="Backups">
@@ -174,10 +190,16 @@ export default function BackupsPage() {
                   <span>{sizeLabel(backup.sizeBytes)}</span>
                   <span className="bk-hide">{number(rowsTotal(backup.rowCounts))}</span>
                   <span className="bk-actions">
-                    <Button asChild variant="outline" size="sm">
-                      <a href={`/api/organization/backups/${backup.id}`} download aria-label="Baixar">
+                    <Button asChild variant="outline" size="sm" title="Baixar em planilha (Excel), uma aba para cada assunto">
+                      <a href={`/api/organization/backups/${backup.id}/planilha`} aria-label="Baixar planilha">
+                        <FileSpreadsheet className="h-4 w-4" />
+                        <span className="bk-label">Planilha</span>
+                      </a>
+                    </Button>
+                    <Button asChild variant="ghost" size="sm" title="Arquivo completo (.json.gz), para guardar ou restaurar em outro lugar">
+                      <a href={`/api/organization/backups/${backup.id}`} download aria-label="Baixar arquivo completo">
                         <Download className="h-4 w-4" />
-                        <span className="bk-label">Baixar</span>
+                        <span className="bk-label">Arquivo</span>
                       </a>
                     </Button>
                     <Button type="button" size="sm" onClick={() => setRestoring(backup)} aria-label="Restaurar">
@@ -194,6 +216,17 @@ export default function BackupsPage() {
         </Panel>
       </div>
 
+      {undoing ? (
+        <UndoDialog
+          restore={undoing}
+          now={now}
+          onClose={() => {
+            setUndoing(null);
+            void load();
+          }}
+        />
+      ) : null}
+
       {restoring ? (
         <RestoreDialog
           backup={restoring}
@@ -208,12 +241,29 @@ export default function BackupsPage() {
   );
 }
 
-/** Restoring changes a lot at once: it says what comes back and what does not, and asks for the word. */
+/** Restoring changes a lot at once: it says from which date the company goes back, counts what changes, and asks for the word. */
 function RestoreDialog({ backup, now, onClose }: { backup: Backup; now: Date; onClose: () => void }) {
   const [confirm, setConfirm] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState<RestoreResult | null>(null);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
+  const [undoing, setUndoing] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch(`/api/organization/backups/${backup.id}/preview`, { cache: 'no-store' })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error();
+        if (!cancelled) setPreview(data.preview);
+      })
+      .catch(() => !cancelled && setPreviewFailed(true));
+    return () => {
+      cancelled = true;
+    };
+  }, [backup.id]);
 
   async function restore() {
     setBusy(true);
@@ -234,14 +284,28 @@ function RestoreDialog({ backup, now, onClose }: { backup: Backup; now: Date; on
     }
   }
 
+  const when = whenLabel(backup.createdAt, now);
+  const toArchive = preview?.tables.reduce((total, table) => total + table.willArchive, 0) ?? 0;
+
+  if (undoing && result?.safetyBackupId) {
+    return (
+      <UndoDialog
+        restore={{ backupCreatedAt: backup.createdAt, restoredAt: new Date().toISOString(), safetyBackupId: result.safetyBackupId }}
+        now={now}
+        onClose={() => window.location.reload()}
+        afterRestore
+      />
+    );
+  }
+
   return (
     <Dialog open onOpenChange={(open) => !open && !busy && (result ? window.location.reload() : onClose())}>
-      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-lg">
+      <DialogContent className="max-h-[calc(100dvh-1rem)] gap-0 overflow-hidden p-0 sm:max-w-lg">
         {result ? (
           <>
             <DialogHeader className={MODAL_HEADER_CLASS}>
               <DialogTitle className={MODAL_TITLE_CLASS}>Backup restaurado</DialogTitle>
-              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Sua empresa voltou ao que era {whenLabel(backup.createdAt, now)}.</DialogDescription>
+              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Sua empresa voltou ao que era {when}.</DialogDescription>
             </DialogHeader>
             <div className={cn(MODAL_BODY_CLASS, 'space-y-4')}>
               <ul className="bk-result">
@@ -257,11 +321,16 @@ function RestoreDialog({ backup, now, onClose }: { backup: Backup; now: Date; on
                     </li>
                   ))}
               </ul>
-              <ModalNotice tone="success">Guardamos uma cópia de antes da restauração. Se precisar, restaure essa cópia e tudo volta como estava.</ModalNotice>
+              <ModalNotice tone="success">Guardamos uma cópia de como estava antes. Se não era isso que você queria, é só desfazer: tudo volta ao que era um instante atrás.</ModalNotice>
             </div>
-            <DialogFooter className={cn(MODAL_FOOTER_CLASS, 'sm:justify-end')}>
+            <DialogFooter className={cn(MODAL_FOOTER_CLASS, 'flex-col-reverse sm:flex-row sm:justify-end')}>
+              {result.safetyBackupId ? (
+                <Button type="button" variant="outline" onClick={() => setUndoing(true)}>
+                  <Undo2 className="h-4 w-4" />
+                  Desfazer restauração
+                </Button>
+              ) : null}
               <Button type="button" onClick={() => window.location.reload()}>
-                <History className="h-4 w-4" />
                 Concluir
               </Button>
             </DialogFooter>
@@ -269,10 +338,50 @@ function RestoreDialog({ backup, now, onClose }: { backup: Backup; now: Date; on
         ) : (
           <>
             <DialogHeader className={MODAL_HEADER_CLASS}>
-              <DialogTitle className={MODAL_TITLE_CLASS}>Restaurar o backup de {whenLabel(backup.createdAt, now)}?</DialogTitle>
-              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>A empresa volta ao que era naquele momento. O que foi feito depois é arquivado, nada é apagado.</DialogDescription>
+              <DialogTitle className={MODAL_TITLE_CLASS}>Voltar a empresa para {when}?</DialogTitle>
+              <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
+                {preview && preview.daysBack > 0 ? `Esse backup tem ${preview.daysBack} ${preview.daysBack === 1 ? 'dia' : 'dias'}. ` : ''}Tudo o que foi feito depois disso deixa de aparecer. Nada é apagado.
+              </DialogDescription>
             </DialogHeader>
             <div className={cn(MODAL_BODY_CLASS, 'space-y-4')}>
+              <ModalNotice tone="warning">
+                A restauração parte da data do backup: ordens de serviço, horas, folhas, contas e o resto lançados depois de {when} serão arquivados.
+              </ModalNotice>
+
+              <div className="bk-impact">
+                <strong>O que muda</strong>
+                {preview ? (
+                  <ul className="bk-result">
+                    {preview.tables
+                      .filter((table) => table.inBackup || table.willArchive)
+                      .map((table) => (
+                        <li key={table.table}>
+                          <span>{table.label}</span>
+                          <span>
+                            {number(table.inBackup)} {table.inBackup === 1 ? 'volta' : 'voltam'} como estavam
+                            {table.willArchive ? <b className="bk-archive"> · {number(table.willArchive)} {table.willArchive === 1 ? 'será arquivado' : 'serão arquivados'}</b> : null}
+                          </span>
+                        </li>
+                      ))}
+                  </ul>
+                ) : previewFailed ? (
+                  <p className="bk-muted">Não conseguimos contar o que muda agora, mas a restauração funciona do mesmo jeito.</p>
+                ) : (
+                  <p className="bk-muted">
+                    <Loader2 className="inline h-4 w-4 animate-spin" /> Contando o que muda…
+                  </p>
+                )}
+                {preview && toArchive === 0 ? <p className="bk-muted">Nada foi lançado depois desse backup, então nada será arquivado.</p> : null}
+              </div>
+
+              <ol className="bk-steps">
+                <li>Guardamos uma cópia de <b>agora</b> (“Antes de restaurar”).</li>
+                <li>Voltamos os dados para {when}.</li>
+                <li>
+                  Não gostou? <b>Desfazer restauração</b> volta tudo para a cópia de agora.
+                </li>
+              </ol>
+
               <div className="bk-scope">
                 <div>
                   <strong>Volta ao que era</strong>
@@ -283,7 +392,7 @@ function RestoreDialog({ backup, now, onClose }: { backup: Backup; now: Date; on
                   <p>Assinatura e cobranças, créditos de IA, usuários e senhas, WhatsApp, Porto e Venda de Peças.</p>
                 </div>
               </div>
-              <ModalNotice tone="warning">Antes de restaurar, guardamos uma cópia de agora. Se não gostar do resultado, restaure essa cópia e desfaça.</ModalNotice>
+
               <label className="bk-confirm">
                 <span>
                   Digite <b>RESTAURAR</b> para confirmar
@@ -303,6 +412,72 @@ function RestoreDialog({ backup, now, onClose }: { backup: Backup; now: Date; on
             </DialogFooter>
           </>
         )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/** Undoing is restoring the copy made right before: the company goes back to how it was, and this can be undone too. */
+function UndoDialog({ restore, now, onClose, afterRestore = false }: { restore: LastRestore; now: Date; onClose: () => void; afterRestore?: boolean }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [done, setDone] = useState(false);
+
+  async function undo() {
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/organization/backups/${restore.safetyBackupId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: 'RESTAURAR' }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Não foi possível desfazer a restauração.');
+      setDone(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível desfazer a restauração.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(open) => !open && !busy && (done ? window.location.reload() : onClose())}>
+      <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-md">
+        <DialogHeader className={MODAL_HEADER_CLASS}>
+          <DialogTitle className={MODAL_TITLE_CLASS}>{done ? 'Restauração desfeita' : 'Desfazer a restauração?'}</DialogTitle>
+          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
+            {done
+              ? 'Sua empresa voltou a ser como estava antes de você restaurar.'
+              : `A empresa volta para como estava ${afterRestore ? 'logo antes de você restaurar' : `antes da restauração de ${whenLabel(restore.restoredAt, now)}`}. O que foi restaurado depois disso é arquivado, nada é apagado.`}
+          </DialogDescription>
+        </DialogHeader>
+        <div className={cn(MODAL_BODY_CLASS, 'space-y-3')}>
+          {done ? (
+            <ModalNotice tone="success">Pronto. Guardamos também uma cópia do momento anterior, se você mudar de ideia de novo.</ModalNotice>
+          ) : (
+            <ModalNotice tone="warning">Vale para os mesmos dados da restauração: técnicos, ordens de serviço, horas, escala, folhas, descontos, contas, documentos e configurações.</ModalNotice>
+          )}
+          {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
+        </div>
+        <DialogFooter className={cn(MODAL_FOOTER_CLASS, 'flex-col-reverse sm:flex-row sm:justify-end')}>
+          {done ? (
+            <Button type="button" onClick={() => window.location.reload()}>
+              Concluir
+            </Button>
+          ) : (
+            <>
+              <Button type="button" variant="outline" onClick={onClose} disabled={busy}>
+                Cancelar
+              </Button>
+              <Button type="button" onClick={() => void undo()} disabled={busy}>
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Undo2 className="h-4 w-4" />}
+                {busy ? 'Desfazendo…' : 'Desfazer restauração'}
+              </Button>
+            </>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );

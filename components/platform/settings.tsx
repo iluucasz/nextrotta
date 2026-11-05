@@ -88,7 +88,7 @@ export function PlatformSettings() {
               <Fields
                 fields={[
                   { key: 'defaultGraceDays', label: 'Dias de carência padrão', type: 'number', required: true, hint: 'Dias de acesso normal depois do vencimento, antes do modo somente leitura.' },
-                  { key: 'readOnlyDays', label: 'Dias de consulta após suspensão ou cancelamento', type: 'number', required: true, hint: 'Durante esse prazo a empresa vê tudo sem poder alterar. Depois, só consegue baixar os dados. Nada é apagado.' },
+                  { key: 'readOnlyDays', label: 'Dias de consulta após suspensão ou cancelamento', type: 'number', required: true, hint: '0 = bloqueia na hora (a empresa só baixa os dados, paga ou abre chamado). Com dias, ela vê tudo sem poder alterar durante o prazo. Nada é apagado.' },
                 ]}
                 values={billingValues}
                 setValues={setValues}

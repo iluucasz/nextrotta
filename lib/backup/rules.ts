@@ -124,3 +124,14 @@ export function buildRestoreStatements(input: {
 
   return statements;
 }
+
+// ---------------------------------------------------------------- preview
+
+/**
+ * What restoring a backup would do to one table, before doing it: how many rows come back as they were, and how many rows
+ * that exist today would be archived (they were made after the backup, or were archived in it). Rows are matched by id.
+ */
+export function previewCounts(currentActiveIds: string[], backupRows: Array<Record<string, unknown>>): { inBackup: number; willArchive: number } {
+  const activeInBackup = new Set(backupRows.filter((row) => !row.deleted_at).map((row) => String(row.id)));
+  return { inBackup: activeInBackup.size, willArchive: currentActiveIds.filter((id) => !activeInBackup.has(id)).length };
+}

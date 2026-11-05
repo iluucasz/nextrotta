@@ -74,6 +74,9 @@ const SAFE_METHODS = ['GET', 'HEAD', 'OPTIONS'];
  */
 const EXPORT_ONLY_PAGE = '/acesso-encerrado';
 const exportOnlyAllowedRoutes = [EXPORT_ONLY_PAGE, '/api/organization/access', '/api/organization/export'];
+// To get its data and to ask for help: the backups only to read and download (making or restoring one is blocked), tickets to open and answer.
+const exportOnlyReadPrefixes = ['/api/organization/backups'];
+const exportOnlyWritePrefixes = ['/api/bug-reports'];
 
 /**
  * A company that subscribed on the site: until the setup fee is paid it only reaches the welcome
@@ -252,7 +255,12 @@ export async function middleware(request: NextRequest) {
     }
     if (path === ONBOARDING_PAGE && !access?.onboarding) return NextResponse.redirect(sameHostUrl('/', request));
 
-    if (level === 'export_only' && !exportOnlyAllowedRoutes.includes(path) && !path.startsWith('/api/auth/')) {
+    const exportOnlyOpen =
+      exportOnlyAllowedRoutes.includes(path) ||
+      path.startsWith('/api/auth/') ||
+      (SAFE_METHODS.includes(request.method) && startsWithAny(path, exportOnlyReadPrefixes)) ||
+      startsWithAny(path, exportOnlyWritePrefixes);
+    if (level === 'export_only' && !exportOnlyOpen) {
       return path.startsWith('/api/')
         ? NextResponse.json(
             { error: 'O acesso a esta empresa foi encerrado. O administrador ainda pode baixar todos os dados.', exportOnly: true },

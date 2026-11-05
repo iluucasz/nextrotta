@@ -427,7 +427,7 @@
 }
 .mg-dashboard .bk-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.2fr) minmax(0, 0.8fr) minmax(0, 0.8fr) 224px;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 0.7fr) minmax(0, 0.7fr) 352px;
   align-items: center;
   gap: 16px;
   padding: 14px 4px;
@@ -465,6 +465,10 @@
   background: #fff1d6;
   color: #8a5a00;
 }
+.mg-dashboard .bk-kind.closing {
+  background: #fde4e1;
+  color: #b42318;
+}
 .mg-dashboard .bk-actions {
   display: flex;
   gap: 8px;
@@ -475,7 +479,7 @@
     display: none;
   }
   .mg-dashboard .bk-row {
-    grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 224px;
+    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 352px;
   }
   .mg-dashboard .bk-row > :nth-child(3) {
     display: none;
@@ -483,7 +487,7 @@
 }
 @media (max-width: 640px) {
   .mg-dashboard .bk-row {
-    grid-template-columns: minmax(0, 1fr) 96px;
+    grid-template-columns: minmax(0, 1fr) 144px;
   }
   .mg-dashboard .bk-row.head {
     display: none;
@@ -562,4 +566,63 @@
 .bk-result li span:last-child {
   color: var(--muted-foreground);
   text-align: right;
+}
+
+/* undo banner, what a restore changes, the steps */
+.mg-dashboard .bk-undo {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 14px 16px;
+  border: 1px solid #f0d9a4;
+  border-radius: 14px;
+  background: #fffaf0;
+  color: #6b4a00;
+  font-size: 15px;
+}
+.mg-dashboard .bk-undo > span {
+  flex: 1;
+}
+.mg-dashboard .bk-undo > button {
+  flex-shrink: 0;
+}
+@media (max-width: 720px) {
+  .mg-dashboard .bk-undo {
+    flex-wrap: wrap;
+  }
+}
+.bk-impact strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 15px;
+}
+.bk-impact .bk-result {
+  max-height: 200px;
+  overflow-y: auto;
+}
+.bk-archive {
+  color: #b45309;
+  font-weight: 600;
+}
+.bk-muted {
+  margin: 6px 0 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.bk-steps {
+  margin: 0 0 6px;
+  padding-left: 22px;
+  list-style: decimal;
+  display: grid;
+  gap: 4px;
+  font-size: 14px;
+  color: var(--muted-foreground);
+}
+.bk-steps li {
+  display: list-item;
+  padding-left: 2px;
+}
+.bk-steps b {
+  color: var(--foreground);
 }

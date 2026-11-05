@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
-import { nextBackupAt, BackupError, createBackup, listBackups, retentionDaysFor } from '@/lib/backup/service';
+import { nextBackupAt, BackupError, createBackup, getLastRestore, listBackups, retentionDaysFor } from '@/lib/backup/service';
 import { backupStorageConfigured } from '@/lib/backup/storage';
 
 export const runtime = 'nodejs';
@@ -14,8 +14,8 @@ export async function GET(request: NextRequest) {
     if (!auth || auth.role !== 'admin') return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
     const configured = backupStorageConfigured();
-    const [backups, retentionDays] = await Promise.all([listBackups(auth.organizationId), retentionDaysFor(auth.organizationId)]);
-    return NextResponse.json({ configured, retentionDays, nextBackupAt: nextBackupAt(), backups });
+    const [backups, retentionDays, lastRestore] = await Promise.all([listBackups(auth.organizationId), retentionDaysFor(auth.organizationId), getLastRestore(auth.organizationId)]);
+    return NextResponse.json({ configured, retentionDays, nextBackupAt: nextBackupAt(), backups, lastRestore });
   } catch (error) {
     console.error('[organization/backups] error:', error);
     return NextResponse.json({ error: 'Não foi possível carregar os backups.' }, { status: 500 });

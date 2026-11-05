@@ -152,6 +152,65 @@ export async function createBackup(organizationId: string, kind: BackupKind, cre
   }
 }
 
+/**
+ * The copy made right before a company is locked (the day before the grace period ends, and when it is suspended or
+ * canceled), so what it can still download is as recent as possible. Never throws: a failing storage must not stop
+ * the lock, the company then gets the latest copy it already has. Not made twice within 6 hours.
+ */
+export async function createClosingBackup(organizationId: string): Promise<BackupRecord | null> {
+  try {
+    if (!backupStorageConfigured()) {
+      console.warn(`[backup] closing copy of ${organizationId} skipped: the storage is not configured here.`);
+      return null;
+    }
+    const recent = await sql`
+      SELECT 1 FROM organization_backups
+      WHERE organization_id = ${organizationId} AND kind = 'closing' AND status IN ('running', 'completed')
+        AND created_at > NOW() - INTERVAL '6 hours'
+      LIMIT 1
+    `;
+    if (recent[0]) return null;
+    return await createBackup(organizationId, 'closing', null);
+  } catch (error) {
+    console.error(`[backup] closing copy of ${organizationId} failed:`, error);
+    return null;
+  }
+}
+
+export type LastRestore = { backupCreatedAt: string; restoredAt: string; safetyBackupId: string };
+
+/**
+ * The newest restore that can still be undone: the copy of "before" is still there and has not been restored since.
+ * (Undoing is restoring that copy, which makes its own copy of "before the undo", so it can be redone.)
+ */
+export async function getLastRestore(organizationId: string): Promise<LastRestore | null> {
+  const rows = await sql`
+    SELECT b.created_at AS backup_created_at, b.restored_at, s.id AS safety_id, s.status AS safety_status, s.restored_at AS safety_restored_at
+    FROM organization_backups b
+    LEFT JOIN organization_backups s ON s.id::text = b.restore_summary->>'safetyBackupId' AND s.organization_id = b.organization_id
+    WHERE b.organization_id = ${organizationId} AND b.restored_at IS NOT NULL
+    ORDER BY b.restored_at DESC
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row || !row.safety_id || row.safety_status !== 'completed') return null;
+  if (row.safety_restored_at && new Date(String(row.safety_restored_at)) > new Date(String(row.restored_at))) return null;
+  return {
+    backupCreatedAt: new Date(String(row.backup_created_at)).toISOString(),
+    restoredAt: new Date(String(row.restored_at)).toISOString(),
+    safetyBackupId: String(row.safety_id),
+  };
+}
+
+/** The newest finished copy of any kind (what a locked company downloads). */
+export async function getLastBackup(organizationId: string): Promise<BackupRecord | null> {
+  const rows = await sql.query(
+    `SELECT ${COLUMNS} FROM organization_backups WHERE organization_id = $1 AND status = 'completed' ORDER BY created_at DESC LIMIT 1`,
+    [organizationId],
+  );
+  return rows[0] ? toRecord(rows[0]) : null;
+}
+
 /** The copies the admin sees, newest first: finished ones and the one being made. */
 export async function listBackups(organizationId: string): Promise<BackupRecord[]> {
   const rows = await sql.query(

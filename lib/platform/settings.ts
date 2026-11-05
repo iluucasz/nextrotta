@@ -70,7 +70,7 @@ export interface PlatformSettings {
 
 export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   defaultGraceDays: 7,
-  readOnlyDays: 90,
+  readOnlyDays: 0,
   reservedSubdomains: [],
   maintenance: { enabled: false, message: '' },
   ai: { inputCostPerMillion: 0, outputCostPerMillion: 0, creditsPerUse: 1, lowBalanceAlert: null, targetMarginPercent: null },

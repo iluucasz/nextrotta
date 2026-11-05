@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Download, LogOut, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { CheckCircle2, CreditCard, Download, FileSpreadsheet, LifeBuoy, Loader2, LockKeyhole, LogOut, MessageCircle, ShieldCheck } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/ui/button';
 
@@ -10,16 +10,26 @@ type Access = {
   status: string;
   since: string | null;
   readOnlyUntil: string | null;
+  level: string;
+  reason: string | null;
   support: { whatsapp: string | null; email: string | null };
   isAdmin: boolean;
+  payment: { value: number; dueDate: string; invoiceUrl: string | null; description: string | null } | null;
+  lastBackup: { id: string; kind: string; createdAt: string } | null;
 };
 
-const longDate = (value: string | null) =>
-  value ? new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'long' }).format(new Date(value)) : '—';
+const timeZone = 'America/Sao_Paulo';
+const longDate = (value: string | null) => (value ? new Intl.DateTimeFormat('pt-BR', { timeZone, dateStyle: 'long' }).format(new Date(value)) : '—');
+const shortDate = (value: string) => new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${value.slice(0, 10)}T12:00:00Z`));
+const dateTime = (value: string) => new Intl.DateTimeFormat('pt-BR', { timeZone, day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }).format(new Date(value));
+const money = (value: number) => value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const COLORS = { page: '#f6f8f6', ink: '#13261e', soft: '#425a50', line: '#dfe9e2', green: '#1f9d74', greenBg: '#f1f8f3', greenInk: '#2f5a46', warnBg: '#fff7e6', warnInk: '#8a5a00' };
 
 /**
- * Where a suspended/canceled organization lands once its read-only period is over: nothing was
- * deleted, and the admin can still download everything.
+ * Where a suspended or canceled company lands: the system is locked, nothing was deleted. It can pay and come back (this
+ * page notices the payment by itself), open a ticket with the administration and download the latest backup as a
+ * spreadsheet. Everything else in the system is closed.
  */
 export default function ClosedAccessPage() {
   const [access, setAccess] = useState<Access | null>(null);
@@ -27,17 +37,26 @@ export default function ClosedAccessPage() {
   const [leaving, setLeaving] = useState(false);
   const [contactUrl, setContactUrl] = useState('/login');
 
+  const load = useCallback(async () => {
+    try {
+      const response = await fetch('/api/organization/access', { cache: 'no-store' });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Não foi possível carregar.');
+      setAccess(data);
+      // Paid (or released by the team): the system is open again.
+      if (data.level === 'full') window.location.assign('/');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível carregar.');
+    }
+  }, []);
+
   useEffect(() => {
     // The marketing site lives on the root domain (this page is on the organization's subdomain).
     setContactUrl(`${window.location.protocol}//${window.location.host.split('.').slice(1).join('.')}/contato`);
-    fetch('/api/organization/access', { cache: 'no-store' })
-      .then(async (response) => {
-        const data = await response.json().catch(() => null);
-        if (!response.ok) throw new Error(data?.error || 'Não foi possível carregar.');
-        setAccess(data);
-      })
-      .catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar.'));
-  }, []);
+    void load();
+    const timer = setInterval(() => void load(), 20_000);
+    return () => clearInterval(timer);
+  }, [load]);
 
   async function logout() {
     setLeaving(true);
@@ -45,56 +64,118 @@ export default function ClosedAccessPage() {
     window.location.assign('/login');
   }
 
+  const canceled = access?.status === 'canceled';
+
   return (
-    <main className="flex min-h-dvh items-center justify-center px-4 py-10" style={{ background: '#f6f8f6', color: '#13261e', minHeight: '100dvh' }}>
-      <div className="w-full max-w-xl rounded-2xl border bg-white p-8" style={{ borderColor: '#dfe9e2', boxShadow: '0 14px 40px #12302410' }}>
+    <main className="flex min-h-dvh items-center justify-center px-4 py-10" style={{ background: COLORS.page, color: COLORS.ink, minHeight: '100dvh' }}>
+      <div className="w-full max-w-2xl rounded-2xl border bg-white p-6 sm:p-8" style={{ borderColor: COLORS.line, boxShadow: '0 14px 40px #12302410' }}>
         <BrandLogo className="h-12 w-auto" />
-        <h1 className="mt-8 text-2xl font-semibold">Acesso encerrado</h1>
+        <h1 className="mt-8 flex items-center gap-3 text-2xl font-semibold">
+          <LockKeyhole className="h-6 w-6" style={{ color: COLORS.warnInk }} />
+          {canceled ? 'Acesso encerrado' : 'Acesso bloqueado'}
+        </h1>
+
         {error ? (
           <p className="mt-3 text-sm text-rose-700">{error}</p>
         ) : !access ? (
           <p className="mt-3 text-sm text-muted-foreground">Carregando…</p>
         ) : (
           <>
-            <p className="mt-3 leading-relaxed" style={{ fontSize: 15, color: '#425a50' }}>
-              O acesso de <strong>{access.name}</strong> ao NextRotta foi {access.status === 'canceled' ? 'cancelado' : 'suspenso'} em{' '}
-              {longDate(access.since)}, e o prazo para consultar o sistema terminou em {longDate(access.readOnlyUntil)}.
+            <p className="mt-3 leading-relaxed" style={{ fontSize: 15, color: COLORS.soft }}>
+              O acesso de <strong>{access.name}</strong> ao NextRotta foi {canceled ? 'encerrado' : 'bloqueado'} em {longDate(access.since)}
+              {access.payment ? ' por falta de pagamento' : ''}. {access.reason && !access.payment ? `Motivo: ${access.reason}. ` : ''}
+              Enquanto isso, ninguém consegue usar o sistema.
             </p>
-            <div className="mt-5 flex items-start gap-3 rounded-xl p-4 text-sm" style={{ background: '#f1f8f3', color: '#2f5a46' }}>
+            <div className="mt-4 flex items-start gap-3 rounded-xl p-4 text-sm" style={{ background: COLORS.greenBg, color: COLORS.greenInk }}>
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
-              <span>Nenhum dado foi apagado. Para voltar a usar o sistema, fale com o suporte do NextRotta.</span>
+              <span>Nenhum dado foi apagado. Tudo o que a sua empresa tinha está guardado e volta assim que o acesso for liberado.</span>
             </div>
-            {access.isAdmin ? (
-              <div className="mt-6">
-                <Button asChild size="lg" className="w-full text-white hover:opacity-90" style={{ background: '#1f9d74' }}>
-                  <a href="/api/organization/export">
-                    <Download className="h-5 w-5" />
-                    Baixar todos os dados da empresa
+
+            <div className="mt-6 space-y-4">
+              {access.payment ? (
+                <Section icon={CreditCard} title="Voltar a usar agora" tone="primary">
+                  <p>
+                    {access.payment.description ? `${access.payment.description}: ` : 'Cobrança em aberto: '}
+                    <strong>{money(access.payment.value)}</strong>, vencida em {shortDate(access.payment.dueDate)}.
+                  </p>
+                  <p className="mt-1" style={{ color: COLORS.soft }}>Assim que o pagamento for confirmado o sistema abre sozinho: esta página confere a cada poucos segundos.</p>
+                  {access.isAdmin && access.payment.invoiceUrl ? (
+                    <Button asChild size="lg" className="mt-3 w-full text-white hover:opacity-90 sm:w-auto" style={{ background: COLORS.green }}>
+                      <a href={access.payment.invoiceUrl} target="_blank" rel="noreferrer">
+                        <CreditCard className="h-5 w-5" />
+                        Pagar agora
+                      </a>
+                    </Button>
+                  ) : null}
+                  {!access.isAdmin ? <p className="mt-2 text-sm" style={{ color: COLORS.soft }}>Peça ao administrador da sua empresa para pagar.</p> : null}
+                </Section>
+              ) : null}
+
+              {access.isAdmin ? (
+                <Section icon={LifeBuoy} title={access.payment ? 'Precisa de ajuda ou combinar o pagamento?' : 'Para voltar a usar o sistema'}>
+                  <p style={{ color: COLORS.soft }}>Abra um chamado e a administração do NextRotta responde por aqui, no seu e-mail e no painel quando o acesso voltar.</p>
+                  <TicketForm company={access.name} />
+                  <a
+                    href={access.support.whatsapp ? `https://wa.me/${access.support.whatsapp}?text=${encodeURIComponent(`Olá! Sou da ${access.name} e quero voltar a usar o NextRotta.`)}` : contactUrl}
+                    target={access.support.whatsapp ? '_blank' : undefined}
+                    rel="noreferrer"
+                    className="mt-3 inline-flex items-center gap-2 text-sm font-medium hover:underline"
+                    style={{ color: COLORS.green }}
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Falar com a administração{access.support.whatsapp ? ' no WhatsApp' : ''}
                   </a>
-                </Button>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Um arquivo com técnicos, OS, horas, escala, folhas, financeiro, documentos e histórico. Senhas não entram no arquivo.
-                </p>
-              </div>
-            ) : (
-              <p className="mt-6 text-sm" style={{ color: '#425a50' }}>Para obter uma cópia dos dados, fale com o administrador da sua empresa.</p>
-            )}
+                </Section>
+              ) : (
+                <Section icon={LifeBuoy} title="Para voltar a usar o sistema">
+                  <p style={{ color: COLORS.soft }}>Fale com o administrador da sua empresa.</p>
+                </Section>
+              )}
+
+              {access.isAdmin ? (
+                <Section icon={FileSpreadsheet} title="Seus dados">
+                  {access.lastBackup ? (
+                    <>
+                      <p>
+                        Último backup: <strong>{dateTime(access.lastBackup.createdAt)}</strong>
+                        {access.lastBackup.kind === 'closing' ? ' (feito antes de bloquear, com os dados mais recentes)' : ''}.
+                      </p>
+                      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                        <Button asChild size="lg" className="text-white hover:opacity-90" style={{ background: COLORS.green }}>
+                          <a href="/api/organization/backups/ultimo/planilha">
+                            <FileSpreadsheet className="h-5 w-5" />
+                            Baixar planilha (Excel)
+                          </a>
+                        </Button>
+                        <Button asChild size="lg" variant="outline">
+                          <a href={`/api/organization/backups/${access.lastBackup.id}`}>
+                            <Download className="h-5 w-5" />
+                            Arquivo completo (.json.gz)
+                          </a>
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ color: COLORS.soft }}>Não há um backup guardado. Podemos gerar agora a planilha com os dados como estão.</p>
+                      <Button asChild size="lg" className="mt-3 text-white hover:opacity-90" style={{ background: COLORS.green }}>
+                        <a href="/api/organization/backups/atual/planilha">
+                          <FileSpreadsheet className="h-5 w-5" />
+                          Gerar e baixar a planilha
+                        </a>
+                      </Button>
+                    </>
+                  )}
+                  <p className="mt-2 text-xs" style={{ color: COLORS.soft }}>
+                    A planilha tem uma aba para cada assunto: técnicos, ordens de serviço, horas, escala, folhas, financeiro, peças e mais. Senhas não entram.
+                  </p>
+                </Section>
+              ) : null}
+            </div>
           </>
         )}
-        <div className="mt-8 flex items-center justify-between border-t pt-5 text-sm" style={{ borderColor: '#e7ede8' }}>
-          <a
-            href={
-              access?.support.whatsapp
-                ? `https://wa.me/${access.support.whatsapp}?text=${encodeURIComponent(`Olá! Sou da ${access.name} e quero voltar a usar o NextRotta.`)}`
-                : contactUrl
-            }
-            target={access?.support.whatsapp ? '_blank' : undefined}
-            rel="noreferrer"
-            className="font-medium hover:underline"
-            style={{ color: '#1f9d74' }}
-          >
-            Falar com o suporte{access?.support.whatsapp ? ' no WhatsApp' : ''}
-          </a>
+
+        <div className="mt-8 flex items-center justify-end border-t pt-5 text-sm" style={{ borderColor: '#e7ede8' }}>
           <button type="button" onClick={() => void logout()} disabled={leaving} className="inline-flex items-center gap-2 hover:opacity-80" style={{ color: '#5c7268' }}>
             <LogOut className="h-4 w-4" />
             {leaving ? 'Saindo…' : 'Sair'}
@@ -102,5 +183,86 @@ export default function ClosedAccessPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function Section({ icon: Icon, title, tone, children }: { icon: typeof CreditCard; title: string; tone?: 'primary'; children: React.ReactNode }) {
+  return (
+    <section className="rounded-xl border p-4 text-sm leading-relaxed" style={{ borderColor: tone === 'primary' ? '#b9e3cc' : COLORS.line, background: tone === 'primary' ? '#f7fcf9' : '#fff' }}>
+      <h2 className="mb-2 flex items-center gap-2 text-base font-semibold">
+        <Icon className="h-5 w-5" style={{ color: COLORS.green }} />
+        {title}
+      </h2>
+      {children}
+    </section>
+  );
+}
+
+/** A support ticket that works while the system is locked (the only write the company can still make). */
+function TicketForm({ company }: { company: string }) {
+  const [open, setOpen] = useState(false);
+  const [subject, setSubject] = useState('Quero voltar a usar o sistema');
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [sent, setSent] = useState<number | null>(null);
+
+  async function send() {
+    setBusy(true);
+    setError('');
+    try {
+      const response = await fetch('/api/bug-reports', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: 'support', category: 'billing', title: subject, description: text || `A ${company} está com o acesso bloqueado e quer voltar a usar o sistema.`, pageUrl: '/acesso-encerrado' }),
+      });
+      const data = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(data?.error || 'Não foi possível abrir o chamado.');
+      setSent(data.ticketNumber ?? 0);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o chamado.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (sent !== null) {
+    return (
+      <div className="mt-3 flex items-start gap-2 rounded-lg p-3" style={{ background: COLORS.greenBg, color: COLORS.greenInk }}>
+        <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0" />
+        <span>Chamado{sent ? ` #${sent}` : ''} aberto. A administração do NextRotta vai responder.</span>
+      </div>
+    );
+  }
+  if (!open) {
+    return (
+      <Button type="button" variant="outline" className="mt-3" onClick={() => setOpen(true)}>
+        <LifeBuoy className="h-4 w-4" />
+        Abrir chamado
+      </Button>
+    );
+  }
+  const field = 'mt-1 w-full rounded-md border bg-white px-3 py-2 text-sm outline-none focus:ring-2';
+  return (
+    <div className="mt-3 space-y-3">
+      <label className="block">
+        <span className="font-medium">Assunto</span>
+        <input className={field} style={{ borderColor: COLORS.line }} value={subject} onChange={(event) => setSubject(event.target.value)} maxLength={200} disabled={busy} />
+      </label>
+      <label className="block">
+        <span className="font-medium">Mensagem</span>
+        <textarea className={field} style={{ borderColor: COLORS.line }} rows={4} value={text} onChange={(event) => setText(event.target.value)} placeholder="Conte o que precisa: pagamento feito, combinar uma data, dúvida…" disabled={busy} />
+      </label>
+      {error ? <p className="text-sm text-rose-700">{error}</p> : null}
+      <div className="flex gap-2">
+        <Button type="button" onClick={() => void send()} disabled={busy || subject.trim().length < 3} className="text-white hover:opacity-90" style={{ background: COLORS.green }}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <LifeBuoy className="h-4 w-4" />}
+          {busy ? 'Enviando…' : 'Enviar chamado'}
+        </Button>
+        <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+          Cancelar
+        </Button>
+      </div>
+    </div>
   );
 }

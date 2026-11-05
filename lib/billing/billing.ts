@@ -1,5 +1,6 @@
 import { recordAudit } from '../audit';
 import { sql } from '../db';
+import { createClosingBackup } from '../backup/service';
 import { notifyOrganization } from '../notifications';
 import { calculateSubscriptionValue, type BillingCycle } from '../plans';
 import { PlatformError, type Actor } from '../platform/errors';
@@ -493,7 +494,7 @@ export async function evaluateBillingStatus(organizationId: string) {
       kind: 'billing',
       severity: 'critical',
       title: 'Pagamento em atraso',
-      body: 'Regularize em Assinatura. Se não for resolvido, o acesso fica somente leitura (nada é apagado).',
+      body: 'Regularize em Assinatura. Se não for resolvido até o fim da carência, o acesso é bloqueado (nada é apagado e você poderá baixar o último backup).',
       href: '/admin/assinatura',
       dedupeKey: `billing:past_due:${oldest}`,
     });
@@ -536,8 +537,22 @@ export async function runBillingMaintenance() {
     HAVING MIN(c.due_date) + s.grace_days < ${today}::date
   `;
 
+  // The day before the lock: a fresh copy, so what the company can still download is as recent as possible.
+  const tomorrow = await sql`
+    SELECT o.id
+    FROM organizations o
+    JOIN subscriptions s ON s.organization_id = o.id
+    JOIN billing_charges c ON c.organization_id = o.id AND c.status = 'OVERDUE'
+    WHERE o.status = 'past_due' AND o.deleted_at IS NULL AND NOT o.unbilled
+    GROUP BY o.id, s.grace_days
+    HAVING MIN(c.due_date) + s.grace_days = ${today}::date
+  `;
+  for (const row of tomorrow) await createClosingBackup(String(row.id));
+
   for (const row of rows) {
     const oldest = new Date(row.oldest).toISOString().slice(0, 10);
+    // The data as it is at the moment of the lock (nothing changes after it).
+    await createClosingBackup(String(row.id));
     await sql`
       UPDATE organizations
       SET status = 'suspended', status_source = 'billing',
@@ -556,7 +571,7 @@ export async function runBillingMaintenance() {
       kind: 'billing',
       severity: 'critical',
       title: 'Acesso pausado por falta de pagamento',
-      body: 'O sistema ficou somente leitura e nada foi apagado. Regularize em Assinatura para voltar ao normal.',
+      body: 'O sistema foi bloqueado e nada foi apagado. Regularize o pagamento ou abra um chamado para voltar ao normal; você pode baixar o último backup na tela de acesso.',
       href: '/admin/assinatura',
       dedupeKey: `billing:suspended:${oldest}`,
     });

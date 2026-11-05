@@ -153,3 +153,21 @@ test('what a restore never brings back: billing, credits, accounts, integrations
 test('every table restored is also in the backup', () => {
   for (const entry of tables.RESTORE_TABLES) assert.ok(tables.BACKUP_TABLES.includes(entry.table), entry.table);
 });
+
+test('preview: what a restore would bring back and what it would archive', () => {
+  const backup = [
+    { id: 'a', deleted_at: null },
+    { id: 'b', deleted_at: null },
+    { id: 'c', deleted_at: '2026-10-01T00:00:00Z' }, // archived at the time of the backup
+  ];
+  // today: a and c are active, d was made after the backup, b was archived since
+  const counts = rules.previewCounts(['a', 'c', 'd'], backup);
+  assert.deepEqual(counts, { inBackup: 2, willArchive: 2 }, 'c (archived then) and d (made later) would be archived');
+  assert.deepEqual(rules.previewCounts([], backup), { inBackup: 2, willArchive: 0 });
+  assert.deepEqual(rules.previewCounts(['x'], []), { inBackup: 0, willArchive: 1 });
+});
+
+test('the copy made before a lock is a kind of its own, named for the screens', () => {
+  assert.equal(tables.BACKUP_KIND_LABELS.closing, 'Antes de bloquear');
+  assert.deepEqual(Object.keys(tables.BACKUP_KIND_LABELS).sort(), ['before_restore', 'closing', 'daily', 'manual']);
+});
