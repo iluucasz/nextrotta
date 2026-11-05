@@ -28,8 +28,7 @@ const publicRoutes = ['/login', '/api/auth/login', '/api/auth/logout', '/api/aut
  * Mercado Pago OAuth return lands on the root domain without the subdomain's session: its single-use
  * state says who started it.
  */
-// Scheduled calls (Vercel Cron) have no session: each route checks the CRON_SECRET itself and refuses everything when it is not set.
-const webhookRoutes = ['/api/webhooks/asaas', '/api/webhooks/mercadopago', '/api/mercadopago/oauth/callback', '/api/cron/backups', '/api/cron/billing'];
+const webhookRoutes = ['/api/webhooks/asaas', '/api/webhooks/mercadopago', '/api/mercadopago/oauth/callback'];
 
 /** Endpoints the public marketing site calls (plans, contact forms). */
 const PUBLIC_API_PREFIX = '/api/public/';

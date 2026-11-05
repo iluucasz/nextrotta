@@ -1,7 +1,0 @@
-{
-  "crons": [
-    { "path": "/api/cron/backups", "schedule": "0 3 * * *" },
-    { "path": "/api/cron/backups", "schedule": "0 5 * * *" },
-    { "path": "/api/cron/billing", "schedule": "50 8 * * *" }
-  ]
-}
