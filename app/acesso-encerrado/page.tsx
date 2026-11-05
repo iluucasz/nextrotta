@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { CheckCircle2, CreditCard, Download, ExternalLink, FileSpreadsheet, FileText, ImageIcon, LifeBuoy, Loader2, LockKeyhole, LogOut, MessageCircle, ShieldCheck } from 'lucide-react';
+import { CheckCircle2, CreditCard, Download, ExternalLink, FileSpreadsheet, FileText, ImageIcon, LifeBuoy, Loader2, LockKeyhole, LogOut, MessageCircle, Scale, ShieldCheck } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { Button } from '@/components/ui/button';
+import { dataDeletionDate, LOCKED_DATA_RETENTION_MONTHS } from '@/lib/data-retention';
 
 type Access = {
   name: string;
@@ -65,6 +66,7 @@ export default function ClosedAccessPage() {
   }
 
   const canceled = access?.status === 'canceled';
+  const deletionDate = access?.since ? dataDeletionDate(access.since) : null;
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-4 py-10" style={{ background: COLORS.page, color: COLORS.ink, minHeight: '100dvh' }}>
@@ -88,8 +90,21 @@ export default function ClosedAccessPage() {
             </p>
             <div className="mt-4 flex items-start gap-3 rounded-xl p-4 text-sm" style={{ background: COLORS.greenBg, color: COLORS.greenInk }}>
               <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
-              <span>Nenhum dado foi apagado. Tudo o que a sua empresa tinha está guardado e volta assim que o acesso for liberado.</span>
+              <span>Seus dados estão guardados e voltam assim que o acesso for liberado.</span>
             </div>
+            {deletionDate ? (
+              <div className="mt-3 flex items-start gap-3 rounded-xl p-4 text-sm leading-relaxed" style={{ background: COLORS.warnBg, color: COLORS.warnInk }}>
+                <Scale className="mt-0.5 h-5 w-5 shrink-0" />
+                <div>
+                  <strong className="block">Prazo para não perder os dados</strong>
+                  Conforme a Lei Geral de Proteção de Dados (Lei nº 13.709/2018), não guardamos dados de empresas sem contrato ativo. Se até{' '}
+                  <strong>{longDate(deletionDate.toISOString())}</strong> ({LOCKED_DATA_RETENTION_MONTHS} meses após o bloqueio) o acesso não for reativado
+                  {access.payment ? ' e a cobrança em aberto não for paga' : ''}, todos os dados da empresa e os backups serão{' '}
+                  <strong>excluídos de forma permanente e irreversível</strong>. Depois disso não é possível reativar esta conta: será preciso criar uma conta completamente nova.
+                  Baixe seus dados abaixo enquanto há tempo.
+                </div>
+              </div>
+            ) : null}
 
             <div className="mt-6 space-y-4">
               {access.payment ? (

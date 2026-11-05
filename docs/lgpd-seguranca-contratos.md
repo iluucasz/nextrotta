@@ -36,7 +36,7 @@ Testes: `node scripts/test-legal.cjs`. Para mudar um texto: edite `lib/legal/tex
 
 - Razão social, CNPJ, e-mail de contato e do encarregado (DPO), foro (cidade). Enquanto vazios, os textos mostram "[... a informar]" — nunca valores inventados.
 - Prazo de resposta a incidentes que será prometido; teto de responsabilidade.
-- Política de eliminação ao fim do contrato (hoje: nada é apagado por falta de pagamento; exclusão definitiva só a pedido e das cópias vencidas).
+- Política de eliminação ao fim do contrato: **decidida em 05/11/2026** — 3 meses depois do bloqueio (falta de pagamento ou cancelamento), sem reativação ou pagamento, exclusão permanente dos dados e dos backups, sem reativar a conta (só uma nova). A página `/acesso-encerrado` já informa isso, com a data (`lib/data-retention.ts`). **Falta construir a rotina de exclusão** (hoje só é apagada, a pedido, a cópia vencida) e rever com o advogado o que a lei obriga a guardar (por exemplo registros fiscais e de cobrança). Ao implementar: atualizar DPA (seção de eliminação) e Termos 12.4 e subir a versão, o que pede novo aceite.
 
 ## Riscos conhecidos (honestos)
 
