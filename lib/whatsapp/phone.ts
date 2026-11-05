@@ -3,7 +3,7 @@
  * client. Dependency-free so all three use exactly the same rules.
  */
 
-export const PHONE_EXAMPLE = '(11) 97971-3590';
+export const PHONE_EXAMPLE = '(11) 99999-9999';
 
 /** Valid Brazilian DDDs (area codes). Anything else is a typo, not a real number. */
 const VALID_DDDS = new Set([

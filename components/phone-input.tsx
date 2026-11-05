@@ -25,8 +25,8 @@ interface PhoneInputProps {
 }
 
 /**
- * Brazilian phone field. Accepts any way of typing it — `11979713590`, `+55 11 97971-3590`,
- * `(11) 97971 3590`, `011 97971-3590` — and shows it as `(11) 97971-3590`.
+ * Brazilian phone field. Accepts any way of typing it — `11999999999`, `+55 11 99999-9999`,
+ * `(11) 99999 9999`, `011 99999-9999` — and shows it as `(11) 99999-9999`.
  */
 export function PhoneInput({ value, onChange, className, id, checkWhatsApp = false, hint }: PhoneInputProps) {
   const [touched, setTouched] = useState(false);

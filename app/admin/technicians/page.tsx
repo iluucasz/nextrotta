@@ -462,7 +462,7 @@ export default function TechniciansPage() {
                           onChange={(phone) => setFormData((current) => ({ ...current, phone }))}
                           className={inputClassName}
                           checkWhatsApp
-                          hint="Ex.: (11) 97971-3590 — pode digitar com ou sem +55, espaços ou traços. Recebe as notificações automáticas; sem número, o técnico não recebe mensagens."
+                          hint="Ex.: (11) 99999-9999 — pode digitar com ou sem +55, espaços ou traços. Recebe as notificações automáticas; sem número, o técnico não recebe mensagens."
                         />
                       </label>
 

@@ -698,7 +698,7 @@ export async function sendReceipt(organizationId: string, saleId: unknown, techn
   return { whatsapp: result, shareUrl: result.shareUrl };
 }
 
-/** Customer phone as typed in the forms, e.g. "(11) 97971-3590". */
+/** Customer phone as typed in the forms, e.g. "(11) 99999-9999". */
 export function displayPhone(phone: string | null) {
   return phone ? formatPhoneInput(phone.replace(/^55/, '')) : '';
 }
