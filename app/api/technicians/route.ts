@@ -4,6 +4,7 @@ import { hashPassword, verifyAuth } from '@/lib/auth';
 import { syncSubscriptionValueQuietly } from '@/lib/billing/billing';
 import { checkLimit } from '@/lib/billing/entitlements';
 import { sql } from '@/lib/db';
+import { notifyOrganization } from '@/lib/notifications';
 import { valueOrDefault } from '@/lib/organization-settings';
 import { getOrganizationSettings } from '@/lib/organization-settings-store';
 import { validatePhone } from '@/lib/whatsapp/phone';
@@ -250,6 +251,16 @@ export async function POST(request: NextRequest) {
     ]);
 
     after(() => syncSubscriptionValueQuietly(organizationId));
+    after(() =>
+      notifyOrganization(organizationId, {
+        kind: 'technician',
+        severity: 'success',
+        title: 'Técnico cadastrado',
+        body: `${name} já pode entrar no sistema com o e-mail ${email}.`,
+        href: '/admin/technicians',
+        dedupeKey: `technician:created:${technicianRows[0].id}`,
+      }),
+    );
     return NextResponse.json(technicianRows[0], { status: 201 });
   } catch (error) {
     if (isDuplicateQraError(error)) return duplicateQraResponse(null);

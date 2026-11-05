@@ -3,6 +3,7 @@ import { verifyAuth } from '@/lib/auth';
 import { callPortoWorker } from '@/lib/porto-worker-client';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
 import { sql } from '@/lib/db';
+import { notifyOrganization, resolveNotifications } from '@/lib/notifications';
 import { describePortoError } from '@/lib/porto-login-errors';
 
 export const runtime = 'nodejs';
@@ -31,6 +32,19 @@ export async function POST(request: NextRequest) {
       SET last_login_test_at = NOW(), last_login_test_ok = ${ok}, last_login_test_message = ${message.slice(0, 300) || null}
       WHERE organization_id = ${auth.organizationId}
     `.catch((error) => console.error('[porto-config/test-login] could not record the result:', error));
+
+    if (ok) {
+      // A working login takes the "does not work" entry off the bell and says so once a day.
+      await resolveNotifications(auth.organizationId, 'porto:login:').catch(() => undefined);
+      await notifyOrganization(auth.organizationId, {
+        kind: 'porto',
+        severity: 'success',
+        title: 'Login no Porto funcionando',
+        body: 'O robô conseguiu entrar no Portal do Prestador com o CPF e a senha cadastrados.',
+        href: '/admin/config-porto',
+        dedupeKey: `porto:login-ok:${new Date().toISOString().slice(0, 10)}`,
+      });
+    }
 
     return NextResponse.json(ok ? body : { error: message }, { status });
   } catch (error) {

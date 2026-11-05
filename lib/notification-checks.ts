@@ -9,6 +9,7 @@ import { createNotification, ensureScheduleReminder, resolveNotifications } from
 import { getOrganizationSettings } from './organization-settings-store';
 import { getOrganizationSystemStatus } from './system-status';
 import { findPortoLoginProblem, portoLoginNotice } from './porto-login-errors';
+import { checkParts } from './parts/notices';
 
 const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
@@ -127,17 +128,36 @@ export async function findPendingPayroll(organizationId: string, month: string):
   return rows.map((row) => ({ id: String(row.id), name: String(row.name) }));
 }
 
-/** The month that just ended and still has folhas to close: once, from the 3rd, until they are all closed. */
+/**
+ * The month that just ended: still has folhas to close (a warning, once, from the 3rd) or has them all closed (done,
+ * once per month, whenever it happens).
+ */
 export async function checkPayroll(organizationId: string) {
   const today = brasiliaDateKey();
-  if (Number(today.slice(8, 10)) < PAYROLL_REMINDER_DAY) return;
-
   const month = previousMonthOf(today.slice(0, 7));
   const pending = await findPendingPayroll(organizationId, month);
+
   if (!pending.length) {
     await resolveNotifications(organizationId, 'payroll:pending:');
+    const [closed] = await sql`
+      SELECT COUNT(*)::int AS total FROM payroll
+      WHERE organization_id = ${organizationId} AND competence_month = ${month} AND status = 'closed' AND deleted_at IS NULL
+    `;
+    const total = Number(closed?.total ?? 0);
+    if (total > 0) {
+      await createNotification({
+        organizationId,
+        kind: 'payroll',
+        severity: 'success',
+        title: `Folha de ${MONTH_NAMES[Number(month.slice(5, 7)) - 1]} fechada`,
+        body: total === 1 ? 'A folha do técnico foi fechada.' : `As folhas dos ${total} técnicos foram fechadas.`,
+        href: '/admin/payroll',
+        dedupeKey: `payroll:done:${month}`,
+      });
+    }
     return;
   }
+  if (Number(today.slice(8, 10)) < PAYROLL_REMINDER_DAY) return;
 
   const names = pending.slice(0, 3).map((technician) => technician.name);
   const more = pending.length - names.length;
@@ -299,6 +319,7 @@ export async function runNotificationChecks(organizationId: string) {
     ['whatsapp', checkWhatsAppConnection],
     ['storage', checkStorage],
     ['expenses', checkExpenses],
+    ['parts', (id: string) => checkParts(id, brasiliaDateKey())],
   ];
 
   await Promise.all(checks.map(([name, check]) => check(organizationId).catch((error) => console.error(`[notifications] ${name} check failed:`, error))));

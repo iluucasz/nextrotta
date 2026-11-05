@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { runNotificationChecks } from '@/lib/notification-checks';
-import { countUnreadNotifications, listNotifications } from '@/lib/notifications';
+import { isSeverity } from '@/lib/notification-meta';
+import { countUnreadNotifications, listNotifications, summarizeNotifications, type NotificationSeverity } from '@/lib/notifications';
 
 export const runtime = 'nodejs';
 
@@ -22,10 +23,25 @@ export async function GET(request: NextRequest) {
       await runNotificationChecks(auth.organizationId);
     }
 
-    const limit = Number(request.nextUrl.searchParams.get('limit')) || 30;
-    const [items, unread] = await Promise.all([listNotifications({ ...params, limit }), countUnreadNotifications(params)]);
+    // The bell asks for the latest few; the notifications page adds the filters, a page offset and the counters.
+    const query = request.nextUrl.searchParams;
+    const kind = query.get('kind');
+    const filters = {
+      state: query.get('state') === 'cleared' ? ('cleared' as const) : ('active' as const),
+      severity: isSeverity(query.get('severity')) ? (query.get('severity') as NotificationSeverity) : undefined,
+      kind: kind && /^[a-z_-]{1,40}$/.test(kind) ? kind : undefined,
+      scope: query.get('scope') === 'company' || query.get('scope') === 'system' ? (query.get('scope') as 'company' | 'system') : undefined,
+    };
+    const limit = Number(query.get('limit')) || 30;
+    const offset = Number(query.get('offset')) || 0;
 
-    return NextResponse.json({ items, unread });
+    const [items, unread, summary] = await Promise.all([
+      listNotifications({ ...params, ...filters, limit, offset }),
+      countUnreadNotifications(params),
+      query.get('summary') === '1' ? summarizeNotifications(params) : Promise.resolve(undefined),
+    ]);
+
+    return NextResponse.json({ items, unread, hasMore: items.length === Math.min(Math.max(limit, 1), 100), summary });
   } catch (error) {
     console.error('[notifications] list error:', error);
     return NextResponse.json({ error: 'Erro interno.' }, { status: 500 });

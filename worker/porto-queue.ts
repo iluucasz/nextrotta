@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { sql } from '../lib/db';
-import { sendPortoAlert } from '../lib/porto-alerts';
+import { notifyPortoSuccess, sendPortoAlert } from '../lib/porto-alerts';
 import { runHoursJob } from '../lib/porto-jobs/run-hours-job';
 import { runScheduleJob } from '../lib/porto-jobs/run-schedule-job';
 import { PORTO_LAYOUT_ALERT_TITLE } from '../lib/porto-layout';
@@ -137,7 +137,7 @@ function enqueue(hooks: Hooks, organizationId: string, job: JobKind, runDay: str
     });
 }
 
-type RunResult = { status: string; error?: string; warnings?: string[]; layout_suspect?: boolean };
+type RunResult = { status: string; error?: string; warnings?: string[]; layout_suspect?: boolean; technicians_processed?: number; rows_written?: number };
 
 /** Logs why an unattended run is being tried again (the admin only hears about the final outcome). */
 function logRetry(hooks: Hooks, label: string, { attempt, maxAttempts, delayMs, reason }: RetryInfo) {
@@ -165,6 +165,8 @@ async function handleProblems(hooks: Hooks, organizationId: string, jobLabel: st
     alert = await sendPortoAlert(organizationId, `a ${jobLabel} falhou`, [result.error ?? 'Erro sem detalhe.', ...attemptsNote(attempts)]);
   } else if (result.warnings?.length) {
     alert = await sendPortoAlert(organizationId, `a ${jobLabel} terminou com avisos`, [...result.warnings, ...attemptsNote(attempts)]);
+  } else if (result.status === 'success') {
+    await notifyPortoSuccess(organizationId, jobLabel, result);
   }
   if (alert && !alert.sent) hooks.log(`Alerta da ${jobLabel} (${organizationId}) não enviado:`, alert.reason);
 }

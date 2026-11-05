@@ -22,6 +22,7 @@ import { LegalGate } from '@/components/legal-gate';
 import { PasswordGate } from '@/components/password-gate';
 import {
   Banknote,
+  Bell,
   BookOpen,
   Bot,
   ChartNoAxesCombined,
@@ -127,6 +128,7 @@ const adminSections: NavSection[] = [
   {
     label: 'Empresa',
     items: [
+      { href: '/admin/notificacoes', label: 'Notificações', icon: Bell },
       {
         href: '/admin/configuracoes',
         label: 'Configurações',

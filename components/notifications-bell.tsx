@@ -2,9 +2,10 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useState } from 'react';
-import { AlertTriangle, Bell, CheckCircle2, Info, OctagonAlert, type LucideIcon } from 'lucide-react';
+import { AlertTriangle, Bell, CheckCircle2, Eraser, Info, OctagonAlert, type LucideIcon } from 'lucide-react';
 import { SegmentedControl } from '@/components/modal-kit';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { kindLabel, SEVERITY_LABEL } from '@/lib/notification-meta';
 import type { NotificationItem, NotificationSeverity } from '@/lib/notifications';
 
 type Filter = 'all' | 'company' | 'system';
@@ -86,6 +87,20 @@ export function NotificationsBell() {
     }).catch(() => undefined);
   }
 
+  /** Clears from the bell only (nothing is deleted); the notifications page keeps them in "Limpas". */
+  async function clear(ids: string[] | 'all') {
+    const cleared = ids === 'all' ? items.map((item) => item.id) : ids;
+    setItems((current) => current.filter((item) => !cleared.includes(item.id)));
+    setUnread((current) => Math.max(0, current - items.filter((item) => cleared.includes(item.id) && !item.read).length));
+
+    await fetch('/api/notifications/clear', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(ids === 'all' ? { all: true } : { ids }),
+    }).catch(() => undefined);
+    load();
+  }
+
   const visible = items.filter((item) => filter === 'all' || item.scope === filter);
 
   return (
@@ -144,20 +159,22 @@ export function NotificationsBell() {
                       <Icon className="h-4 w-4" aria-hidden="true" />
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className={`block text-sm leading-snug ${item.read ? 'text-foreground' : 'font-semibold text-foreground'}`}>{item.title}</span>
+                      <span className={`block text-sm leading-snug ${item.read ? 'text-foreground' : 'font-semibold text-foreground'}`}>
+                        <span className="sr-only">{SEVERITY_LABEL[item.severity]}: </span>
+                        {item.title}
+                      </span>
                       {item.body ? <span className="mt-0.5 line-clamp-2 block text-[13px] leading-snug text-muted-foreground">{item.body}</span> : null}
                       <span className="mt-1 block text-xs text-muted-foreground">
-                        {item.scope === 'system' ? 'NextRotta · ' : ''}
-                        {timeAgo(item.createdAt)}
+                        {item.scope === 'system' ? 'NextRotta' : kindLabel(item.kind)} · {timeAgo(item.createdAt)}
                       </span>
                     </span>
                     {item.read ? null : <span className="mt-2 h-2 w-2 shrink-0 rounded-full bg-primary" aria-label="Não lida" />}
                   </>
                 );
-                const className = 'flex w-full items-start gap-3 border-b border-border px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-secondary/60';
+                const className = 'flex w-full items-start gap-3 border-b border-border py-3 pl-4 pr-10 text-left transition-colors last:border-b-0 hover:bg-secondary/60';
 
                 return (
-                  <li key={item.id}>
+                  <li key={item.id} className="group relative">
                     {item.href ? (
                       <Link
                         href={item.href}
@@ -174,6 +191,15 @@ export function NotificationsBell() {
                         {content}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => clear([item.id])}
+                      className="absolute right-2 top-2 inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground outline-none transition hover:bg-secondary hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring sm:opacity-0 sm:group-hover:opacity-100 sm:focus-visible:opacity-100"
+                      aria-label="Limpar esta notificação"
+                      title="Limpar"
+                    >
+                      <Eraser className="h-3.5 w-3.5" aria-hidden="true" />
+                    </button>
                   </li>
                 );
               })}
@@ -189,6 +215,20 @@ export function NotificationsBell() {
               ) : null}
             </div>
           )}
+        </div>
+
+        <div className="flex items-center justify-between gap-3 border-t border-border px-4 py-2.5">
+          <button
+            type="button"
+            onClick={() => clear('all')}
+            disabled={!items.length}
+            className="text-[13px] font-medium text-muted-foreground hover:text-foreground hover:underline disabled:cursor-default disabled:no-underline disabled:opacity-50"
+          >
+            Limpar todas
+          </button>
+          <Link href="/admin/notificacoes" onClick={() => setOpen(false)} className="text-[13px] font-medium text-primary hover:underline">
+            Ver todas
+          </Link>
         </div>
       </PopoverContent>
     </Popover>

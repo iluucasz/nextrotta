@@ -40,6 +40,8 @@ export type NotificationItem = {
   href: string | null;
   createdAt: string;
   read: boolean;
+  /** The person cleared it: it only shows in the "Limpas" view. */
+  cleared: boolean;
 };
 
 export function safeInternalHref(value: unknown): string | null {
@@ -91,20 +93,44 @@ const VISIBLE = `
   AND ($3::boolean OR n.audience = 'everyone')
 `;
 
-export async function listNotifications(params: { organizationId: string; userId: string; isAdmin: boolean; limit?: number }) {
+/** What narrows a list: the screen's filters. `state` is the person's own view ("Ativas" or "Limpas"). */
+export type NotificationFilters = {
+  state?: 'active' | 'cleared';
+  severity?: NotificationSeverity;
+  kind?: string;
+  scope?: 'company' | 'system';
+};
+
+// The filters as SQL over the parameters $5 (severity), $6 (kind) and $7 (scope); `r` is the person's read row.
+const FILTERS = `
+  AND ($5::text IS NULL OR n.severity = $5::text)
+  AND ($6::text IS NULL OR n.kind = $6::text)
+  AND ($7::text IS NULL OR (CASE WHEN n.organization_id IS NULL THEN 'system' ELSE 'company' END) = $7::text)
+`;
+
+function stateCondition(state: NotificationFilters['state']) {
+  return state === 'cleared' ? 'r.dismissed_at IS NOT NULL' : 'r.dismissed_at IS NULL';
+}
+
+function filterParams(filters: NotificationFilters) {
+  return [filters.severity ?? null, filters.kind ?? null, filters.scope ?? null];
+}
+
+export async function listNotifications(params: { organizationId: string; userId: string; isAdmin: boolean; limit?: number; offset?: number } & NotificationFilters) {
   const limit = Math.min(Math.max(params.limit ?? 30, 1), 100);
+  const offset = Math.max(params.offset ?? 0, 0);
   const rows = await sql.query(
     `
       SELECT n.id, n.organization_id, n.kind, n.severity, n.title, n.body, n.href, n.created_at,
-             (r.user_id IS NOT NULL) AS read
+             (r.user_id IS NOT NULL) AS read, (r.dismissed_at IS NOT NULL) AS cleared
       FROM notifications n
       JOIN organizations o ON o.id = $1
       LEFT JOIN notification_reads r ON r.notification_id = n.id AND r.user_id = $2
-      WHERE ${VISIBLE}
+      WHERE ${VISIBLE} AND ${stateCondition(params.state)} ${FILTERS}
       ORDER BY n.created_at DESC
-      LIMIT $4
+      LIMIT $4 OFFSET $8
     `,
-    [params.organizationId, params.userId, params.isAdmin, limit],
+    [params.organizationId, params.userId, params.isAdmin, limit, ...filterParams(params), offset],
   );
 
   return rows.map(
@@ -118,7 +144,87 @@ export async function listNotifications(params: { organizationId: string; userId
       href: (row.href as string | null) ?? null,
       createdAt: new Date(row.created_at as string).toISOString(),
       read: Boolean(row.read),
+      cleared: Boolean(row.cleared),
     }),
+  );
+}
+
+export type NotificationSummary = {
+  /** What the person sees now ("Ativas") and what they cleared. */
+  active: number;
+  cleared: number;
+  unread: number;
+  bySeverity: Record<NotificationSeverity, number>;
+  byKind: Record<string, number>;
+};
+
+/** The counters of the notifications page: active ones by importance and by area, plus how many were cleared. */
+export async function summarizeNotifications(params: { organizationId: string; userId: string; isAdmin: boolean }): Promise<NotificationSummary> {
+  const rows = await sql.query(
+    `
+      SELECT n.severity, n.kind, (r.dismissed_at IS NOT NULL) AS cleared, (r.user_id IS NOT NULL) AS read, COUNT(*)::int AS total
+      FROM notifications n
+      JOIN organizations o ON o.id = $1
+      LEFT JOIN notification_reads r ON r.notification_id = n.id AND r.user_id = $2
+      WHERE ${VISIBLE}
+      GROUP BY n.severity, n.kind, (r.dismissed_at IS NOT NULL), (r.user_id IS NOT NULL)
+    `,
+    [params.organizationId, params.userId, params.isAdmin],
+  );
+
+  const summary: NotificationSummary = { active: 0, cleared: 0, unread: 0, bySeverity: { critical: 0, warning: 0, success: 0, info: 0 }, byKind: {} };
+  for (const row of rows) {
+    const total = Number(row.total);
+    if (row.cleared) {
+      summary.cleared += total;
+      continue;
+    }
+    summary.active += total;
+    if (!row.read) summary.unread += total;
+    summary.bySeverity[cleanSeverity(row.severity)] += total;
+    const kind = String(row.kind);
+    summary.byKind[kind] = (summary.byKind[kind] ?? 0) + total;
+  }
+  return summary;
+}
+
+/**
+ * Clears (or restores) notifications for one person: `ids`, or everything the filters match. A cleared notification is
+ * only hidden from that person's bell and list: it stays in the table, so the same event never notifies again.
+ */
+export async function clearNotifications(
+  params: { organizationId: string; userId: string; isAdmin: boolean; ids?: string[]; restore?: boolean } & NotificationFilters,
+) {
+  const ids = params.ids?.filter((id) => /^[0-9a-f-]{36}$/i.test(id)) ?? null;
+  const args = [params.organizationId, params.userId, params.isAdmin, ids, ...filterParams(params)];
+  const idCondition = '($4::uuid[] IS NULL OR n.id = ANY($4::uuid[]))';
+
+  if (params.restore) {
+    await sql.query(
+      `
+        UPDATE notification_reads r
+        SET dismissed_at = NULL
+        FROM notifications n
+        JOIN organizations o ON o.id = $1
+        WHERE r.notification_id = n.id AND r.user_id = $2 AND r.dismissed_at IS NOT NULL
+          AND ${VISIBLE} AND ${idCondition} ${FILTERS}
+      `,
+      args,
+    );
+    return;
+  }
+
+  await sql.query(
+    `
+      INSERT INTO notification_reads (user_id, notification_id, dismissed_at)
+      SELECT $2::uuid, n.id, NOW()
+      FROM notifications n
+      JOIN organizations o ON o.id = $1
+      LEFT JOIN notification_reads r ON r.notification_id = n.id AND r.user_id = $2
+      WHERE ${VISIBLE} AND r.dismissed_at IS NULL AND ${idCondition} ${FILTERS}
+      ON CONFLICT (user_id, notification_id) DO UPDATE SET dismissed_at = NOW()
+    `,
+    args,
   );
 }
 

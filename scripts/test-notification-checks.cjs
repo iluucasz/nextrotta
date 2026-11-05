@@ -77,12 +77,17 @@ test('the reminder is created once, naming them, and only from the 3rd of the mo
   assert.equal(found[0].href, '/admin/payroll');
 });
 
-test('closing every folha takes the reminder off the bell', async () => {
+test('closing every folha takes the reminder off the bell and says it was concluded, once', async () => {
   await sql`UPDATE payroll SET status = 'closed' WHERE organization_id = ${org} AND technician_id = ${ana} AND competence_month = ${previous}`;
   await sql`INSERT INTO payroll (organization_id, technician_id, competence_month, status) VALUES (${org}, ${beto}, ${previous}, 'closed')`;
   assert.deepEqual(await checks.findPendingPayroll(org, previous), []);
   await checks.checkPayroll(org);
-  assert.equal((await titles('Folha de ')).length, 0);
+  await checks.checkPayroll(org);
+  const found = await titles('Folha de ');
+  assert.equal(found.length, 1, 'o lembrete saiu e só ficou o aviso de conclusão');
+  assert.match(found[0].title, /fechada$/);
+  assert.equal(found[0].severity, 'success');
+  assert.match(found[0].body, /2 técnicos/);
 });
 
 test('a disconnected WhatsApp is told once and cleared when it connects again', async () => {
@@ -144,6 +149,25 @@ test('resolveNotifications only touches the company and the prefix it was given'
   const left = (await n.listNotifications({ organizationId: org, userId, isAdmin: true, limit: 100 })).map((item) => item.title);
   assert.ok(!left.includes('Do prefixo'));
   assert.ok(left.includes('De outro prefixo'));
+});
+
+test('parts: low stock is told once a day and clears when the stock is refilled', async () => {
+  const part = (await sql`INSERT INTO parts (organization_id, name, min_stock) VALUES (${org}, 'Peça de teste', 3) RETURNING id`)[0].id;
+  await sql`INSERT INTO part_movements (organization_id, part_id, quantity, kind) VALUES (${org}, ${part}, 2, 'purchase')`;
+
+  const today = brasiliaDateKey();
+  const parts = require('../lib/parts/notices.ts');
+  await parts.checkParts(org, today);
+  await parts.checkParts(org, today);
+  const low = await titles('1 peça com estoque baixo');
+  assert.equal(low.length, 1, 'said once');
+  assert.equal(low[0].severity, 'warning');
+  assert.match(low[0].body, /Peça de teste/);
+
+  await sql`INSERT INTO part_movements (organization_id, part_id, quantity, kind) VALUES (${org}, ${part}, 10, 'purchase')`;
+  await parts.checkParts(org, today);
+  assert.equal((await titles('1 peça com estoque baixo')).length, 0, 'refilled: the notice leaves the bell');
+  await sql`UPDATE parts SET deleted_at = NOW() WHERE id = ${part}`;
 });
 
 after(async () => {

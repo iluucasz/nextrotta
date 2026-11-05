@@ -5,6 +5,12 @@ O sino do sistema da empresa (barra de cima, só para o admin) mostra dois tipos
 - **Da empresa** (`organization_id` preenchido): o que está acontecendo com ela. Sai sozinho, de eventos do sistema.
 - **Do NextRotta** (`organization_id` nulo): avisos gerais da plataforma, publicados pelo dono para todas as empresas ou para uma só.
 
+## Página e importância
+
+- **Página** `/admin/notificacoes` (menu Empresa → Notificações; o sino tem "Ver todas"): contadores por importância que filtram a lista, filtro por área, lista agrupada por dia, "Marcar todas como lidas", **Limpar** (uma, ou todas as que o filtro mostra, com confirmação) e a aba **Limpas** para ver e restaurar. Componentes em `components/notifications/`, rótulos em `lib/notification-meta.ts` (um lugar só: sino e página).
+- **Importância** (`severity`): **Crítico** (`critical`: algo parou ou vence agora), **Atenção** (`warning`: precisa de uma olhada), **Concluído** (`success`: deu certo) e **Aviso** (`info`: só para saber). O texto de cada um fica atrás do "?" da página (`SEVERITY_HELP`).
+- **Limpar** é por pessoa: `notification_reads.dismissed_at` (migração `0039`). Nada é apagado e a chave de repetição continua ocupada, então o mesmo evento não volta. API: `POST /api/notifications/clear` (`{ ids }` ou `{ all: true, severity?, kind?, scope? }`, e `restore: true` para trazer de volta); `GET /api/notifications` aceita `state`, `severity`, `kind`, `scope`, `limit`, `offset` e `summary=1` (contadores).
+
 ## Dados (migração `0029`)
 
 - `notifications`: tipo (`kind`), importância (`info|success|warning|critical`), título (até 140), texto (até 1000), link interno (`href`, só caminhos do sistema), público (`admins` por padrão, ou `everyone`), validade (`expires_at`), `archived_at` (retirar), `dedupe_key`.
@@ -27,6 +33,12 @@ O sino do sistema da empresa (barra de cima, só para o admin) mostra dois tipos
 | Nova cobrança, pagamento confirmado, cobrança vencida | `lib/billing/billing.ts` (`notifyCharge`) | info, sucesso, crítica |
 | Pagamento em atraso, acesso pausado, assinatura em dia | `evaluateBillingStatus`, `runBillingMaintenance` | crítica, crítica, sucesso |
 | Resposta do suporte num chamado (sem notas internas) | `lib/platform/bugs.ts` (`addBugMessage`) | info |
+| Técnico cadastrado | `app/api/technicians/route.ts` | concluído |
+| Folha do mês anterior fechada para todos (uma por mês) | `checkPayroll` | concluído |
+| Login do Porto funcionou (teste) e importação automática do dia concluída (uma por tarefa por dia) | `app/api/porto-config/test-login`, `notifyPortoSuccess` (worker) | concluído |
+| Venda de peças concluída (paga) | `lib/parts/notices.ts` (`notifySalePaid`) | concluído |
+| Venda de peças com problema no pagamento (some quando é paga) | `notifySaleProblem` | atenção |
+| Peças no estoque mínimo; vendas esperando pagamento há mais de 24 h (uma por dia enquanto durar) | `checkParts` | atenção |
 | Robô do Porto falhou ou terminou com avisos (1 por dia por problema; o texto é a frase de `describePortoError`, nunca o rastro técnico) | `lib/porto-alerts.ts` | atenção |
 | Login do Porto não funciona (senha expirada ou trocada, CPF recusado): vem do teste de login ou da última execução e sai sozinho quando um teste ou uma execução volta a funcionar. Uma só entrada por dia, também quando o worker avisa (`porto:login:`) | `checkPortoLogin`, `lib/porto-alerts.ts` | crítica |
 | Créditos de IA acabando / acabaram (1 por mês cada) | `lib/ai/assistant.ts` | atenção, crítica |

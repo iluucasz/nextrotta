@@ -184,7 +184,7 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/saas/vps.md` — VPS compartilhada: containers e donos, agente, limpeza, implantação, capacidade.
 - `docs/saas/porte-producao/` — prompt do porte de 06/10 (já aplicado) e units da limpeza da VPS.
 - `docs/prompts/` — prompts de trabalho já executados ou para reaproveitar em outros projetos (configurações, assistente, WhatsApp na produção, venda de peças).
-- `docs/notificacoes.md` — sino de notificações: avisos da empresa (cobrança, chamados, Porto, créditos, escala) e avisos gerais do NextRotta; como criar um novo.
+- `docs/notificacoes.md` — sino e página de notificações (`/admin/notificacoes`: Crítico, Atenção, Concluído, Aviso; limpar/restaurar por pessoa, migração `0039`): avisos da empresa (cobrança, chamados, Porto, folha, técnicos, peças, créditos, escala) e avisos gerais do NextRotta; como criar um novo.
 - `docs/lgpd-seguranca-contratos.md` — LGPD, segurança e contratos: papéis, o que existe, o que o advogado revisa, riscos, fluxo de pedido de titular e de incidente.
 - `docs/backups.md` — backups diários por empresa (00h, Blob privado, retenção do plano) e restauração pelo administrador.
 - `docs/dashboard-gerencial.md` — critérios financeiros do dashboard gerencial.

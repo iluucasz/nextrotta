@@ -1,9 +1,28 @@
 // Relative imports only: runs in the VPS worker (worker/tsconfig.json).
-import { notifyOrganization } from './notifications';
+import { notifyOrganization, resolveNotifications } from './notifications';
 import { describePortoError, isPortoLoginRejection, portoLoginNotice } from './porto-login-errors';
 import { getOrganizationSettings } from './organization-settings-store';
 import { sendEvolutionText } from './whatsapp/evolution';
 import { connectionFromConfig, getWhatsAppConfig } from './whatsapp/store';
+
+/**
+ * The robot did its job: one "Concluído" entry per job per day in the bell (no WhatsApp: good news is not an alert).
+ * Also takes the "login does not work" entry off the bell, since the run just logged in.
+ */
+export async function notifyPortoSuccess(organizationId: string, jobLabel: string, result: { technicians_processed?: number; rows_written?: number }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const technicians = result.technicians_processed ?? 0;
+  const rows = result.rows_written ?? 0;
+  await resolveNotifications(organizationId, 'porto:login:').catch(() => undefined);
+  await notifyOrganization(organizationId, {
+    kind: 'porto',
+    severity: 'success',
+    title: `Robô do Porto: ${jobLabel} concluída`,
+    body: technicians ? `${technicians} técnico(s) conferidos, ${rows} registro(s) gravados.` : 'A importação automática terminou sem problemas.',
+    href: '/admin/config-porto',
+    dedupeKey: `porto:ok:${jobLabel}:${today}`,
+  });
+}
 
 /**
  * Warns the organization's admin by WhatsApp (Configurações → "WhatsApp para alertas do robô") that

@@ -109,6 +109,58 @@ test('expired and archived notices disappear; a bad link is dropped', async () =
   assert.equal(n.safeInternalHref('/admin/assinatura'), '/admin/assinatura');
 });
 
+test('clearing is per person, reversible, and respects the filters', async () => {
+  const kind = 'ztest';
+  const make = async (title, severity) => {
+    const id = await n.createNotification({ organizationId: kappa, kind, severity, title: `${title} ${TAG}` });
+    ids.push(id);
+    return id;
+  };
+  const critical = await make('Crítica', 'critical');
+  const success = await make('Concluída', 'success');
+  await make('Atenção', 'warning');
+  const view = (userId, state, extra = {}) => n.listNotifications({ organizationId: kappa, userId, isAdmin: true, limit: 100, kind, state, ...extra });
+  const mineIn = async (userId, state, extra) => (await view(userId, state, extra)).filter((item) => item.title.includes(TAG)).map((item) => item.title.replace(` ${TAG}`, '')).sort();
+
+  assert.deepEqual(await mineIn(admin, 'active'), ['Atenção', 'Concluída', 'Crítica']);
+  assert.deepEqual(await mineIn(admin, 'active', { severity: 'success' }), ['Concluída'], 'o filtro de importância');
+
+  const unreadBefore = await n.countUnreadNotifications({ organizationId: kappa, userId: admin, isAdmin: true });
+  await n.clearNotifications({ organizationId: kappa, userId: admin, isAdmin: true, ids: [critical] });
+  assert.deepEqual(await mineIn(admin, 'active'), ['Atenção', 'Concluída'], 'limpa sai da lista');
+  assert.deepEqual(await mineIn(admin, 'cleared'), ['Crítica'], 'e aparece em Limpas');
+  assert.equal(await n.countUnreadNotifications({ organizationId: kappa, userId: admin, isAdmin: true }), unreadBefore - 1, 'limpar tira do contador do sino');
+  assert.deepEqual(await mineIn(colleague, 'active'), ['Atenção', 'Concluída', 'Crítica'], 'o outro admin continua vendo tudo');
+
+  const summary = await n.summarizeNotifications({ organizationId: kappa, userId: admin, isAdmin: true });
+  assert.ok(summary.cleared >= 1 && summary.byKind[kind] === 2, 'o resumo conta só as ativas por área');
+  assert.equal(summary.bySeverity.critical + summary.bySeverity.warning + summary.bySeverity.success + summary.bySeverity.info, summary.active);
+
+  // everything the filter matches, and nothing outside it
+  await n.clearNotifications({ organizationId: kappa, userId: admin, isAdmin: true, kind, severity: 'success' });
+  assert.deepEqual(await mineIn(admin, 'active'), ['Atenção']);
+  await n.clearNotifications({ organizationId: kappa, userId: admin, isAdmin: true, kind });
+  assert.deepEqual(await mineIn(admin, 'active'), []);
+  assert.equal((await n.listNotifications({ organizationId: kappa, userId: admin, isAdmin: true, limit: 100 })).some((item) => item.title.startsWith('Só da kappa')), true, 'o que está fora do filtro não foi limpo');
+
+  // restore one, then the rest; a cleared notice never notifies again (same dedupe key is still taken)
+  await n.clearNotifications({ organizationId: kappa, userId: admin, isAdmin: true, ids: [success], restore: true });
+  assert.deepEqual(await mineIn(admin, 'active'), ['Concluída']);
+  await n.clearNotifications({ organizationId: kappa, userId: admin, isAdmin: true, kind, restore: true });
+  assert.deepEqual(await mineIn(admin, 'active'), ['Atenção', 'Concluída', 'Crítica']);
+
+  const keyed = await n.createNotification({ organizationId: kappa, kind, title: `Única ${TAG}`, dedupeKey: `${TAG}:unica` });
+  ids.push(keyed);
+  await n.clearNotifications({ organizationId: kappa, userId: admin, isAdmin: true, ids: [keyed] });
+  assert.equal(await n.createNotification({ organizationId: kappa, kind, title: `Única ${TAG}`, dedupeKey: `${TAG}:unica` }), null, 'limpar não reabre a chave de repetição');
+
+  // pagination
+  const page1 = await view(admin, 'active', { limit: 2 });
+  const page2 = await view(admin, 'active', { limit: 2, offset: 2 });
+  assert.equal(page1.length, 2);
+  assert.ok(page2.every((item) => !page1.some((first) => first.id === item.id)), 'a segunda página não repete a primeira');
+});
+
 after(async () => {
   // nothing is deleted: the test notices are archived and the test company is archived too
   await sql`UPDATE notifications SET archived_at = NOW() WHERE title LIKE ${`%${TAG}%`} AND archived_at IS NULL`;

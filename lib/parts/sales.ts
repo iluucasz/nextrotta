@@ -33,6 +33,7 @@ import {
   type PartsActor,
 } from './common';
 import { sendCustomerMessage, whatsappShareUrl, type CustomerMessageResult } from './notify';
+import { notifySalePaid, notifySaleProblem } from './notices';
 import { getStock } from './stock';
 import {
   isPaymentMethod,
@@ -308,6 +309,7 @@ export async function createSale(
       // The sale stays; the screen shows the error with "tentar de novo" or another method.
       const message = paymentFailureMessage(error, paymentMethod);
       await sql`UPDATE part_sales SET payment_error = ${message} WHERE id = ${id}`;
+      await notifySaleProblem(organizationId, id, message);
     }
   }
   return getSale(organizationId, id, technician.id);
@@ -430,6 +432,7 @@ export async function retryPayment(organizationId: string, saleId: unknown, tech
     const currentMethod = isPaymentMethod(input.paymentMethod) ? input.paymentMethod : (row.payment_method as PaymentMethod);
     const message = paymentFailureMessage(error, currentMethod);
     await sql`UPDATE part_sales SET payment_error = ${message} WHERE id = ${row.id}`;
+    await notifySaleProblem(organizationId, String(row.id), message);
     throw message === (error instanceof Error ? error.message : String(error)) ? error : new PartsError(message, 502);
   }
   return getSale(organizationId, row.id, technicianId);
@@ -533,6 +536,7 @@ async function markPaid(organizationId: string, saleId: string, input: { by: 'me
     targetId: saleId,
     details: { by: input.by, mpPaymentId: input.mpPaymentId ?? null },
   });
+  await notifySalePaid(organizationId, saleId);
   await sendReceipt(organizationId, saleId, null).catch((error) => console.error('[parts] receipt:', error));
   return true;
 }
