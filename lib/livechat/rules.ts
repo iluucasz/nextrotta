@@ -9,6 +9,17 @@ export const OWNER_ALERT_WINDOW_MS = 10 * 60 * 1000;
 
 export const SUPPORT_SENDER = 'Suporte NextRotta';
 
+/** The thank-you that ends a live chat (the owner can edit it before ending). */
+export function chatClosingMessage(channel: 'web' | 'whatsapp'): string {
+  const next = channel === 'web' ? 'inicie um novo chat ao vivo ou abra um chamado pelo sistema' : 'escreva de novo para este número ou abra um chamado pelo sistema';
+  return `Obrigado pelo seu contato! Foi um prazer ajudar. Estamos encerrando este atendimento, mas, se precisar de mais alguma coisa, é só chamar: ${next}. Até a próxima! 😊`;
+}
+
+/** The message that closes a written support case. */
+export function caseClosingMessage(ticketNumber: number | null): string {
+  return `Olá! Seu chamado${ticketNumber ? ` #${ticketNumber}` : ''} foi encerrado. Agradecemos o seu contato! Se ainda precisar de ajuda, é só abrir um novo chamado pelo sistema que a nossa equipe responde. 😊`;
+}
+
 /** What starts every reply the owner's panel mirrors to the customer's WhatsApp (so its echo is recognized and not stored twice). */
 export const MIRROR_PREFIX = '*Suporte NextRotta*';
 

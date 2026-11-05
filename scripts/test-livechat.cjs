@@ -16,7 +16,7 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(
 const rules = require('../lib/livechat/rules.ts');
 const { sql } = require('../lib/db.ts');
 const store = require('../lib/livechat/store.ts');
-const { webhookToken, webhookTokenMatches, sendOwnerReply } = require('../lib/livechat/whatsapp.ts');
+const { webhookToken, webhookTokenMatches, sendOwnerReply, endConversation } = require('../lib/livechat/whatsapp.ts');
 
 // ------------------------------------------------------------------------------------------------------------- rules
 
@@ -95,6 +95,26 @@ async function makeTicket(organizationId, userId, title) {
   return String(row[0].id);
 }
 
+let sentIds = 0;
+/** Runs `run(calls)` with Evolution simulated (only its URL; the database driver goes through fetch too). */
+async function withEvolution(run, { fail = false } = {}) {
+  const realFetch = global.fetch;
+  const calls = [];
+  process.env.EVOLUTION_API_URL = 'http://evolution.test';
+  process.env.EVOLUTION_API_KEY = 'test-key';
+  global.fetch = async (url, init) => {
+    if (!String(url).startsWith('http://evolution.test')) return realFetch(url, init);
+    calls.push({ url: String(url), body: JSON.parse(init.body) });
+    sentIds += 1;
+    return fail ? { ok: false, status: 500, text: async () => 'down', json: async () => ({}) } : { ok: true, status: 200, text: async () => '', json: async () => ({ key: { id: `WA-END-${stamp}-${sentIds}` } }) };
+  };
+  try {
+    return await run(calls);
+  } finally {
+    global.fetch = realFetch;
+  }
+}
+
 test('setup: a test company with a user and a ticket, and another company', async () => {
   const existing = (await sql`SELECT id FROM organizations WHERE slug = ${SLUG}`)[0];
   org = existing?.id ?? (await sql`INSERT INTO organizations (slug, name, status) VALUES (${SLUG}, 'Teste livechat', 'active') RETURNING id`)[0].id;
@@ -127,18 +147,20 @@ test('an urgent ticket opens the chat at once, unread, with high priority; a nor
   extraTickets.push(urgent.id);
   const found = await store.findWebConversation(urgent.id);
   assert.ok(found, 'the conversation exists before the customer writes anything');
-  assert.deepEqual([found.status, found.urgent, found.unreadOwner, found.lastMessagePreview], ['open', true, 1, `Urgente: Urgente ${stamp}`]);
+  assert.deepEqual([found.status, found.urgent, found.unreadOwner, found.lastMessagePreview], ['open', true, 1, 'Descrição longa o bastante para o teste'], 'the description is the first message');
   const owner = await getBugReport(urgent.id, { kind: 'owner' });
   assert.equal(owner.report.priority, 'high');
+  assert.equal(owner.report.channel, 'chat');
   assert.deepEqual([owner.chat.id, owner.chat.status, owner.chat.unread], [found.id, 'open', 1], 'the owner sees the chat from the ticket');
   assert.equal((await getBugReport(urgent.id, { kind: 'organization', organizationId: org })).chat, null, 'the customer side has no owner data');
-  assert.equal((await store.listConversations({ status: 'open', search: `Urgente ${stamp}` })).length, 1, 'it is in the inbox');
+  assert.ok((await store.listConversations({ status: 'open' })).some((item) => item.id === found.id), 'it is in the inbox');
   assert.equal((await store.getMessages(found.id)).filter((message) => message.kind === 'system').length, 1);
 
   const normal = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Normal ${stamp}` });
   extraTickets.push(normal.id);
   assert.equal(await store.findWebConversation(normal.id), null, 'no chat without "urgent"');
   assert.equal((await getBugReport(normal.id, { kind: 'owner' })).report.priority, 'medium');
+  assert.equal((await getBugReport(normal.id, { kind: 'owner' })).report.channel, 'case');
 
   // only support tickets can be urgent
   const bug = await createBugReport({ organizationId: org, userId: user }, { type: 'bug', title: `Bug ${stamp}`, description: 'Descrição longa o bastante para o teste', urgent: true });
@@ -193,7 +215,7 @@ test('mirror to the customer WhatsApp: the number on the urgent ticket, replies 
     const answer = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '552155550003@s.whatsapp.net', fromMe: false, id: `WA-${stamp}-IN` } }, { message: { conversation: 'Obrigado, estou aguardando' }, pushName: 'Carla', messageTimestamp: Math.floor(Date.now() / 1000) + 2 }))[0];
     assert.ok(await store.storeWhatsAppMessage(answer));
     const after = await store.getMessages(conv.id);
-    assert.deepEqual(after.filter((m) => m.kind === 'text').map((m) => [m.direction, m.body]), [['out', 'Já estou olhando a cobrança.'], ['in', 'Obrigado, estou aguardando']]);
+    assert.deepEqual(after.filter((m) => m.kind === 'text').map((m) => [m.direction, m.body]), [['in', 'Descrição longa o bastante para o teste'], ['out', 'Já estou olhando a cobrança.'], ['in', 'Obrigado, estou aguardando']]);
     assert.equal((await store.getConversation(conv.id)).unreadOwner, 2, 'one from the urgent opening and one from the answer');
     assert.equal((await store.listConversations({ status: 'open', search: '552155550003' })).filter((c) => c.channel === 'whatsapp').length, 0, 'no conversation of its own');
 
@@ -262,13 +284,16 @@ test('web: the flood limit stops a customer sending too fast', async () => {
   await sql`UPDATE livechat_conversations SET last_message_at = last_message_at - interval '2 minutes' WHERE id = ${conversation.id}`;
 });
 
-test('web: closing, and a new message of the customer reopens the same conversation', async () => {
+test('web: closing is final for the customer (a new chat is started), the owner can reopen', async () => {
   const closed = await store.closeConversation(conversation.id, 'owner');
   assert.deepEqual([closed.status, closed.unreadOwner], ['closed', 0]);
   assert.equal((await store.findWebConversation(ticket)).id, conversation.id, 'the last chat of the ticket is still found');
-  await store.sendCustomerMessage(closed, 'Carla Chat', 'Voltei, ainda com problema');
-  const reopened = await store.getConversation(conversation.id);
+  await assert.rejects(store.sendCustomerMessage(closed, 'Carla Chat', 'Voltei, ainda com problema'), /encerrado/);
+  assert.equal((await store.getConversation(conversation.id)).status, 'closed', 'the customer did not reopen it');
+  assert.equal((await sql`SELECT status FROM bug_reports WHERE id = ${ticket}`)[0].status, 'resolved', 'ending the chat concluded its ticket');
+  const reopened = await store.reopenConversation(conversation.id);
   assert.deepEqual([reopened.status, reopened.closedAt], ['open', null]);
+  assert.equal((await sql`SELECT status FROM bug_reports WHERE id = ${ticket}`)[0].status, 'investigating', 'and reopening it reopens the ticket');
   assert.equal((await store.getMessages(conversation.id)).filter((message) => message.kind === 'system').length, 2, 'the start and the closing are in the history');
 });
 
@@ -316,6 +341,117 @@ test('isolation: the chat of a ticket belongs to its company (the route checks t
   await assert.rejects(getBugReport(ticket, { kind: 'organization', organizationId: other }), /não encontrado/i);
   assert.equal((await getBugReport(ticket, { kind: 'organization', organizationId: org })).report.id, ticket);
   assert.equal(await store.findWebConversation(otherTicket), null, 'no chat was ever started on the other ticket');
+});
+
+test('separation: chat tickets stay out of the owner\'s case lists and each kind refuses what belongs to the other', async () => {
+  const { createBugReport, getBugReport, listBugReports, addBugMessage } = require('../lib/platform/bugs.ts');
+  const ownerId = (await sql`SELECT id FROM users WHERE role = 'platform_owner' AND deleted_at IS NULL LIMIT 1`)[0].id;
+  const base = { type: 'support', category: 'billing', description: 'Descrição longa o bastante para o teste' };
+  const chat = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Chat ${stamp}`, channel: 'chat' });
+  const written = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `Caso ${stamp}` });
+  extraTickets.push(chat.id, written.id);
+  const ids = (list) => list.map((item) => item.id);
+  assert.ok(ids(await listBugReports({ organizationId: org, channel: 'case' })).includes(written.id));
+  assert.ok(!ids(await listBugReports({ organizationId: org, channel: 'case' })).includes(chat.id), 'a live chat is not a case in the owner\'s Reports');
+  assert.deepEqual(ids(await listBugReports({ organizationId: org, channel: 'chat' })).filter((id) => [chat.id, written.id].includes(id)), [chat.id]);
+  const everything = ids(await listBugReports({ organizationId: org }));
+  assert.ok([chat.id, written.id].every((id) => everything.includes(id)), 'the customer\'s own list has both');
+
+  // the written thread belongs to cases; a live chat is answered in the Livechat (internal notes stay possible)
+  await assert.rejects(addBugMessage(chat.id, { userId: user, fromOwner: false, organizationId: org }, { text: 'oi' }), /Livechat/);
+  await assert.rejects(addBugMessage(chat.id, { userId: ownerId, fromOwner: true }, { text: 'resposta' }), /Livechat/);
+  await addBugMessage(chat.id, { userId: ownerId, fromOwner: true }, { text: 'nota interna', internal: true });
+  await addBugMessage(written.id, { userId: ownerId, fromOwner: true }, { text: 'resposta por escrito' });
+});
+
+test('ending a live chat says thanks in the chat and on WhatsApp, concludes the ticket, and cannot be reopened by the customer', async () => {
+  const { createBugReport, getBugReport } = require('../lib/platform/bugs.ts');
+  const t = await createBugReport({ organizationId: org, userId: user }, { type: 'support', category: 'billing', title: `Fim ${stamp}`, description: 'Descrição longa o bastante para o teste', channel: 'chat', whatsapp: '(21) 95555-0004' });
+  extraTickets.push(t.id);
+  const conv = await store.findWebConversation(t.id);
+  const number = (await getBugReport(t.id, { kind: 'owner' })).report.ticketNumber;
+
+  await withEvolution(async (calls) => {
+    const ended = await endConversation(conv.id, 'owner', rules.chatClosingMessage('web'));
+    assert.deepEqual([ended.conversation.status, ended.whatsapp], ['closed', 'sent']);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].body.number, '5521955550004');
+    assert.match(calls[0].body.text, new RegExp(`chamado #${number}`));
+    assert.match(calls[0].body.text, /Obrigado pelo seu contato/);
+    const messages = await store.getMessages(conv.id);
+    assert.ok(messages.some((m) => m.direction === 'out' && m.kind === 'text' && /Obrigado pelo seu contato/.test(m.body)), 'the thank-you is in the chat');
+    assert.equal(messages.at(-1).body, 'Conversa encerrada pelo suporte.');
+    assert.equal((await getBugReport(t.id, { kind: 'owner' })).report.status, 'resolved');
+    await assert.rejects(store.sendCustomerMessage(ended.conversation, 'Carla Chat', 'oi de novo'), /encerrado/);
+
+    // ended again: nothing more is sent; reopened by the owner and ended without a message: no WhatsApp call
+    await store.reopenConversation(conv.id);
+    calls.length = 0;
+    const silent = await endConversation(conv.id, 'owner', null);
+    assert.deepEqual([silent.conversation.status, silent.whatsapp, calls.length], ['closed', 'skipped', 0]);
+  });
+
+  // the customer ends it themselves: the thank-you is the same
+  const t2 = await createBugReport({ organizationId: org, userId: user }, { type: 'support', category: 'billing', title: `Fim cliente ${stamp}`, description: 'Descrição longa o bastante para o teste', channel: 'chat' });
+  extraTickets.push(t2.id);
+  const conv2 = await store.findWebConversation(t2.id);
+  const byCustomer = await endConversation(conv2.id, 'customer', rules.chatClosingMessage('web'));
+  assert.equal(byCustomer.conversation.status, 'closed');
+  assert.ok((await store.getMessages(conv2.id)).some((m) => /Obrigado pelo seu contato/.test(m.body)));
+
+  // a WhatsApp conversation: the thank-you goes to that number; with Evolution down it still ends and says so
+  const [incoming] = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '5521955550001@s.whatsapp.net', fromMe: false, id: `WA-${stamp}-END` } }, { messageTimestamp: Math.floor(Date.now() / 1000) }));
+  await store.storeWhatsAppMessage(incoming);
+  const wa = (await store.listConversations({ status: 'open', search: '5521955550001' })).find((c) => c.channel === 'whatsapp');
+  await withEvolution(async (calls) => {
+    const ended = await endConversation(wa.id, 'owner', rules.chatClosingMessage('whatsapp'));
+    assert.deepEqual([ended.conversation.status, ended.whatsapp, calls[0].body.number], ['closed', 'sent', '5521955550001']);
+    assert.match(calls[0].body.text, /escreva de novo para este número/);
+  });
+  const [again] = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: '5521955550001@s.whatsapp.net', fromMe: false, id: `WA-${stamp}-END2` } }, { messageTimestamp: Math.floor(Date.now() / 1000) + 1 }));
+  await store.storeWhatsAppMessage(again);
+  const wa2 = (await store.listConversations({ status: 'open', search: '5521955550001' })).find((c) => c.channel === 'whatsapp');
+  await withEvolution(async () => {
+    const ended = await endConversation(wa2.id, 'owner', rules.chatClosingMessage('whatsapp'));
+    assert.deepEqual([ended.conversation.status, ended.whatsapp], ['closed', 'failed']);
+    assert.ok(ended.whatsappError);
+  }, { fail: true });
+});
+
+test('concluding a written case sends the closing message (default, edited or none); a chat ticket and a reopening send none', async () => {
+  const { createBugReport, updateBugReport, getBugReport } = require('../lib/platform/bugs.ts');
+  const ownerId = (await sql`SELECT id FROM users WHERE role = 'platform_owner' AND deleted_at IS NULL LIMIT 1`)[0].id;
+  const base = { type: 'support', category: 'billing', description: 'Descrição longa o bastante para o teste' };
+  const mk = async (title, extra = {}) => {
+    const created = await createBugReport({ organizationId: org, userId: user }, { ...base, title: `${title} ${stamp}`, ...extra });
+    extraTickets.push(created.id);
+    return created.id;
+  };
+  const last = async (id) => (await getBugReport(id, { kind: 'owner' })).messages.at(-1);
+
+  const a = await mk('Caso A');
+  const number = (await getBugReport(a, { kind: 'owner' })).report.ticketNumber;
+  await updateBugReport(a, { status: 'resolved' }, { id: ownerId });
+  const message = await last(a);
+  assert.equal(message.fromOwner, true);
+  assert.match(message.text, new RegExp(`chamado #${number} foi encerrado`));
+  assert.match(message.text, /novo chamado/);
+
+  const b = await mk('Caso B');
+  await updateBugReport(b, { status: 'resolved', closingMessage: 'Texto editado pelo dono.' }, { id: ownerId });
+  assert.equal((await last(b)).text, 'Texto editado pelo dono.');
+
+  const c = await mk('Caso C');
+  await updateBugReport(c, { status: 'resolved', closingMessage: '' }, { id: ownerId });
+  assert.equal(await last(c), undefined, 'skipped on purpose');
+
+  const d = await mk('Caso D');
+  await updateBugReport(d, { status: 'investigating' }, { id: ownerId });
+  assert.equal(await last(d), undefined, 'no goodbye for a ticket that is not being closed');
+
+  const chat = await mk('Chat E', { channel: 'chat' });
+  await updateBugReport(chat, { status: 'resolved' }, { id: ownerId });
+  assert.equal(await last(chat), undefined, 'a live chat says goodbye in the Livechat, not in a written thread');
 });
 
 after(async () => {

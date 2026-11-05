@@ -12,7 +12,7 @@ import { evolutionServer } from '../whatsapp/store';
 import { PlatformError } from '../platform/errors';
 import { getSupportContact } from '../support-contact';
 import { mirroredText } from './rules';
-import { attachWaId, getConversation, storeOwnerMessage } from './store';
+import { attachWaId, closeConversation, getConversation, storeOwnerMessage } from './store';
 
 /**
  * The platform's official WhatsApp number (the live chat inbox). Its own instance on the shared Evolution server, separate from
@@ -153,4 +153,27 @@ export async function sendOwnerReply(conversationId: string, text: string, optio
   const sent = await sendEvolutionText({ ...server, instance: LIVECHAT_INSTANCE }, conversation.contactPhone, text);
   if (!sent.ok) throw new PlatformError(`A mensagem não foi enviada. ${sent.error ?? 'Confira a conexão do WhatsApp.'}`, 502);
   return { message: await storeOwnerMessage(conversationId, text, { senderName: undefined, waMessageId: sent.messageId ?? null }), whatsapp: 'sent' };
+}
+
+/**
+ * Ends a conversation with a thank-you ("Obrigado pelo seu contato…"), so the customer is not left hanging: the message is
+ * stored in the chat and, on WhatsApp (or when the customer gave a number), sent there too. A WhatsApp failure never stops the end.
+ * `thanks` null ends it without a message.
+ */
+export async function endConversation(conversationId: string, by: 'owner' | 'customer', thanks: string | null) {
+  const conversation = await getConversation(conversationId);
+  let whatsapp: 'sent' | 'failed' | 'skipped' = 'skipped';
+  let whatsappError: string | undefined;
+  if (conversation.status === 'open' && thanks) {
+    try {
+      const reply = await sendOwnerReply(conversationId, thanks);
+      whatsapp = reply.whatsapp;
+      whatsappError = reply.whatsappError;
+    } catch (error) {
+      whatsapp = 'failed';
+      whatsappError = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const ended = await closeConversation(conversationId, by);
+  return { conversation: ended, whatsapp, whatsappError };
 }

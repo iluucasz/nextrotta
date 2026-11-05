@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { cleanMessage } from '@/lib/livechat/rules';
-import { closeConversation, getConversation, getMessages, markReadByOwner, reopenConversation, setUrgent } from '@/lib/livechat/store';
-import { sendOwnerReply } from '@/lib/livechat/whatsapp';
+import { chatClosingMessage, cleanMessage } from '@/lib/livechat/rules';
+import { getConversation, getMessages, markReadByOwner, reopenConversation, setUrgent } from '@/lib/livechat/store';
+import { endConversation, sendOwnerReply } from '@/lib/livechat/whatsapp';
 import { PlatformError } from '@/lib/platform/errors';
 import { readJson, withPlatformOwner } from '@/lib/platform/route';
 
@@ -37,15 +37,21 @@ export async function POST(request: NextRequest, context: Context) {
   });
 }
 
-/** { status?: 'open' | 'closed', urgent?: boolean } */
+/** { status?: 'open' | 'closed', thanks?: string | null, urgent?: boolean } — closing sends the thank-you (the default text, the given one, or none with null or ""). */
 export async function PATCH(request: NextRequest, context: Context) {
   return withPlatformOwner(request, async () => {
     const { id } = await context.params;
     const body = await readJson(request);
-    await getConversation(id);
-    if (body.status === 'closed') await closeConversation(id, 'owner');
-    else if (body.status === 'open') await reopenConversation(id);
+    const current = await getConversation(id);
+    let whatsapp: 'sent' | 'failed' | 'skipped' = 'skipped';
+    let whatsappError: string | null = null;
+    if (body.status === 'closed') {
+      const thanks = body.thanks === undefined ? chatClosingMessage(current.channel) : cleanMessage(body.thanks) || null;
+      const ended = await endConversation(id, 'owner', thanks);
+      whatsapp = ended.whatsapp;
+      whatsappError = ended.whatsappError ?? null;
+    } else if (body.status === 'open') await reopenConversation(id);
     if (typeof body.urgent === 'boolean') await setUrgent(id, body.urgent);
-    return NextResponse.json({ conversation: await getConversation(id) });
+    return NextResponse.json({ conversation: await getConversation(id), whatsapp, whatsappError });
   });
 }

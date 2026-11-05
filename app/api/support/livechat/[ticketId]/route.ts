@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
-import { cleanMessage } from '@/lib/livechat/rules';
-import { closeConversation, findWebConversation, getMessages, markReadByCustomer, sendCustomerMessage, setConversationPhone, startWebConversation, type ChatMessage, type Conversation } from '@/lib/livechat/store';
+import { chatClosingMessage, cleanMessage } from '@/lib/livechat/rules';
+import { endConversation } from '@/lib/livechat/whatsapp';
+import { findWebConversation, getMessages, markReadByCustomer, sendCustomerMessage, setConversationPhone, startWebConversation, type ChatMessage, type Conversation } from '@/lib/livechat/store';
 import { normalizePhone } from '@/lib/whatsapp/phone';
 import { getBugReport } from '@/lib/platform/bugs';
 import { PlatformError } from '@/lib/platform/errors';
@@ -73,12 +74,14 @@ export async function POST(request: NextRequest, context: Context) {
 
     if (body.action === 'close') {
       const existing = await findWebConversation(ticketId);
-      if (existing?.status === 'open') await closeConversation(existing.id, 'customer');
+      if (existing?.status === 'open') await endConversation(existing.id, 'customer', chatClosingMessage('web'));
       const after = await findWebConversation(ticketId);
       return NextResponse.json({ conversation: conversationView(after), messages: after ? (await getMessages(after.id)).map(forCustomer) : [] });
     }
 
     if (!cleanMessage(body.text)) throw new PlatformError('Escreva a mensagem.');
+    // Live chat and written support are separate: only a ticket opened as a live chat has a chat.
+    if (report.channel !== 'chat') throw new PlatformError('Este chamado é de atendimento por escrito. Para falar ao vivo, inicie um novo chat ao vivo.', 409);
     if (report.status === 'resolved' || report.status === 'not_reproduced') throw new PlatformError('Este chamado já foi concluído. Abra um novo chamado para falar com o suporte.', 409);
     const conversation = await startWebConversation({ organizationId: auth.organizationId, userId: auth.userId, ticketId, userName });
     await sendCustomerMessage(conversation, userName, body.text);

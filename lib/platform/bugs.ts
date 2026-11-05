@@ -1,6 +1,7 @@
 import { recordAudit } from '../audit';
 import { sql } from '../db';
 import { alertOwnerOfChat, startWebConversation } from '../livechat/store';
+import { caseClosingMessage } from '../livechat/rules';
 import { notifyOrganization } from '../notifications';
 import { normalizePhone } from '../whatsapp/phone';
 import { isUuid, PlatformError, type Actor } from './errors';
@@ -29,6 +30,8 @@ function serializeBug(row: Record<string, unknown>) {
     type: (REPORT_TYPES.includes(row.report_type as ReportType) ? row.report_type : 'bug') as ReportType,
     ticketNumber: row.ticket_number === null || row.ticket_number === undefined ? null : Number(row.ticket_number),
     supportCategory: (row.support_category as SupportCategory | null) ?? null,
+    /** 'case' = written support (the thread lives in the ticket); 'chat' = a live chat (all of it happens in the Livechat). */
+    channel: (row.channel === 'chat' ? 'chat' : 'case') as 'case' | 'chat',
     organizationId: String(row.organization_id),
     organizationName: (row.organization_name as string | undefined) ?? null,
     userId: String(row.user_id),
@@ -52,7 +55,7 @@ function serializeBug(row: Record<string, unknown>) {
 export type BugReport = ReturnType<typeof serializeBug>;
 
 const BUG_COLUMNS = `
-  b.report_type, b.ticket_number, b.support_category,
+  b.report_type, b.ticket_number, b.support_category, b.channel,
   b.id, b.organization_id, b.user_id, b.title, b.description, b.page_url, b.user_agent, b.app_version,
   (b.screenshot IS NOT NULL) AS has_screenshot, b.status, b.priority, b.created_at, b.updated_at, b.resolved_at,
   o.name AS organization_name, u.name AS user_name, u.email AS user_email
@@ -60,7 +63,7 @@ const BUG_COLUMNS = `
 
 /** Owner inbox; `organizationId` narrows it to one organization. */
 export async function listBugReports(
-  filters: { organizationId?: string | null; userId?: string | null } = {},
+  filters: { organizationId?: string | null; userId?: string | null; /** Default: all. The owner's Reports ask for 'case' (live chats are worked in the Livechat). */ channel?: 'case' | 'chat' | 'all' } = {},
 ) {
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -71,6 +74,10 @@ export async function listBugReports(
   if (filters.userId) {
     params.push(filters.userId);
     conditions.push(`b.user_id = $${params.length}`);
+  }
+  if (filters.channel === 'case' || filters.channel === 'chat') {
+    params.push(filters.channel);
+    conditions.push(`b.channel = $${params.length}`);
   }
   const rows = await sql.query(
     `SELECT ${BUG_COLUMNS},
@@ -177,30 +184,31 @@ export async function createBugReport(
   if (screenshot && screenshot.length > MAX_SCREENSHOT_LENGTH)
     throw new PlatformError('A captura de tela passa de 2 MB. Envie uma imagem menor.');
 
-  // "É urgente" (support tickets only): high priority, and the live chat is opened at once so the owner sees it in the Livechat.
-  const urgent = type === 'support' && input.urgent === true;
+  // A live chat (support tickets only; `urgent` is the old name): high priority, and the chat opens at once with the description as the
+  // customer's first message, so the owner finds it in the Livechat. Anything else is a written case.
+  const chat = type === 'support' && (input.channel === 'chat' || input.urgent === true);
   // Optional: the number the team may also answer on (what the customer types back there lands in the same chat).
-  const whatsappInput = urgent ? String(input.whatsapp ?? '').trim() : '';
+  const whatsappInput = chat ? String(input.whatsapp ?? '').trim() : '';
   const contactPhone = whatsappInput ? normalizePhone(whatsappInput) : null;
   if (whatsappInput && !contactPhone) throw new PlatformError('O WhatsApp informado não é válido. Use DDD + número, ou deixe em branco.');
   const rows = await sql`
     INSERT INTO bug_reports (
-      organization_id, user_id, title, description, page_url, user_agent, app_version, screenshot, report_type, support_category, priority
+      organization_id, user_id, title, description, page_url, user_agent, app_version, screenshot, report_type, support_category, priority, channel
     )
     VALUES (
       ${reporter.organizationId}, ${reporter.userId}, ${title}, ${description}, ${cleanText(input.pageUrl, 500) || null},
       ${cleanText(input.userAgent, 500) || null}, ${cleanText(input.appVersion, 50) || null}, ${screenshot}, ${type}, ${category},
-      ${urgent ? 'high' : 'medium'}
+      ${chat ? 'high' : 'medium'}, ${chat ? 'chat' : 'case'}
     )
     RETURNING id, ticket_number
   `;
   const ticketId = String(rows[0].id);
-  if (urgent) {
+  if (chat) {
     try {
       const user = (await sql`SELECT name FROM users WHERE id = ${reporter.userId}`)[0];
       const userName = String(user?.name ?? 'Cliente');
-      const conversation = await startWebConversation({ organizationId: reporter.organizationId, userId: reporter.userId, ticketId, userName, urgentTitle: title, contactPhone });
-      await alertOwnerOfChat(conversation, userName, `Chamado urgente: ${title}`);
+      const conversation = await startWebConversation({ organizationId: reporter.organizationId, userId: reporter.userId, ticketId, userName, opening: { message: description }, contactPhone });
+      await alertOwnerOfChat(conversation, userName, description);
     } catch (error) {
       // The ticket is what matters: it exists, and the customer can still start the chat from its page.
       console.error('[bug-reports] urgent chat not opened:', error);
@@ -225,6 +233,8 @@ export async function addBugMessage(
   const text = cleanText(input.text, 10_000);
   if (!text) throw new PlatformError('Escreva a mensagem.');
   const internal = author.fromOwner && Boolean(input.internal);
+  // The conversation of a live chat is the chat itself (Livechat): the written thread belongs to cases.
+  if (report.channel === 'chat' && !internal) throw new PlatformError('Este atendimento é um chat ao vivo: a conversa acontece no Livechat.', 409);
 
   const message = await sql`
     INSERT INTO bug_messages (bug_id, author_id, from_owner, internal, text)
@@ -276,6 +286,11 @@ export async function updateBugReport(
         resolved_at = ${closing ? new Date().toISOString() : status === 'new' || status === 'investigating' ? null : report.resolvedAt}
     WHERE id = ${id}
   `;
+  // Concluding a written case says goodbye: thanks, and how to ask again (the owner can edit or skip it: closingMessage "").
+  if (closing && report.channel === 'case') {
+    const wanted = typeof input.closingMessage === 'string' ? input.closingMessage.trim() : caseClosingMessage(report.ticketNumber);
+    if (wanted) await addBugMessage(id, { userId: actor.id, fromOwner: true }, { text: wanted });
+  }
   await recordAudit({
     organizationId: report.organizationId,
     actorId: actor.id,

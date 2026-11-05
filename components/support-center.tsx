@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { LiveChatPanel } from '@/components/livechat/customer-chat';
 import { PhoneInput } from '@/components/phone-input';
-import { ArrowLeft, Bug, ImagePlus, LifeBuoy, Lightbulb, Loader2, MessageSquare, Plus, Search, Send } from 'lucide-react';
+import { ArrowLeft, Bug, Headset, ImagePlus, LifeBuoy, Lightbulb, Loader2, MessageSquare, Plus, Search, Send } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import { PageHeader } from '@/components/page-header';
 import { Button } from '@/components/ui/button';
@@ -34,6 +34,8 @@ export type TicketRow = {
   type: ReportType;
   ticketNumber: number | null;
   supportCategory: SupportCategory | null;
+  /** 'case' = written support; 'chat' = a live chat (all of it happens in the chat window). */
+  channel: 'case' | 'chat';
   title: string;
   status: TicketStatus;
   createdAt: string;
@@ -123,10 +125,13 @@ export function StatusPill({ type, status }: { type: ReportType; status: TicketS
 
 export function NewTicketForm({
   initialType = 'support',
+  initialMode = 'case',
   basePath,
   onCreated,
 }: {
   initialType?: ReportType;
+  /** How a support ticket starts: written (case) or a live chat. */
+  initialMode?: 'case' | 'chat';
   /** /admin/suporte or /dashboard/suporte — where the ticket page lives. */
   basePath: string;
   onCreated?: (ticket: { id: string; ticketNumber: number }) => void;
@@ -138,10 +143,10 @@ export function NewTicketForm({
   const [screenshot, setScreenshot] = useState<{ name: string; dataUrl: string } | null>(null);
   const [error, setError] = useState('');
   const [sending, setSending] = useState(false);
-  const [created, setCreated] = useState<{ id: string; ticketNumber: number; type: ReportType; urgent: boolean } | null>(null);
-  // An urgent support ticket goes on to the live chat.
-  const [urgent, setUrgent] = useState(false);
-  // The WhatsApp the team may also answer on, remembered in this browser for the next urgent ticket.
+  const [created, setCreated] = useState<{ id: string; ticketNumber: number; type: ReportType; live: boolean } | null>(null);
+  // An live support ticket goes on to the live chat.
+  const [live, setLive] = useState(initialMode === 'chat');
+  // The WhatsApp the team may also answer on, remembered in this browser for the next live ticket.
   const [whatsapp, setWhatsapp] = useState('');
   useEffect(() => {
     try {
@@ -171,22 +176,22 @@ export function NewTicketForm({
       const ticket = await request<{ id: string; ticketNumber: number }>('/api/bug-reports', {
         type,
         category: type === 'support' ? category : undefined,
-        urgent: type === 'support' && urgent,
-        whatsapp: type === 'support' && urgent ? whatsapp : undefined,
+        channel: type === 'support' && live ? 'chat' : 'case',
+        whatsapp: type === 'support' && live ? whatsapp : undefined,
         title,
         description,
-        screenshot: screenshot?.dataUrl ?? null,
+        screenshot: type === 'support' && live ? null : (screenshot?.dataUrl ?? null),
         pageUrl: window.location.href,
         userAgent: navigator.userAgent,
         appVersion: process.env.NEXT_PUBLIC_APP_VERSION ?? null,
       });
-      setCreated({ ...ticket, type, urgent: type === 'support' && urgent });
+      setCreated({ ...ticket, type, live: type === 'support' && live });
       try {
-        if (urgent && whatsapp) window.localStorage.setItem('nr-support-whatsapp', whatsapp);
+        if (live && whatsapp) window.localStorage.setItem('nr-support-whatsapp', whatsapp);
       } catch {
         /* nothing to remember */
       }
-      setUrgent(false);
+      setLive(false);
       setTitle('');
       setDescription('');
       setScreenshot(null);
@@ -207,7 +212,7 @@ export function NewTicketForm({
         <p className="text-sm text-muted-foreground">Guarde este número. Nossa equipe responde por aqui e você acompanha tudo na central de suporte.</p>
         <div className="flex flex-wrap justify-center gap-2 pt-2">
           <Button asChild>
-            <Link href={created.urgent ? `${basePath}/${created.id}?chat=1` : `${basePath}/${created.id}`}>{created.urgent ? 'Abrir o chat ao vivo' : 'Acompanhar chamado'}</Link>
+            <Link href={created.live ? `${basePath}/${created.id}?chat=1` : `${basePath}/${created.id}`}>{created.live ? 'Abrir o chat ao vivo' : 'Acompanhar chamado'}</Link>
           </Button>
           <Button type="button" variant="outline" onClick={() => setCreated(null)}>
             Abrir outro
@@ -251,6 +256,33 @@ export function NewTicketForm({
       </div>
 
       {type === 'support' ? (
+        <div className="space-y-1.5" role="radiogroup" aria-label="Como você quer ser atendido?">
+          <Label>Como você quer ser atendido?</Label>
+          <div className="grid gap-2 sm:grid-cols-2">
+            {([
+              { value: false, title: 'Chamado por escrito', hint: 'Conte o que precisa e acompanhe a resposta da equipe aqui, no seu tempo.', icon: LifeBuoy },
+              { value: true, title: 'Chat ao vivo (urgente)', hint: 'Converse agora com a equipe. O chamado vai com prioridade alta.', icon: Headset },
+            ] as const).map((choice) => (
+              <button
+                key={String(choice.value)}
+                type="button"
+                role="radio"
+                aria-checked={live === choice.value}
+                onClick={() => setLive(choice.value)}
+                className={`flex items-start gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors ${live === choice.value ? 'border-primary bg-primary/10' : 'border-border hover:bg-secondary'}`}
+              >
+                <choice.icon className={`mt-0.5 h-4 w-4 shrink-0 ${live === choice.value ? 'text-primary' : 'text-muted-foreground'}`} />
+                <span>
+                  <span className={`block text-sm font-medium ${live === choice.value ? 'text-primary' : ''}`}>{choice.title}</span>
+                  <span className="block text-xs text-muted-foreground">{choice.hint}</span>
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {type === 'support' ? (
         <div className="space-y-1.5">
           <Label>Com o que você precisa de ajuda?</Label>
           <div className="grid gap-2 sm:grid-cols-2">
@@ -288,7 +320,7 @@ export function NewTicketForm({
         />
       </div>
       <div className="space-y-1.5">
-        <Label htmlFor={`ticket-description-${type}`}>{copy.description}</Label>
+        <Label htmlFor={`ticket-description-${type}`}>{type === 'support' && live ? 'Sua primeira mensagem para a equipe' : copy.description}</Label>
         <Textarea
           id={`ticket-description-${type}`}
           required
@@ -299,22 +331,13 @@ export function NewTicketForm({
           onChange={(event) => setDescription(event.target.value)}
         />
       </div>
-      {type === 'support' ? (
-        <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border px-3 py-2.5 text-sm hover:bg-secondary">
-          <input type="checkbox" checked={urgent} onChange={(event) => setUrgent(event.target.checked)} className="mt-0.5 h-4 w-4 accent-primary" />
-          <span>
-            <span className="block font-medium">É urgente: quero falar agora no chat ao vivo</span>
-            <span className="block text-xs text-muted-foreground">O chamado vai como prioridade alta, a equipe é avisada na hora e abrimos o chat para você conversar com ela.</span>
-          </span>
-        </label>
-      ) : null}
-      {type === 'support' && urgent ? (
+      {type === 'support' && live ? (
         <div className="space-y-1.5">
           <Label htmlFor="ticket-whatsapp">Seu WhatsApp (opcional)</Label>
           <PhoneInput id="ticket-whatsapp" value={whatsapp} onChange={setWhatsapp} hint="A equipe também responde por lá, e o que você escrever no WhatsApp cai na mesma conversa. Só usamos para este atendimento." />
         </div>
       ) : null}
-      <div className="space-y-1.5">
+      <div className={`space-y-1.5 ${type === 'support' && live ? 'hidden' : ''}`}>
         <Label htmlFor={`ticket-screenshot-${type}`}>Captura de tela (opcional, até 2 MB)</Label>
         <label
           htmlFor={`ticket-screenshot-${type}`}
@@ -340,7 +363,7 @@ export function NewTicketForm({
       <div className="flex justify-end">
         <Button type="submit" disabled={sending}>
           {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          {sending ? 'Enviando…' : copy.submit}
+          {sending ? 'Enviando…' : type === 'support' && live ? 'Iniciar chat ao vivo' : copy.submit}
         </Button>
       </div>
     </form>
@@ -375,6 +398,15 @@ const STATUS_FILTERS: Array<{ value: 'all' | 'open' | 'closed'; label: string }>
 export function SupportCenter({ basePath, showAuthor }: { basePath: string; showAuthor: boolean }) {
   const { tickets, error, reload } = useTickets();
   const [creating, setCreating] = useState(false);
+  // ?novo=chat (from an ended chat) opens the form already on "Chat ao vivo".
+  const [newMode, setNewMode] = useState<'case' | 'chat'>('case');
+  useEffect(() => {
+    const wanted = new URLSearchParams(window.location.search).get('novo');
+    if (wanted) {
+      setNewMode(wanted === 'chat' ? 'chat' : 'case');
+      setCreating(true);
+    }
+  }, []);
   const [typeFilter, setTypeFilter] = useState<'all' | ReportType>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'open' | 'closed'>('all');
   const [search, setSearch] = useState('');
@@ -425,7 +457,7 @@ export function SupportCenter({ basePath, showAuthor }: { basePath: string; show
 
       {creating ? (
         <DataPanel title="Novo chamado" description="Escolha o tipo e conte o que você precisa." className="mb-4">
-          <NewTicketForm basePath={basePath} onCreated={reload} />
+          <NewTicketForm key={newMode} basePath={basePath} initialMode={newMode} onCreated={reload} />
         </DataPanel>
       ) : null}
 
@@ -508,9 +540,15 @@ export function SupportCenter({ basePath, showAuthor }: { basePath: string; show
                       <Link href={`${basePath}/${ticket.id}`} className="block truncate font-medium hover:underline">
                         {ticket.title}
                       </Link>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <MessageSquare className="h-3 w-3" /> {ticket.messagesCount} mensagem(ns)
-                      </span>
+                      {ticket.channel === 'chat' ? (
+                        <span className="flex items-center gap-1 text-xs text-primary">
+                          <Headset className="h-3 w-3" /> Chat ao vivo
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                          <MessageSquare className="h-3 w-3" /> {ticket.messagesCount} mensagem(ns)
+                        </span>
+                      )}
                     </td>
                     <td className="py-3 pr-3">
                       {REPORT_TYPE_LABELS[ticket.type]}
@@ -588,9 +626,11 @@ export function TicketPage({ id, basePath }: { id: string; basePath: string }) {
 
   const { report, messages } = detail;
   const closed = report.status === 'resolved' || report.status === 'not_reproduced';
+  const isChat = report.channel === 'chat';
   const facts: Array<[string, React.ReactNode]> = [
     ['Número', <span key="n" className="font-mono">{formatTicketNumber(report.ticketNumber)}</span>],
     ['Tipo', REPORT_TYPE_LABELS[report.type]],
+    ['Atendimento', isChat ? 'Chat ao vivo' : 'Chamado por escrito'],
     ...(report.supportCategory ? ([['Assunto', SUPPORT_CATEGORY_LABELS[report.supportCategory]]] as Array<[string, React.ReactNode]>) : []),
     ['Situação', <StatusPill key="s" type={report.type} status={report.status} />],
     ['Aberto em', dateTime(report.createdAt)],
@@ -602,10 +642,11 @@ export function TicketPage({ id, basePath }: { id: string; basePath: string }) {
   return (
     <>
       {back}
-      <PageHeader eyebrow={`Chamado ${formatTicketNumber(report.ticketNumber)}`} title={report.title} />
+      <PageHeader eyebrow={`${isChat ? 'Chat ao vivo' : 'Chamado'} ${formatTicketNumber(report.ticketNumber)}`} title={report.title} />
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_340px] xl:items-start">
         <div className="space-y-4">
+          {!isChat ? (
           <DataPanel title="Descrição">
             <p className="whitespace-pre-wrap text-sm leading-relaxed">{report.description}</p>
             {report.hasScreenshot ? (
@@ -613,9 +654,11 @@ export function TicketPage({ id, basePath }: { id: string; basePath: string }) {
               <img src={`/api/bug-reports/${id}/screenshot`} alt="Captura de tela enviada" className="mt-4 max-h-96 rounded-md border" />
             ) : null}
           </DataPanel>
+          ) : null}
 
-          <LiveChatPanel ticketId={id} ticketClosed={closed} startOpen={typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('chat') === '1'} />
+          {isChat ? <LiveChatPanel ticketId={id} newChatHref={`${basePath}?novo=chat`} onStatusChange={load} /> : null}
 
+          {!isChat ? (
           <DataPanel title="Conversa" description="As respostas da equipe NextRotta aparecem aqui.">
             <ol className="space-y-3">
               {messages.map((message) => (
@@ -650,6 +693,7 @@ export function TicketPage({ id, basePath }: { id: string; basePath: string }) {
               </div>
             </form>
           </DataPanel>
+          ) : null}
         </div>
 
         <DataPanel title="Detalhes do chamado">

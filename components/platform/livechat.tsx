@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Building2, CheckCheck, Headset, LoaderCircle, MessageCircle, QrCode, Search, Send, Ticket, Unplug } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { chatClosingMessage } from '@/lib/livechat/rules';
 import { api, errorMessage } from './api';
 import { useNotify } from './notice';
 import './livechat.css';
@@ -321,6 +322,10 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
   const [error, setError] = useState('');
   // A web chat whose customer gave a WhatsApp: the answer also goes there, unless this box is unchecked.
   const [mirror, setMirror] = useState(true);
+  // Ending a conversation asks for the thank-you (editable, or none).
+  const [ending, setEnding] = useState(false);
+  const [thanks, setThanks] = useState('');
+  const [endingBusy, setEndingBusy] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastAt = useRef<string | null>(null);
 
@@ -379,10 +384,18 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
     }
   }
 
-  async function setStatus(status: 'open' | 'closed') {
+  async function setStatus(status: 'open' | 'closed', thanksText?: string | null) {
     try {
-      await api(`/livechat/${conversation.id}`, { method: 'PATCH', body: { status } });
-      notify(status === 'closed' ? 'Conversa encerrada.' : 'Conversa reaberta.');
+      const result = await api<{ whatsapp?: 'sent' | 'failed' | 'skipped'; whatsappError?: string | null }>(`/livechat/${conversation.id}`, { method: 'PATCH', body: status === 'closed' ? { status, thanks: thanksText ?? '' } : { status } });
+      notify(
+        status === 'open'
+          ? 'Conversa reaberta.'
+          : result.whatsapp === 'failed'
+            ? `Conversa encerrada, mas o agradecimento não chegou no WhatsApp: ${result.whatsappError ?? 'confira a conexão.'}`
+            : thanksText
+              ? 'Conversa encerrada e agradecimento enviado.'
+              : 'Conversa encerrada.',
+      );
       await refresh(true);
       onChanged();
     } catch (reason) {
@@ -420,7 +433,13 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
             </Link>
           ) : null}
           {conversation.status === 'open' ? (
-            <button className="nr-btn" onClick={() => void setStatus('closed')}>
+            <button
+              className="nr-btn"
+              onClick={() => {
+                setThanks(chatClosingMessage(conversation.channel));
+                setEnding(true);
+              }}
+            >
               <CheckCheck size={16} />
               <span className="lc-btn-text">Encerrar</span>
             </button>
@@ -429,6 +448,50 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
           )}
         </div>
       </header>
+
+      {ending ? (
+        <Dialog open onOpenChange={(open) => !open && !endingBusy && setEnding(false)}>
+          <DialogContent className="nr-dialog sm:max-w-xl">
+            <DialogTitle>Encerrar a conversa</DialogTitle>
+            <DialogDescription>
+              Mande um agradecimento para o cliente não ficar sem resposta. Ele vai no chat{conversation.channel === 'whatsapp' || conversation.contactPhone ? ' e no WhatsApp dele' : ''}. Edite o texto se quiser, ou encerre sem mensagem.
+            </DialogDescription>
+            <label className="nr-field">
+              Mensagem de encerramento
+              <textarea rows={5} value={thanks} onChange={(event) => setThanks(event.target.value)} />
+            </label>
+            <div className="nr-dialog-actions">
+              <button className="nr-btn" disabled={endingBusy} onClick={() => setEnding(false)}>
+                Voltar
+              </button>
+              <button
+                className="nr-btn"
+                disabled={endingBusy}
+                onClick={async () => {
+                  setEndingBusy(true);
+                  await setStatus('closed', null);
+                  setEndingBusy(false);
+                  setEnding(false);
+                }}
+              >
+                Encerrar sem mensagem
+              </button>
+              <button
+                className="nr-btn primary"
+                disabled={endingBusy || !thanks.trim()}
+                onClick={async () => {
+                  setEndingBusy(true);
+                  await setStatus('closed', thanks);
+                  setEndingBusy(false);
+                  setEnding(false);
+                }}
+              >
+                Encerrar e enviar
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
 
       <div className="lc-messages" ref={bodyRef} role="log" aria-live="polite">
         {!messages ? <p className="lc-empty"><LoaderCircle size={18} className="animate-spin" /></p> : null}

@@ -3,14 +3,31 @@
 Uma caixa de entrada só, no painel do dono: **Reports → Livechat**, no formato do WhatsApp (lista de conversas à esquerda,
 conversa à direita, balões, não lidas). Duas origens:
 
-- **Chat do chamado (`web`)** — para urgências. Ao abrir um chamado de suporte com **"É urgente"**, o chamado vai com prioridade
-  alta e a conversa já nasce aberta, **não lida**, no Livechat (com "Urgente: <título>"), antes de o cliente escrever; o chamado do
-  painel ganha o botão **Abrir no Livechat**. Sem "urgente", o cliente pode clicar em **Iniciar chat ao vivo** na página do chamado e
-  a conversa nasce com a primeira mensagem. Está ligada ao chamado e só existe uma aberta por chamado. Só chamados de suporte
-  podem ser urgentes. O dono recebe um alerta no WhatsApp de alertas (no máximo um a cada 10 minutos por conversa).
+- **Chat ao vivo (`web`)** — para urgências. É um jeito de abrir o atendimento, escolhido na hora de criar o chamado (ver "Chat
+  ao vivo × chamado por escrito"). O chamado vai com prioridade alta e a conversa já nasce aberta e **não lida** no Livechat, com a
+  descrição como primeira mensagem do cliente; o chamado do painel aponta para o Livechat. O dono recebe um alerta no WhatsApp de
+  alertas (no máximo um a cada 10 minutos por conversa).
 - **WhatsApp oficial (`whatsapp`)** — o número oficial (instância `nextrotta-suporte`, separada da `nextrotta-alertas`). O que
   chega nele aparece no Livechat, o que o dono responde no painel sai por ele, e o que o dono digita no próprio celular também é
   guardado. Número de técnico ou empresa conhecidos vem com o nome e a empresa.
+
+## Chat ao vivo × chamado por escrito
+
+São dois tipos de atendimento separados, como Omni-Channel e Case no Salesforce (coluna `bug_reports.channel`: `chat` ou `case`,
+migração `0042`). Ao abrir um chamado de suporte o cliente escolhe **Chamado por escrito** (padrão) ou **Chat ao vivo (urgente)**.
+
+| | Chamado por escrito (`case`) | Chat ao vivo (`chat`) |
+|---|---|---|
+| Cliente | Descrição, conversa por escrito e "Responder" na página do chamado; **sem** janela de chat | Só a janela do chat; **sem** descrição separada nem "Responder" (a descrição é a primeira mensagem) |
+| Dono | Reports (listas Todos/Suporte/Bugs/Sugestões), conversa e notas no chamado | **Só no Livechat**; fora das listas de Reports; o chamado mostra um aviso e o botão "Abrir no Livechat" |
+| Encerra | O dono conclui o chamado (Estado → Resolvido) | O dono encerra no Livechat ou o cliente clica em "Encerrar chat"; isso conclui o chamado |
+| Mensagem final | "Olá! Seu chamado #N foi encerrado… é só abrir um novo chamado" na conversa do chamado + aviso no sistema | "Obrigado pelo seu contato!… inicie um novo chat ao vivo ou abra um chamado" no chat (e no WhatsApp, se houver número) |
+| Depois de encerrado | Se o cliente escrever de novo, reabre | **Não reabre pelo cliente**: aparece "Este chat foi encerrado" e o botão "Iniciar novo chat ao vivo" (`?novo=chat`) |
+
+A mensagem final é sempre mostrada ao dono num diálogo, já preenchida, para **editar ou encerrar sem mensagem** (`closingMessage`
+e `thanks`; textos padrão em `lib/livechat/rules.ts`: `chatClosingMessage`, `caseClosingMessage`). Um chat encerrado também pode ser
+reaberto pelo dono ("Reabrir"), o que reabre o chamado. A API recusa o que pertence ao outro tipo: resposta escrita num chat (só nota
+interna) e mensagem de chat num chamado por escrito. Chamados antigos que já tinham chat viraram `chat` na migração.
 
 **Espelho no WhatsApp do cliente (urgentes).** Ao marcar "urgente" o cliente pode informar o WhatsApp dele (opcional; lembrado no
 navegador; dá para informar, alterar ou remover depois na janela do chat). Com o número: as respostas que o dono dá no Livechat vão

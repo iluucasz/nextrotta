@@ -22,9 +22,8 @@ const POLL_IDLE_MS = 20_000;
  * Live chat inside a support ticket, for urgent matters: the customer writes here and the platform's team answers from the panel
  * (or from WhatsApp). The chat starts with the first message; closing it keeps the ticket. Plain polling, no sockets.
  */
-export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { ticketId: string; ticketClosed: boolean; startOpen?: boolean }) {
+export function LiveChatPanel({ ticketId, newChatHref, onStatusChange }: { ticketId: string; /** Where to start another live chat once this one has ended. */ newChatHref: string; /** Called when the chat opens or ends, so the page around it (the ticket status) can refresh. */ onStatusChange?: (status: 'open' | 'closed') => void }) {
   const [state, setState] = useState<ChatState | null>(null);
-  const [open, setOpen] = useState(startOpen);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -63,6 +62,12 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
   }, [refresh]);
 
   const active = Boolean(state?.conversation);
+  const status = state?.conversation?.status ?? null;
+  const lastStatus = useRef<string | null>(null);
+  useEffect(() => {
+    if (status && lastStatus.current && lastStatus.current !== status) onStatusChange?.(status);
+    lastStatus.current = status;
+  }, [status, onStatusChange]);
   const live = state?.conversation?.status === 'open';
   useEffect(() => {
     if (!active) return;
@@ -72,16 +77,11 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
     return () => clearInterval(timer);
   }, [active, live, refresh]);
 
-  // A conversation that already exists (or an answer that just arrived) opens the window by itself.
-  useEffect(() => {
-    if (state?.conversation && (state.conversation.status === 'open' || state.conversation.unread > 0)) setOpen(true);
-  }, [state?.conversation]);
-
   const count = state?.messages.length ?? 0;
   useEffect(() => {
     const list = listRef.current;
     if (list) list.scrollTop = list.scrollHeight;
-  }, [count, open]);
+  }, [count]);
 
   async function send() {
     const body = text.trim();
@@ -127,8 +127,6 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
     if (response.ok) apply((await response.json()) as ChatState, true);
   }
 
-  if (ticketClosed && !state?.conversation) return null;
-
   const closedChat = state?.conversation?.status === 'closed';
   let lastDay = '';
   return (
@@ -140,7 +138,7 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
           </span>
           <div>
             <h2 className="text-sm font-semibold leading-tight">Chat ao vivo</h2>
-            <p className="text-xs text-muted-foreground">{live ? 'Nossa equipe responde aqui, na hora que puder.' : 'Para urgências: fale agora com a nossa equipe.'}</p>
+            <p className="text-xs text-muted-foreground">{closedChat ? 'Este atendimento foi encerrado.' : 'Nossa equipe responde aqui, na hora que puder.'}</p>
           </div>
         </div>
         {live ? (
@@ -207,15 +205,7 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
         </div>
       ) : null}
 
-      {!open && !active ? (
-        <div className="px-4 py-4">
-          <Button type="button" onClick={() => setOpen(true)}>
-            <Headset className="h-4 w-4" />
-            Iniciar chat ao vivo
-          </Button>
-        </div>
-      ) : (
-        <>
+      <>
           <div ref={listRef} className="max-h-[22rem] min-h-40 space-y-2 overflow-y-auto px-4 py-4" role="log" aria-live="polite">
             {!count ? <p className="py-6 text-center text-sm text-muted-foreground">Escreva sua mensagem abaixo para chamar a equipe.</p> : null}
             {state?.messages.map((message) => {
@@ -241,6 +231,17 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
             })}
           </div>
 
+          {closedChat ? (
+            <div className="space-y-3 border-t border-border p-4 text-sm">
+              <p className="text-muted-foreground">Este chat foi encerrado. Se precisar de mais ajuda, inicie um novo chat ao vivo ou abra um chamado por escrito.</p>
+              <Button asChild>
+                <a href={newChatHref}>
+                  <Headset className="h-4 w-4" />
+                  Iniciar novo chat ao vivo
+                </a>
+              </Button>
+            </div>
+          ) : (
           <form
             className="border-t border-border p-3"
             onSubmit={(event) => {
@@ -248,7 +249,6 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
               void send();
             }}
           >
-            {closedChat ? <p className="mb-2 text-xs text-muted-foreground">Este chat foi encerrado. Se escrever de novo, ele é reaberto.</p> : null}
             {error ? (
               <p className="mb-2 text-xs text-destructive" role="alert">
                 {error}
@@ -275,8 +275,8 @@ export function LiveChatPanel({ ticketId, ticketClosed, startOpen = false }: { t
               </Button>
             </div>
           </form>
-        </>
-      )}
+          )}
+      </>
     </section>
   );
 }

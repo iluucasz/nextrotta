@@ -168,7 +168,7 @@ async function addMessage(input: {
 // ----- the web chat (inside a support ticket)
 
 /** The open chat of a ticket, started now when there is none (an urgent matter: the owner is alerted). */
-export async function startWebConversation(input: { organizationId: string; userId: string; ticketId: string; userName: string; /** An urgent ticket: the chat opens now, unread, so the owner sees it before the customer writes. */ urgentTitle?: string; /** The customer's WhatsApp (digits with 55): the owner's replies are mirrored there and what it answers comes back here. */ contactPhone?: string | null }) {
+export async function startWebConversation(input: { organizationId: string; userId: string; ticketId: string; userName: string; /** A chat ticket: the chat opens now with the customer's first message, so the owner sees it at once. */ opening?: { message: string }; /** The customer's WhatsApp (digits with 55): the owner's replies are mirrored there and what it answers comes back here. */ contactPhone?: string | null }) {
   const existing = await sql`SELECT id FROM livechat_conversations WHERE ticket_id = ${input.ticketId} AND channel = 'web' AND status = 'open'`;
   if (existing[0]) return getConversation(String(existing[0].id));
 
@@ -180,10 +180,8 @@ export async function startWebConversation(input: { organizationId: string; user
   `;
   const id = created[0] ? String(created[0].id) : String((await sql`SELECT id FROM livechat_conversations WHERE ticket_id = ${input.ticketId} AND channel = 'web' AND status = 'open'`)[0].id);
   if (created[0]) {
-    await addMessage({ conversationId: id, direction: 'in', kind: 'system', body: input.urgentTitle ? 'Chamado urgente aberto pelo cliente. A equipe foi avisada e responde por aqui.' : 'Chat ao vivo iniciado pelo cliente.' });
-    if (input.urgentTitle) {
-      await sql`UPDATE livechat_conversations SET unread_owner = 1, last_message_preview = ${previewOf(`Urgente: ${input.urgentTitle}`)}, last_message_at = NOW() WHERE id = ${id}`;
-    }
+    await addMessage({ conversationId: id, direction: 'in', kind: 'system', body: 'Chat ao vivo iniciado pelo cliente.' });
+    if (input.opening) await addMessage({ conversationId: id, direction: 'in', senderName: input.userName, body: cleanMessage(input.opening.message) });
   }
   return getConversation(id);
 }
@@ -198,6 +196,8 @@ export async function findWebConversation(ticketId: string): Promise<Conversatio
 export async function sendCustomerMessage(conversation: Conversation, userName: string, rawText: unknown) {
   const text = cleanMessage(rawText);
   if (!text) throw new PlatformError('Escreva a mensagem.');
+  // An ended chat is over (like a finished Omni-Channel session): a new one is started, the old one is not reopened by the customer.
+  if (conversation.status === 'closed') throw new PlatformError('Este chat foi encerrado. Para falar com a equipe de novo, inicie um novo chat ao vivo.', 409);
   const recent = await sql`SELECT COUNT(*)::int AS total FROM livechat_messages WHERE conversation_id = ${conversation.id} AND direction = 'in' AND kind <> 'system' AND created_at > NOW() - interval '1 minute'`;
   if (Number(recent[0].total) >= MAX_CUSTOMER_MESSAGES_PER_MINUTE) throw new PlatformError('Muitas mensagens em pouco tempo. Aguarde um instante.', 429);
 
@@ -223,13 +223,18 @@ export async function attachWaId(messageId: string, waId: string) {
 
 /** The customer closes the chat (the ticket stays). */
 export async function closeConversation(id: string, by: 'customer' | 'owner') {
-  const closed = await sql`UPDATE livechat_conversations SET status = 'closed', closed_at = NOW(), unread_owner = 0 WHERE id = ${id} AND status = 'open' RETURNING id`;
-  if (closed[0]) await addMessage({ conversationId: id, direction: by === 'owner' ? 'out' : 'in', kind: 'system', body: by === 'owner' ? 'Conversa encerrada pelo suporte.' : 'Conversa encerrada pelo cliente.' });
+  const closed = await sql`UPDATE livechat_conversations SET status = 'closed', closed_at = NOW(), unread_owner = 0 WHERE id = ${id} AND status = 'open' RETURNING id, ticket_id`;
+  if (closed[0]) {
+    await addMessage({ conversationId: id, direction: by === 'owner' ? 'out' : 'in', kind: 'system', body: by === 'owner' ? 'Conversa encerrada pelo suporte.' : 'Conversa encerrada pelo cliente.' });
+    // The chat is the whole attendance of its ticket: ending it concludes the ticket.
+    if (closed[0].ticket_id) await sql`UPDATE bug_reports SET status = 'resolved', resolved_at = NOW(), updated_at = NOW() WHERE id = ${closed[0].ticket_id} AND status NOT IN ('resolved', 'not_reproduced')`;
+  }
   return getConversation(id);
 }
 
 export async function reopenConversation(id: string) {
-  await sql`UPDATE livechat_conversations SET status = 'open', closed_at = NULL WHERE id = ${id}`;
+  const opened = await sql`UPDATE livechat_conversations SET status = 'open', closed_at = NULL WHERE id = ${id} RETURNING ticket_id`;
+  if (opened[0]?.ticket_id) await sql`UPDATE bug_reports SET status = 'investigating', resolved_at = NULL, updated_at = NOW() WHERE id = ${opened[0].ticket_id} AND status IN ('resolved', 'not_reproduced')`;
   return getConversation(id);
 }
 

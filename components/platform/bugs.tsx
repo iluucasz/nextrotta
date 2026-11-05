@@ -3,6 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, date, errorMessage, useResource } from './api';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { caseClosingMessage } from '@/lib/livechat/rules';
 import { Livechat } from './livechat';
 import { useNotify } from './notice';
 import {
@@ -32,6 +34,8 @@ export type BugRow = {
   type: ReportType;
   ticketNumber: number | null;
   supportCategory: SupportCategory | null;
+  /** 'case' = written support; 'chat' = a live chat, worked in the Livechat. */
+  channel?: 'case' | 'chat';
   organizationId: string;
   organizationName: string | null;
   userName: string | null;
@@ -309,6 +313,9 @@ function BugDetail({ id }: { id: string }) {
   );
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
+  // Concluding a written case asks for the goodbye message (the status waiting for that answer).
+  const [closing, setClosing] = useState<BugStatus | null>(null);
+  const [closingText, setClosingText] = useState('');
 
   if (detail.loading && !detail.data) return <Loading />;
   if (detail.error)
@@ -316,6 +323,7 @@ function BugDetail({ id }: { id: string }) {
 
   const { report, messages, chat } = detail.data!;
   const labels = reportStatusLabels(report.type ?? 'bug');
+  const isChat = report.channel === 'chat';
 
   async function run(action: () => Promise<unknown>, message: string) {
     setSaving(true);
@@ -384,29 +392,35 @@ function BugDetail({ id }: { id: string }) {
         </Panel>
         <Panel title="Andamento">
           <div className="nr-pad flex flex-col gap-4">
-            <label className="nr-field">
-              Estado
-              <select
-                value={report.status}
-                disabled={saving}
-                onChange={(event) =>
-                  void run(
-                    () =>
-                      api(`/bugs/${id}`, {
-                        method: 'PATCH',
-                        body: { status: event.target.value },
-                      }),
-                    'Estado atualizado.',
-                  )
-                }
-              >
-                {Object.entries(labels).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {isChat ? (
+              <p className="text-sm text-muted-foreground">
+                Este atendimento é um chat ao vivo: o andamento e o encerramento acontecem no Livechat.
+              </p>
+            ) : (
+              <label className="nr-field">
+                Estado
+                <select
+                  value={report.status}
+                  disabled={saving}
+                  onChange={(event) => {
+                    const value = event.target.value as BugStatus;
+                    const concluding = (value === 'resolved' || value === 'not_reproduced') && report.status !== value;
+                    if (concluding) {
+                      setClosingText(caseClosingMessage(report.ticketNumber));
+                      setClosing(value);
+                      return;
+                    }
+                    void run(() => api(`/bugs/${id}`, { method: 'PATCH', body: { status: value } }), 'Estado atualizado.');
+                  }}
+                >
+                  {Object.entries(labels).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
             <label className="nr-field">
               Prioridade
               <select
@@ -436,6 +450,15 @@ function BugDetail({ id }: { id: string }) {
           </div>
         </Panel>
       </div>
+      {isChat ? (
+        <Panel title="Chat ao vivo" description="A conversa, as respostas e o encerramento acontecem no Livechat.">
+          <div className="nr-pad">
+            <Link className="nr-btn primary" href={`/plataforma/reports?chat=${chat?.id ?? ''}`}>
+              Abrir no Livechat
+            </Link>
+          </div>
+        </Panel>
+      ) : (
       <Panel
         title="Conversa e anotações"
         description="As respostas aparecem para o usuário no sistema da empresa; as notas internas, só para você."
@@ -496,6 +519,40 @@ function BugDetail({ id }: { id: string }) {
           </div>
         </div>
       </Panel>
+      )}
+      {closing ? (
+        <Dialog open onOpenChange={(open) => !open && !saving && setClosing(null)}>
+          <DialogContent className="nr-dialog sm:max-w-xl">
+            <DialogTitle>Concluir o chamado</DialogTitle>
+            <DialogDescription>
+              O usuário recebe esta mensagem no chamado e um aviso no sistema. Edite se quiser, ou conclua sem mensagem.
+            </DialogDescription>
+            <label className="nr-field">
+              Mensagem de encerramento
+              <textarea rows={5} value={closingText} onChange={(event) => setClosingText(event.target.value)} />
+            </label>
+            <div className="nr-dialog-actions">
+              <button className="nr-btn" disabled={saving} onClick={() => setClosing(null)}>
+                Voltar
+              </button>
+              <button
+                className="nr-btn"
+                disabled={saving}
+                onClick={() => void run(async () => { await api(`/bugs/${id}`, { method: 'PATCH', body: { status: closing, closingMessage: '' } }); setClosing(null); }, 'Chamado concluído.')}
+              >
+                Concluir sem mensagem
+              </button>
+              <button
+                className="nr-btn primary"
+                disabled={saving || !closingText.trim()}
+                onClick={() => void run(async () => { await api(`/bugs/${id}`, { method: 'PATCH', body: { status: closing, closingMessage: closingText } }); setClosing(null); }, 'Chamado concluído e mensagem enviada.')}
+              >
+                Concluir e enviar mensagem
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </>
   );
 }
