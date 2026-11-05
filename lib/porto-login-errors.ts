@@ -5,12 +5,14 @@
  *
  * What the portal really answers (seen live, kept in porto_sync_log):
  *  - wrong data: qraLookup 200 with {"status":"invalid","message":"Erro ao realizar a consulta dos dados"}
- *  - after the password was changed: qraLookup 200 with an empty body
+ *  - password expired (05/11/2026): qraLookup 200 with an empty body and the portal opens the "ALTERAR SENHA" window
+ *    ("A sua senha expirou. Por favor escolha uma nova."); the same empty body was seen after a password change
  *  - right data: {"status":"success","data":{"qras":[{"codQRA":"..."}]}}
  */
 
 export type PortoLoginReason =
   | 'credentials_rejected'
+  | 'password_expired'
   | 'no_confirmation'
   | 'no_qra'
   | 'session_not_opened'
@@ -20,8 +22,10 @@ export type PortoLoginReason =
 
 export const PORTO_LOGIN_MESSAGES: Record<PortoLoginReason, string> = {
   credentials_rejected: 'O Porto não aceitou o CPF ou a senha. Se você trocou a senha no Portal do Prestador, atualize aqui em “Alterar”.',
+  password_expired:
+    'A senha do Porto expirou. Entre no Portal do Prestador, escolha uma nova senha e depois atualize aqui em “Alterar”.',
   no_confirmation:
-    'O Porto não confirmou o CPF e a senha. Confira em “Alterar” e teste de novo; se estiverem certos, o portal pode estar instável — tente em alguns minutos.',
+    'O Porto não confirmou o CPF e a senha. Se a senha expirou ou foi trocada no portal, atualize em “Alterar”; se estiver certa, o portal pode estar instável — tente em alguns minutos.',
   no_qra: 'O Porto aceitou a senha, mas esse CPF não tem QRA ativo. Confira o CPF em “Alterar”.',
   session_not_opened: 'O Porto aceitou o CPF e a senha, mas não abriu a sessão. O portal pode estar instável; tente de novo em alguns minutos.',
   blocked: 'O Porto bloqueou o acesso do robô por enquanto. Tente de novo mais tarde; se continuar, fale com o suporte.',
@@ -39,6 +43,8 @@ export type PortoLoginSignals = {
   qraStatus: number | null;
   qraBody: string;
   sessionStatus: number | null;
+  /** The login page is showing the portal's "your password expired" window. */
+  passwordExpired?: boolean;
 };
 
 /** Which of the situations above the portal's answers point to. */
@@ -46,6 +52,8 @@ export function classifyLoginFailure(signals: PortoLoginSignals): PortoLoginReas
   const { qraStatus, sessionStatus } = signals;
   const body = signals.qraBody.trim();
 
+  // The only signal that names the cause: the portal itself says so on the page.
+  if (signals.passwordExpired) return 'password_expired';
   if (qraStatus === 403 || qraStatus === 429 || sessionStatus === 403 || sessionStatus === 429) return 'blocked';
   if (/incapsula|imperva|request unsuccessful/i.test(body)) return 'blocked';
   if (qraStatus === null || qraStatus >= 500) return 'no_answer';

@@ -21,6 +21,7 @@ test('classifyLoginFailure: each answer of the portal points to its own cause', 
   // Seen live: wrong data, and the empty body after the password was changed.
   assert.equal(classify(200, '{"status":"invalid","message":"Erro ao realizar a consulta dos dados"}'), 'credentials_rejected');
   assert.equal(classify(200, ''), 'no_confirmation');
+  assert.equal(e.classifyLoginFailure({ qraStatus: 200, qraBody: '', sessionStatus: 200, passwordExpired: true }), 'password_expired');
   assert.equal(classify(200, '{"status":"success","data":{"qras":[{"codQRA":"1"}]}}'), 'session_not_opened');
   assert.equal(classify(200, '{"status":"success","data":{"qras":[]}}'), 'no_qra');
   assert.equal(classify(null, ''), 'no_answer');

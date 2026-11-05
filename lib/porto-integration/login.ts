@@ -114,7 +114,13 @@ export async function loginToPorto(page: Page, credentials: { cpf: string; passw
     // The sentence is what the company reads; the trace after it stays in the history for support
     // (screens cut it off with describePortoError).
     const diagnostics = `url=${page.url()} qraLookup(status=${qraStatus}, body="${qraBody.slice(0, 200)}") modalVisible=${modalVisible} sessionCheck(status=${session.status}, body="${session.bodySnippet}")`;
-    const reason = classifyLoginFailure({ qraStatus, qraBody, sessionStatus: session.status });
+    // An expired password makes the portal open an "ALTERAR SENHA" window ("A sua senha expirou…") instead of logging in.
+    const passwordExpired = await page
+      .locator('body')
+      .innerText({ timeout: 3000 })
+      .then((text) => /senha expirou/i.test(text))
+      .catch(() => false);
+    const reason = classifyLoginFailure({ qraStatus, qraBody, sessionStatus: session.status, passwordExpired });
     throw new PortoLoginError(buildLoginFailureMessage(reason, diagnostics));
   }
 }
