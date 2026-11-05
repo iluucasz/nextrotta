@@ -73,6 +73,8 @@ export const BUG_PRIORITY_LABELS: Record<BugPriority, string> = {
   critical: 'Crítica',
 };
 
+const OPEN_STATES = 'Em aberto';
+
 /** Inbox table, also used inside an organization's detail page. */
 export function BugTable({
   bugs,
@@ -104,7 +106,11 @@ export function BugTable({
         {
           key: 'statusText',
           label: 'Estado',
+          // Open first: what still needs an answer (new or being handled), whatever the type of the report.
+          defaultValue: OPEN_STATES,
+          match: (row, value) => (value === OPEN_STATES ? row.status === 'new' || row.status === 'investigating' : row.statusText === value),
           options: [
+            OPEN_STATES,
             ...new Set([
               ...Object.values(BUG_STATUS_LABELS),
               ...Object.values(reportStatusLabels('suggestion')),
