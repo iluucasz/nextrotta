@@ -15,7 +15,9 @@ import {
 import { evolutionServer } from '../whatsapp/store';
 import { PlatformError } from '../platform/errors';
 import { getSupportContact } from '../support-contact';
-import { chatWelcomeMessage, mirroredText, ownerAlertKey, previewOf } from './rules';
+import { AUTO_SENDS_PER_HOUR, AWAY_REPEAT_HOURS, describeHours, firstName, isWithinBusinessHours, MEDIA_REPEAT_HOURS, planInboundReplies, renderAutoMessage, ticketVariable, type AutoKey } from './auto-messages';
+import { getAutoMessage, loadAutoMessages } from './auto-store';
+import { mirroredText, ownerAlertKey, previewOf, type InboundMessage } from './rules';
 import { saveChatFile } from './files';
 import { attachWaId, closeConversation, getConversation, storeOwnerAttachment, storeOwnerMessage, type Conversation } from './store';
 
@@ -226,7 +228,9 @@ export async function sendOwnerAttachment(conversationId: string, file: { buffer
 
 /** The team's first message in a live chat, stored in the chat at once (it does not move the conversation in the inbox). */
 export async function storeChatWelcome(conversation: Conversation, userName: string | null) {
-  return storeOwnerMessage(conversation.id, chatWelcomeMessage({ name: userName, ticketNumber: conversation.ticketNumber, channel: 'chat' }), { silent: true });
+  const text = await getAutoMessage('chat_welcome', { nome: firstName(userName), chamado: ticketVariable(conversation.ticketNumber) });
+  if (!text) return null; // the owner turned this message off
+  return storeOwnerMessage(conversation.id, text, { silent: true, autoKey: 'chat_welcome' });
 }
 
 /** A few welcomes per hour per company may go to a WhatsApp number the customer typed: nobody can use the chat to message strangers. */
@@ -238,9 +242,11 @@ export async function mirrorChatWelcome(conversation: Conversation, userName: st
     if (!conversation.contactPhone) return 'skipped';
     const recent = await sql`SELECT COUNT(*)::int AS n FROM livechat_conversations WHERE organization_id = ${conversation.organizationId} AND channel = 'web' AND contact_phone IS NOT NULL AND created_at > NOW() - interval '1 hour'`;
     if (Number(recent[0].n) > WELCOMES_ON_WHATSAPP_PER_HOUR) return 'skipped';
+    const text = await getAutoMessage('chat_welcome_whatsapp', { nome: firstName(userName), chamado: ticketVariable(conversation.ticketNumber) });
+    if (!text) return 'skipped'; // the owner turned this message off
     const server = evolutionServer();
     if (!server) return 'failed';
-    const sent = await sendEvolutionText({ ...server, instance: LIVECHAT_INSTANCE }, conversation.contactPhone, mirroredText(conversation.ticketNumber, chatWelcomeMessage({ name: userName, ticketNumber: conversation.ticketNumber, channel: 'whatsapp' })));
+    const sent = await sendEvolutionText({ ...server, instance: LIVECHAT_INSTANCE }, conversation.contactPhone, mirroredText(conversation.ticketNumber, text));
     return sent.ok ? 'sent' : 'failed';
   } catch (error) {
     console.error('[livechat] welcome on WhatsApp failed:', error);
@@ -280,3 +286,74 @@ export async function alertOwnerOfChat(conversation: Conversation, userName: str
 
 /** What starts the alert the official number sends to itself (its echo through the webhook is ignored). */
 export const ALERT_PREFIX = '🚨 *NextRotta —';
+
+// ------------------------------------------------------------------------------------------- automatic replies on WhatsApp
+
+/** Sends one automatic message to the customer's WhatsApp and keeps it in the conversation, marked as automatic. */
+async function sendAutoReply(conversationId: string, phone: string, key: AutoKey, text: string): Promise<boolean> {
+  const server = evolutionServer();
+  if (!server) return false;
+  const sent = await sendEvolutionText({ ...server, instance: LIVECHAT_INSTANCE }, phone, text);
+  if (!sent.ok) return false;
+  // Silent: an automatic answer must not make the conversation look attended (unread and preview stay as the customer left them).
+  await storeOwnerMessage(conversationId, text, { silent: true, autoKey: key, waMessageId: sent.messageId ?? null });
+  return true;
+}
+
+/**
+ * The automatic replies to a message the customer just sent on WhatsApp (a greeting for a new conversation, the away notice
+ * outside the hours, a note about a photo or audio). Never throws, and never answers: the team's own messages, a number that is in
+ * a web chat (it has its own welcome), or anything once the hourly ceiling of automatic messages is reached. Returns what was sent.
+ */
+export async function autoReplyToInbound(message: InboundMessage, storedMessageId: string, now: Date = new Date()): Promise<AutoKey[]> {
+  if (message.fromMe) return [];
+  try {
+    const rows = await sql`
+      SELECT m.conversation_id, c.channel, c.contact_phone, c.contact_name
+      FROM livechat_messages m JOIN livechat_conversations c ON c.id = m.conversation_id
+      WHERE m.id = ${storedMessageId}
+    `;
+    const row = rows[0];
+    if (!row || row.channel !== 'whatsapp' || !row.contact_phone) return [];
+    const conversationId = String(row.conversation_id);
+
+    const { messages, hours } = await loadAutoMessages();
+    const enabled = (key: AutoKey) => Boolean(messages.find((entry) => entry.key === key)?.enabled);
+    if (!enabled('whatsapp_greeting') && !enabled('whatsapp_away') && !enabled('whatsapp_media')) return [];
+
+    const [counts] = await sql`
+      SELECT
+        (SELECT COUNT(*)::int FROM livechat_messages WHERE conversation_id = ${conversationId} AND direction = 'in') AS inbound,
+        (SELECT COUNT(*)::int FROM livechat_messages WHERE conversation_id = ${conversationId} AND auto_key = 'whatsapp_away' AND created_at > NOW() - make_interval(hours => ${AWAY_REPEAT_HOURS})) AS away,
+        (SELECT COUNT(*)::int FROM livechat_messages WHERE conversation_id = ${conversationId} AND auto_key = 'whatsapp_media' AND created_at > NOW() - make_interval(hours => ${MEDIA_REPEAT_HOURS})) AS media,
+        (SELECT COUNT(*)::int FROM livechat_messages m2 JOIN livechat_conversations c2 ON c2.id = m2.conversation_id WHERE c2.channel = 'whatsapp' AND m2.auto_key IS NOT NULL AND m2.created_at > NOW() - interval '1 hour') AS last_hour
+    `;
+    let budget = AUTO_SENDS_PER_HOUR - Number(counts.last_hour);
+    if (budget <= 0) return [];
+
+    const plan = planInboundReplies({
+      first: Number(counts.inbound) === 1,
+      media: message.media,
+      withinHours: isWithinBusinessHours(hours, now),
+      enabled: { whatsapp_greeting: enabled('whatsapp_greeting'), whatsapp_away: enabled('whatsapp_away'), whatsapp_media: enabled('whatsapp_media') },
+      awayRecently: Number(counts.away) > 0,
+      mediaRecently: Number(counts.media) > 0,
+    });
+
+    const name = firstName((row.contact_name as string | null) ?? message.name);
+    const sent: AutoKey[] = [];
+    for (const key of plan) {
+      if (budget <= 0) break;
+      const entry = messages.find((candidate) => candidate.key === key)!;
+      const text = renderAutoMessage(entry.text, { nome: name, horario: describeHours(hours) });
+      if (await sendAutoReply(conversationId, String(row.contact_phone), key, text)) {
+        sent.push(key);
+        budget -= 1;
+      }
+    }
+    return sent;
+  } catch (error) {
+    console.error('[livechat] automatic reply failed:', error);
+    return [];
+  }
+}

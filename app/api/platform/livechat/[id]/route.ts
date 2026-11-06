@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { chatClosingMessage, cleanMessage } from '@/lib/livechat/rules';
+import { firstName, ticketVariable } from '@/lib/livechat/auto-messages';
+import { getAutoMessage } from '@/lib/livechat/auto-store';
+import { cleanMessage } from '@/lib/livechat/rules';
 import { getConversation, getMessages, markReadByOwner, reopenConversation, setUrgent } from '@/lib/livechat/store';
 import { endConversation, sendOwnerReply } from '@/lib/livechat/whatsapp';
 import { PlatformError } from '@/lib/platform/errors';
@@ -46,7 +48,8 @@ export async function PATCH(request: NextRequest, context: Context) {
     let whatsapp: 'sent' | 'failed' | 'skipped' = 'skipped';
     let whatsappError: string | null = null;
     if (body.status === 'closed') {
-      const thanks = body.thanks === undefined ? chatClosingMessage(current.channel) : cleanMessage(body.thanks) || null;
+      // Without a text of its own, the closing is the one set in Mensagens automáticas (none when the owner turned it off).
+      const thanks = body.thanks === undefined ? await getAutoMessage(current.channel === 'web' ? 'chat_closing_web' : 'chat_closing_whatsapp', { nome: firstName(current.userName ?? current.contactName), chamado: ticketVariable(current.ticketNumber) }) : cleanMessage(body.thanks) || null;
       const ended = await endConversation(id, 'owner', thanks);
       whatsapp = ended.whatsapp;
       whatsappError = ended.whatsappError ?? null;

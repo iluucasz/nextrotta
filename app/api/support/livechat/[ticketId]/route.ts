@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authorizeCustomer, chatFailure as failure, conversationView, forCustomer } from '@/lib/livechat/customer-access';
-import { chatClosingMessage, cleanMessage } from '@/lib/livechat/rules';
+import { firstName, ticketVariable } from '@/lib/livechat/auto-messages';
+import { getAutoMessage } from '@/lib/livechat/auto-store';
+import { cleanMessage } from '@/lib/livechat/rules';
 import { alertOwnerOfChat, endConversation } from '@/lib/livechat/whatsapp';
 import { findWebConversation, getMessages, markReadByCustomer, sendCustomerMessage, setConversationPhone, startWebConversation } from '@/lib/livechat/store';
 import { normalizePhone } from '@/lib/whatsapp/phone';
@@ -45,7 +47,7 @@ export async function POST(request: NextRequest, context: Context) {
 
     if (body.action === 'close') {
       const existing = await findWebConversation(ticketId);
-      if (existing?.status === 'open') await endConversation(existing.id, 'customer', chatClosingMessage('web'));
+      if (existing?.status === 'open') await endConversation(existing.id, 'customer', await getAutoMessage('chat_closing_web', { nome: firstName(existing.userName), chamado: ticketVariable(existing.ticketNumber) }));
       const after = await findWebConversation(ticketId);
       return NextResponse.json({ conversation: conversationView(after), messages: after ? (await getMessages(after.id)).map(forCustomer) : [] });
     }

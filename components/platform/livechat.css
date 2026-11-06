@@ -109,3 +109,45 @@
 .lc-pending small { font-size: 12px; color: #6b7c77; }
 .lc-pending button { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; color: #6b7c77; }
 .lc-pending button:hover { background: #eef2ef; }
+
+.lc-auto { display: block; margin-top: 3px; font-size: 11px; font-style: normal; color: #6f7f78; letter-spacing: .2px; }
+
+/* Mensagens automáticas (Reports): one card per message. Everything under .am-root. */
+.am-root { display: grid; gap: 28px; max-width: 1040px; }
+.am-group h2 { font-size: 13px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; color: #5d6d65; margin: 0 0 12px; }
+.am-cards { display: grid; gap: 14px; }
+.am-card { background: #fff; border: 1px solid #e5ebe7; border-radius: 12px; padding: 16px 18px; display: grid; gap: 12px; min-width: 0; }
+.am-card.off { background: #fafbfa; }
+.am-card.off .am-edit textarea, .am-card.off .am-bubble { opacity: .6; }
+.am-card header { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.am-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.am-title strong { font-size: 16px; font-weight: 650; }
+.am-help { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 50%; color: #6f7f78; }
+.am-help:hover, .am-help[aria-expanded=true] { background: #e8f3ed; color: #147d63; }
+.am-helptext { margin: -4px 0 0; padding: 10px 12px; background: #f3f8f5; border-radius: 8px; font-size: 14px; line-height: 1.45; color: #3f524a; }
+.am-switch { display: inline-flex; align-items: center; gap: 8px; font-size: 14px; color: #3f524a; cursor: pointer; }
+.am-switch input { appearance: none; width: 38px; height: 22px; border-radius: 999px; background: #c5d0ca; position: relative; transition: background .15s; cursor: pointer; flex-shrink: 0; }
+.am-switch input::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; box-shadow: 0 1px 2px #0003; }
+.am-switch input:checked { background: var(--lc-wa, #25a56a); }
+.am-switch input:checked::after { transform: translateX(16px); }
+.am-switch input:focus-visible { outline: 2px solid #147d63; outline-offset: 2px; }
+.am-body { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.am-edit { display: grid; gap: 8px; min-width: 0; }
+.am-edit textarea { width: 100%; resize: vertical; min-height: 120px; padding: 10px 12px; border: 1px solid #d5ded9; border-radius: 10px; font-size: 14.5px; line-height: 1.45; background: #fff; }
+.am-edit textarea:focus { outline: 2px solid #147d6340; border-color: #147d63; }
+.am-vars { display: flex; gap: 6px; flex-wrap: wrap; }
+.am-vars button { padding: 3px 10px; border-radius: 999px; background: #eef4f1; color: #0f6a52; font-size: 13px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.am-vars button:hover { background: #dcf3e7; }
+.am-preview { display: grid; gap: 6px; padding: 12px; background: var(--lc-bg, #efeae2); border-radius: 10px; min-width: 0; }
+.am-preview small { font-size: 12px; color: #6f7f78; }
+.am-bubble { background: #d9fdd3; border-radius: 10px; border-top-right-radius: 2px; padding: 8px 11px; font-size: 14.5px; line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; box-shadow: 0 1px 1px #0000001a; justify-self: end; max-width: 100%; }
+.am-hours { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 12px; background: #f6f9f7; border-radius: 10px; font-size: 14px; }
+.am-hours > span { font-weight: 600; }
+.am-hours label { display: inline-flex; align-items: center; gap: 6px; }
+.am-hours input[type=time] { padding: 5px 8px; border: 1px solid #d5ded9; border-radius: 8px; background: #fff; }
+.am-hours small { color: #6f7f78; }
+.am-days { display: inline-flex; gap: 4px; }
+.am-days button { width: 30px; height: 30px; border-radius: 50%; background: #e9eeeb; color: #5d6d65; font-size: 13px; font-weight: 600; }
+.am-days [aria-pressed=true] { background: var(--lc-wa, #25a56a); color: #fff; }
+.am-card footer { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 760px) { .am-body { grid-template-columns: minmax(0, 1fr); } .am-card { padding: 14px; } }

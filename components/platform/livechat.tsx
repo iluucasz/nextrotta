@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowLeft, Building2, CheckCheck, FileText, Headset, LoaderCircle, MessageCircle, Paperclip, QrCode, Search, Send, Ticket, Unplug, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { firstName, renderAutoMessage, ticketVariable, type ResolvedAutoMessage } from '@/lib/livechat/auto-messages';
 import { ATTACHMENT_TYPES, attachmentProblem, chatClosingMessage, isImageType } from '@/lib/livechat/rules';
 import { api, errorMessage } from './api';
 import { useNotify } from './notice';
@@ -27,10 +28,23 @@ type Conversation = {
   lastMessageAt: string;
   lastMessagePreview: string | null;
 };
-type Message = { id: string; direction: 'in' | 'out'; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; attachment: { id: string; fileName: string; contentType: string; size: number } | null; createdAt: string };
+type Message = { id: string; direction: 'in' | 'out'; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; autoKey?: string | null; attachment: { id: string; fileName: string; contentType: string; size: number } | null; createdAt: string };
 const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 const ACCEPT = Object.keys(ATTACHMENT_TYPES).join(',');
 type WhatsAppStatus = { serverConfigured: boolean; instanceName: string; created: boolean; state: 'not_created' | 'connected' | 'connecting' | 'disconnected' | 'unknown'; number: string | null; webhookUrl: string | null; error: string | null };
+
+/** The closing thank-you as set in Mensagens automáticas, ready to edit ("" when the owner turned it off). */
+async function closingPrefill(conversation: Conversation): Promise<string> {
+  try {
+    const data = await api<{ messages: ResolvedAutoMessage[] }>('/livechat/auto-messages');
+    const entry = data.messages.find((message) => message.key === (conversation.channel === 'web' ? 'chat_closing_web' : 'chat_closing_whatsapp'));
+    if (!entry) return chatClosingMessage(conversation.channel);
+    if (!entry.enabled) return '';
+    return renderAutoMessage(entry.text, { nome: firstName(conversation.userName ?? conversation.contactName), chamado: ticketVariable(conversation.ticketNumber) });
+  } catch {
+    return chatClosingMessage(conversation.channel);
+  }
+}
 
 const TZ = 'America/Sao_Paulo';
 const clock = (value: string) => new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' }).format(new Date(value));
@@ -484,8 +498,9 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
             <button
               className="nr-btn"
               onClick={() => {
-                setThanks(chatClosingMessage(conversation.channel));
+                setThanks('');
                 setEnding(true);
+                void closingPrefill(conversation).then(setThanks);
               }}
             >
               <CheckCheck size={16} />
@@ -573,6 +588,7 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
                       )
                     ) : null}
                     {message.body ? <span className="lc-text">{message.body}</span> : null}
+                    {message.autoKey ? <span className="lc-auto">Mensagem automática</span> : null}
                     <time>{clock(message.createdAt)}</time>
                   </div>
                 </div>

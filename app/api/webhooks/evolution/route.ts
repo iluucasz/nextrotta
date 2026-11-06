@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { LIVECHAT_INSTANCE, webhookTokenMatches } from '@/lib/livechat/whatsapp';
+import { autoReplyToInbound, LIVECHAT_INSTANCE, webhookTokenMatches } from '@/lib/livechat/whatsapp';
 import { parseEvolutionWebhook } from '@/lib/livechat/rules';
 import { storeWhatsAppMessage } from '@/lib/livechat/store';
 import { getSupportContact } from '@/lib/support-contact';
@@ -33,7 +33,12 @@ export async function POST(request: NextRequest) {
     for (const event of parseEvolutionWebhook(payload)) {
       if (event.kind !== 'message') continue;
       if (own && samePhone(event.phone, own)) continue;
-      if (await storeWhatsAppMessage(event)) stored += 1;
+      const saved = await storeWhatsAppMessage(event);
+      if (saved) {
+        stored += 1;
+        // Greeting, away notice, note about files: only for what the customer wrote, and it never fails the webhook.
+        await autoReplyToInbound(event, saved.id);
+      }
     }
     return NextResponse.json({ received: true, stored });
   } catch (error) {

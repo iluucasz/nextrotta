@@ -3,7 +3,8 @@ import { sql } from '../db';
 import { after } from 'next/server';
 import { alertOwnerOfChat, mirrorChatWelcome, storeChatWelcome } from '../livechat/whatsapp';
 import { startWebConversation } from '../livechat/store';
-import { caseClosingMessage } from '../livechat/rules';
+import { ticketVariable } from '../livechat/auto-messages';
+import { getAutoMessage } from '../livechat/auto-store';
 import { notifyOrganization } from '../notifications';
 import { normalizePhone } from '../whatsapp/phone';
 import { isUuid, PlatformError, type Actor } from './errors';
@@ -300,7 +301,7 @@ export async function updateBugReport(
   `;
   // Concluding a written case says goodbye: thanks, and how to ask again (the owner can edit or skip it: closingMessage "").
   if (closing && report.channel === 'case') {
-    const wanted = typeof input.closingMessage === 'string' ? input.closingMessage.trim() : caseClosingMessage(report.ticketNumber);
+    const wanted = typeof input.closingMessage === 'string' ? input.closingMessage.trim() : (await getAutoMessage('case_closing', { chamado: ticketVariable(report.ticketNumber) })) ?? '';
     if (wanted) await addBugMessage(id, { userId: actor.id, fromOwner: true }, { text: wanted });
   }
   await recordAudit({

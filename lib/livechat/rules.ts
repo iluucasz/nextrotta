@@ -1,4 +1,5 @@
 // No dependencies on the database or the framework: used by the routes, the webhook and the tests.
+import { autoDefinition, firstName, renderAutoMessage, ticketVariable } from './auto-messages';
 
 /** Longest message accepted in the chat (the WhatsApp limit is far higher; a chat message is short). */
 export const MAX_MESSAGE_LENGTH = 2000;
@@ -9,15 +10,14 @@ export const OWNER_ALERT_WINDOW_MS = 10 * 60 * 1000;
 
 export const SUPPORT_SENDER = 'Suporte NextRotta';
 
-/** The thank-you that ends a live chat (the owner can edit it before ending). */
+/** The default thank-you that ends a live chat (the owner can change it in Reports → Mensagens automáticas, or edit it before ending). */
 export function chatClosingMessage(channel: 'web' | 'whatsapp'): string {
-  const next = channel === 'web' ? 'inicie um novo chat ao vivo ou abra um chamado pelo sistema' : 'escreva de novo para este número ou abra um chamado pelo sistema';
-  return `Obrigado pelo seu contato! Foi um prazer ajudar. Estamos encerrando este atendimento, mas, se precisar de mais alguma coisa, é só chamar: ${next}. Até a próxima! 😊`;
+  return renderAutoMessage(autoDefinition(channel === 'web' ? 'chat_closing_web' : 'chat_closing_whatsapp').defaultText);
 }
 
-/** The message that closes a written support case. */
+/** The default message that closes a written support case. */
 export function caseClosingMessage(ticketNumber: number | null): string {
-  return `Olá! Seu chamado${ticketNumber ? ` #${ticketNumber}` : ''} foi encerrado. Agradecemos o seu contato! Se ainda precisar de ajuda, é só abrir um novo chamado pelo sistema que a nossa equipe responde. 😊`;
+  return renderAutoMessage(autoDefinition('case_closing').defaultText, { chamado: ticketVariable(ticketNumber) });
 }
 
 // ----------------------------------------------------------------------------------------------------------- attachments
@@ -72,12 +72,9 @@ export const attachmentPreview = (fileName: string) => `📎 ${fileName}`;
 
 // ------------------------------------------------------------------------------------------------------- the first message
 
-/** What the team's first message says when a live chat opens: who answers, that it is coming, and what to do meanwhile. */
+/** The default first message of the team when a live chat opens: who answers, that it is coming, and what to do meanwhile. */
 export function chatWelcomeMessage(input: { name: string | null; ticketNumber: number | null; channel: 'chat' | 'whatsapp' }): string {
-  const first = (input.name ?? '').trim().split(/\s+/)[0];
-  const where = input.channel === 'whatsapp' ? 'por aqui, no WhatsApp, e no chat do sistema' : 'por aqui';
-  const attach = input.channel === 'whatsapp' ? 'Se tiver um print ou arquivo, pode mandar por aqui mesmo.' : 'Se tiver um print ou arquivo, é só anexar aqui no chat.';
-  return `Olá${first ? `, ${first}` : ''}! Recebemos o seu chamado urgente${input.ticketNumber ? ` #${input.ticketNumber}` : ''}. Em instantes um de nossos atendentes vai falar com você ${where}. Enquanto isso, pode ir adiantando os detalhes do que precisa. ${attach} 😊`;
+  return renderAutoMessage(autoDefinition(input.channel === 'whatsapp' ? 'chat_welcome_whatsapp' : 'chat_welcome').defaultText, { nome: firstName(input.name), chamado: ticketVariable(input.ticketNumber) });
 }
 
 /** What starts every reply the owner's panel mirrors to the customer's WhatsApp (so its echo is recognized and not stored twice). */

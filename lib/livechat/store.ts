@@ -61,6 +61,8 @@ function serializeMessage(row: Record<string, unknown>) {
     senderName: (row.sender_name as string | null) ?? null,
     body: String(row.body),
     kind: row.kind as 'text' | 'media' | 'system',
+    /** Which automatic message this is (null = written by a person). */
+    autoKey: (row.auto_key as string | null) ?? null,
     /** A file sent in this message (kept in the private store; read back only through the system). */
     attachment: row.attachment_id
       ? { id: String(row.attachment_id), fileName: String(row.file_name), contentType: String(row.content_type), size: Number(row.file_size) }
@@ -113,7 +115,7 @@ export async function getConversation(id: string): Promise<Conversation> {
 export async function getMessages(conversationId: string, after?: string | null): Promise<ChatMessage[]> {
   const since = after && !Number.isNaN(new Date(after).getTime()) ? new Date(after).toISOString() : null;
   const rows = await sql`
-    SELECT m.id, m.direction, m.sender_name, m.body, m.kind, m.created_at,
+    SELECT m.id, m.direction, m.sender_name, m.body, m.kind, m.auto_key, m.created_at,
            a.id AS attachment_id, a.file_name, a.content_type, a.file_size
     FROM livechat_messages m
     LEFT JOIN livechat_attachments a ON a.message_id = m.id
@@ -150,14 +152,16 @@ async function addMessage(input: {
   attachment?: SavedFile & { organizationId: string | null; counted: boolean };
   /** Stored in the chat without touching the list (preview, unread): the team's automatic first message. */
   silent?: boolean;
+  /** Marks the message as one of the automatic messages (lib/livechat/auto-messages.ts). */
+  autoKey?: string | null;
 }): Promise<ChatMessage | null> {
   const kind = input.kind ?? 'text';
   const at = (input.at ?? new Date()).toISOString();
   const inserted = await sql`
-    INSERT INTO livechat_messages (conversation_id, direction, sender_name, body, kind, wa_message_id, created_at)
-    VALUES (${input.conversationId}, ${input.direction}, ${input.senderName ?? null}, ${input.body}, ${kind}, ${input.waMessageId ?? null}, ${at})
+    INSERT INTO livechat_messages (conversation_id, direction, sender_name, body, kind, wa_message_id, created_at, auto_key)
+    VALUES (${input.conversationId}, ${input.direction}, ${input.senderName ?? null}, ${input.body}, ${kind}, ${input.waMessageId ?? null}, ${at}, ${input.autoKey ?? null})
     ON CONFLICT (wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
-    RETURNING id, direction, sender_name, body, kind, created_at
+    RETURNING id, direction, sender_name, body, kind, auto_key, created_at
   `;
   if (!inserted[0]) return null;
   let attachment: ChatMessage['attachment'] = null;
@@ -294,8 +298,8 @@ export async function setUrgent(id: string, urgent: boolean) {
 // ----- the owner's answers
 
 /** The owner's message, stored once it has been delivered (the WhatsApp channel passes how it was sent). */
-export async function storeOwnerMessage(conversationId: string, text: string, options: { senderName?: string; waMessageId?: string | null; silent?: boolean } = {}) {
-  return addMessage({ conversationId, direction: 'out', senderName: options.senderName ?? SUPPORT_SENDER, body: text, waMessageId: options.waMessageId ?? null, silent: options.silent });
+export async function storeOwnerMessage(conversationId: string, text: string, options: { senderName?: string; waMessageId?: string | null; silent?: boolean; autoKey?: string | null } = {}) {
+  return addMessage({ conversationId, direction: 'out', senderName: options.senderName ?? SUPPORT_SENDER, body: text, waMessageId: options.waMessageId ?? null, silent: options.silent, autoKey: options.autoKey ?? null });
 }
 
 /** The team's file (with an optional text): kept in the company's folder but not charged to its plan. */

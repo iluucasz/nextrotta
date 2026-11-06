@@ -53,6 +53,24 @@ Livechat), que aparece no celular que guarda o número. O eco dessa mensagem no 
 ele mesmo nunca viram conversa). Uma vez por conversa e janela de 10 minutos. Falta provar com o número real que o WhatsApp entrega
 uma mensagem para o próprio número (foi testado só com o Evolution simulado).
 
+## Mensagens automáticas
+
+Reports → **Mensagens automáticas** (só admins editam; o atendente não vê a aba). Cada mensagem tem liga/desliga, texto com variáveis (`{nome}`, `{chamado}`, `{horario}`; as que faltam somem com a pontuação), prévia e "Restaurar padrão". Só o que o admin mudou fica no banco (`livechat_auto_messages`, migração `0045`; `NULL` = padrão do código em `lib/livechat/auto-messages.ts`); as mensagens enviadas ficam marcadas (`livechat_messages.auto_key`, "Mensagem automática" no chat).
+
+| Mensagem | Quando | Padrão |
+|---|---|---|
+| Chat começa (no sistema) | cliente abre um chat ao vivo | ligada (já existia) |
+| Chat começa (cópia no WhatsApp do cliente) | o mesmo, no número que o cliente informou | ligada (já existia) |
+| Chat termina (no sistema) / Conversa do WhatsApp termina | ao encerrar (o painel traz o texto pronto para editar) | ligadas (já existiam) |
+| Chamado por escrito concluído | ao concluir Suporte/Bug/Sugestão | ligada (já existia) |
+| **Primeira mensagem no WhatsApp** | alguém escreve para o número oficial sem conversa aberta | **desligada** |
+| **Fora do horário** | mensagem no WhatsApp fora do horário (Brasília; padrão seg–sex 9h–18h, editável no cartão) | **desligada** |
+| **Foto, áudio ou arquivo** | chega mídia no WhatsApp (o painel só mostra aviso) | **desligada** |
+
+Regras de envio no WhatsApp (`autoReplyToInbound` em `lib/livechat/whatsapp.ts`, chamada pelo webhook): só responde ao que o cliente escreveu (nunca à equipe, nunca a quem está num chat do sistema); a saudação vai uma vez por conversa; fora do horário o aviso **substitui** a saudação (no máximo 1 a cada 6 h por conversa); o aviso de arquivo, 1 por hora por conversa; teto de 40 automáticas por hora no total (laço com outro robô nunca dispara); se o Evolution falhar nada é registrado como enviado. A resposta automática não zera o "não lido" nem muda a prévia da lista. Desligada, uma mensagem não é enviada (o painel não preenche o texto de encerramento).
+
+Teste: `node scripts/test-livechat-auto.cjs`.
+
 ## Anexos
 
 O cliente pode **anexar um arquivo (clipe) ou colar um print (Ctrl+V)** no chat; o dono também anexa nas respostas. Vale para o chat ao

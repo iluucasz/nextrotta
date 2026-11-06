@@ -4,7 +4,10 @@ import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { api, date, errorMessage, useResource } from './api';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { renderAutoMessage, ticketVariable, type ResolvedAutoMessage } from '@/lib/livechat/auto-messages';
 import { caseClosingMessage } from '@/lib/livechat/rules';
+import { AutoMessages } from './auto-messages';
+import { useIsOwner } from './role';
 import { Livechat } from './livechat';
 import { useNotify } from './notice';
 import {
@@ -205,9 +208,23 @@ export function BugTable({
   );
 }
 
+/** The closing of a written case as set in Mensagens automáticas, ready to edit ("" when the owner turned it off). */
+async function casePrefill(ticketNumber: number | null): Promise<string> {
+  try {
+    const data = await api<{ messages: ResolvedAutoMessage[] }>('/livechat/auto-messages');
+    const entry = data.messages.find((message) => message.key === 'case_closing');
+    if (!entry) return caseClosingMessage(ticketNumber);
+    return entry.enabled ? renderAutoMessage(entry.text, { chamado: ticketVariable(ticketNumber) }) : '';
+  } catch {
+    return caseClosingMessage(ticketNumber);
+  }
+}
+
 export function Bugs({ id }: { id?: string }) {
   const bugs = useResource<{ bugs: BugRow[] }>(id ? null : '/bugs');
-  const [type, setType] = useState<ReportType | 'all' | 'livechat'>('all');
+  // The automatic messages are the admins' to edit; a support user only works the inbox.
+  const isOwner = useIsOwner();
+  const [type, setType] = useState<ReportType | 'all' | 'livechat' | 'auto'>('all');
   // Messages waiting in the live chat: shown on the tab from any other tab of Reports.
   const [chatUnread, setChatUnread] = useState(0);
   // ?chat=<id> (from a ticket) opens the Livechat with that conversation selected.
@@ -261,19 +278,19 @@ export function Bugs({ id }: { id?: string }) {
         description="Chamados de suporte, bugs e sugestões dos clientes, com acompanhamento e conversa em um só lugar."
       />
       <div className="nr-tabs" role="tablist" aria-label="Tipo de report">
-        {(['all', 'support', 'bug', 'suggestion', 'livechat'] as const).map((value) => (
+        {(isOwner ? (['all', 'support', 'bug', 'suggestion', 'livechat', 'auto'] as const) : (['all', 'support', 'bug', 'suggestion', 'livechat'] as const)).map((value) => (
           <button
             key={value}
             role="tab"
             aria-selected={type === value}
             onClick={() => setType(value)}
           >
-            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : value === 'suggestion' ? 'Sugestões' : 'Livechat'}
+            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : value === 'suggestion' ? 'Sugestões' : value === 'auto' ? 'Mensagens automáticas' : 'Livechat'}
             {value === 'livechat' && chatUnread ? <b className="lc-tab-badge">{chatUnread}</b> : null}
           </button>
         ))}
       </div>
-      {type === 'livechat' ? <Livechat key={chatId ?? 'inbox'} initialId={chatId} /> : (
+      {type === 'auto' ? <AutoMessages /> : type === 'livechat' ? <Livechat key={chatId ?? 'inbox'} initialId={chatId} /> : (
         <>
       <div className="nr-metrics">
         {(
@@ -406,8 +423,9 @@ function BugDetail({ id }: { id: string }) {
                     const value = event.target.value as BugStatus;
                     const concluding = (value === 'resolved' || value === 'not_reproduced') && report.status !== value;
                     if (concluding) {
-                      setClosingText(caseClosingMessage(report.ticketNumber));
+                      setClosingText('');
                       setClosing(value);
+                      void casePrefill(report.ticketNumber).then(setClosingText);
                       return;
                     }
                     void run(() => api(`/bugs/${id}`, { method: 'PATCH', body: { status: value } }), 'Estado atualizado.');
