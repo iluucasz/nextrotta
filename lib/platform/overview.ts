@@ -63,12 +63,12 @@ export async function getOverview(period: { from: string; to: string }) {
     `,
     sql`
       SELECT COALESCE(SUM(value), 0)::float AS value, COUNT(DISTINCT organization_id)::int AS organizations
-      FROM billing_charges WHERE status = 'OVERDUE' AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled)
+      FROM billing_charges WHERE status = 'OVERDUE' AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled OR deleted_at IS NOT NULL)
     `,
     sql.query(
       `SELECT kind, COALESCE(SUM(value), 0)::float AS value FROM billing_charges
        WHERE status IN ${PAID} AND paid_at::date BETWEEN $1::date AND $2::date
-         AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled)
+         AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled OR deleted_at IS NOT NULL)
        GROUP BY kind`,
       [period.from, period.to],
     ),
@@ -77,7 +77,7 @@ export async function getOverview(period: { from: string; to: string }) {
               COALESCE(SUM(value), 0)::float AS value
        FROM billing_charges
        WHERE status IN ${PAID} AND paid_at >= date_trunc('month', NOW()) - INTERVAL '11 months'
-         AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled)
+         AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled OR deleted_at IS NOT NULL)
        GROUP BY 1 ORDER BY 1`,
       [],
     ),
@@ -86,7 +86,7 @@ export async function getOverview(period: { from: string; to: string }) {
         COALESCE(SUM(value) FILTER (WHERE due_date <= ${today}::date + 30), 0)::float AS d30,
         COALESCE(SUM(value) FILTER (WHERE due_date <= ${today}::date + 60), 0)::float AS d60,
         COALESCE(SUM(value) FILTER (WHERE due_date <= ${today}::date + 90), 0)::float AS d90
-      FROM billing_charges WHERE status = 'PENDING' AND due_date >= ${today}::date AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled)
+      FROM billing_charges WHERE status = 'PENDING' AND due_date >= ${today}::date AND organization_id NOT IN (SELECT id FROM organizations WHERE unbilled OR deleted_at IS NOT NULL)
     `,
     sql`SELECT COUNT(*)::int AS total FROM organization_provisioning WHERE steps @> '[{"status": "error"}]'::jsonb`,
     sql`
@@ -153,7 +153,7 @@ export async function listAllCharges(period: { from: string; to: string }) {
            GREATEST(0, ${today}::date - c.due_date) AS "daysLate"
     FROM billing_charges c
     JOIN organizations o ON o.id = c.organization_id
-    WHERE (c.due_date BETWEEN ${period.from}::date AND ${period.to}::date OR c.status = 'OVERDUE') AND NOT o.unbilled
+    WHERE (c.due_date BETWEEN ${period.from}::date AND ${period.to}::date OR c.status = 'OVERDUE') AND NOT o.unbilled AND o.deleted_at IS NULL
     ORDER BY c.due_date DESC, c.created_at DESC
   `;
 }
