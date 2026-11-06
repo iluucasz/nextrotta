@@ -9,6 +9,6 @@ export const runtime = 'nodejs';
 export async function GET(request: NextRequest) {
   return withPlatformStaff(request, async () => {
     const organizationId = request.nextUrl.searchParams.get('organizationId');
-    return NextResponse.json({ bugs: await listBugReports({ organizationId: isUuid(organizationId) ? organizationId : null, channel: 'case' }) });
+    return NextResponse.json({ bugs: await listBugReports({ organizationId: isUuid(organizationId) ? organizationId : null }) });
   });
 }

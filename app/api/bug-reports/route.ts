@@ -16,7 +16,7 @@ export async function GET(request: NextRequest) {
   try {
     const auth = await verifyOrganizationAuth(request);
     if (!auth) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
-    const bugs = await listBugReports({ organizationId: auth.organizationId, userId: auth.role === 'admin' ? null : auth.userId });
+    const bugs = await listBugReports({ organizationId: auth.organizationId, userId: auth.role === 'admin' ? null : auth.userId, portalOnly: true });
     return NextResponse.json({ bugs });
   } catch (error) {
     return failure(error, 'bug-reports');

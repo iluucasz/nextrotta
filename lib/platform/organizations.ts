@@ -830,7 +830,7 @@ export async function listOrganizationsForSupport(filters: { status?: string | n
       SELECT o.id, o.name, o.legal_name AS "legalName", o.slug, o.status, o.email, o.phone, o.city, o.state, o.created_at AS "createdAt",
              o.lifetime, o.is_test AS test, p.name AS "planName",
              (SELECT COUNT(*)::int FROM technicians t WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS "activeTechnicians",
-             (SELECT COUNT(*)::int FROM bug_reports b WHERE b.organization_id = o.id AND b.status IN ('new', 'investigating')) AS "openTickets"
+             (SELECT COUNT(*)::int FROM bug_reports b WHERE b.organization_id = o.id AND b.status IN ('new', 'investigating', 'waiting')) AS "openTickets"
       FROM organizations o
       LEFT JOIN subscriptions s ON s.organization_id = o.id AND s.canceled_at IS NULL
       LEFT JOIN plans p ON p.id = s.plan_id
@@ -847,7 +847,7 @@ export async function getOrganizationForSupport(organizationId: string) {
   const [summary] = await sql`
     SELECT p.name AS "planName", s.cycle,
            (SELECT COUNT(*)::int FROM technicians t WHERE t.organization_id = ${organizationId} AND t.deleted_at IS NULL AND t.status = 'active') AS "activeTechnicians",
-           (SELECT COUNT(*)::int FROM bug_reports b WHERE b.organization_id = ${organizationId} AND b.status IN ('new', 'investigating')) AS "openTickets"
+           (SELECT COUNT(*)::int FROM bug_reports b WHERE b.organization_id = ${organizationId} AND b.status IN ('new', 'investigating', 'waiting')) AS "openTickets"
     FROM (SELECT 1) one
     LEFT JOIN subscriptions s ON s.organization_id = ${organizationId} AND s.canceled_at IS NULL
     LEFT JOIN plans p ON p.id = s.plan_id

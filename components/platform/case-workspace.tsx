@@ -3,7 +3,8 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { ExternalLink, FolderPlus, LoaderCircle, MessageCircle, Phone, StickyNote } from 'lucide-react';
-import { CASE_ORIGIN_LABELS, CASE_PRIORITIES, CASE_PRIORITY_LABELS, CASE_STATUSES, CASE_STATUS_LABELS, formatCaseNumber, MAX_NOTE_LENGTH, suggestedSubject, type CasePriority, type CaseStatus } from '@/lib/cases/rules';
+import { CASE_ORIGIN_LABELS, CASE_PRIORITIES, CASE_PRIORITY_LABELS, CASE_STATUSES, caseStatusLabel, formatCaseNumber, MAX_NOTE_LENGTH, suggestedSubject, type CasePriority, type CaseStatus } from '@/lib/cases/rules';
+import { REPORT_TYPE_LABELS, REPORT_TYPES, type ReportType } from '@/lib/reports';
 import type { SupportCase } from '@/lib/cases/store';
 import { api, date, errorMessage, useResource } from './api';
 import { useNotify } from './notice';
@@ -14,7 +15,7 @@ type CaseConversation = { id: string; channel: 'web' | 'whatsapp'; status: 'open
 type Detail = { case: SupportCase; events: CaseEvent[]; conversations: CaseConversation[] };
 type Assignees = { assignees: Array<{ id: string; name: string; role: string }>; meId: string };
 
-export const statusTone = (status: CaseStatus) => (status === 'resolved' ? 'good' : status === 'new' ? 'warn' : 'neutral');
+export const statusTone = (status: CaseStatus) => (status === 'resolved' || status === 'not_reproduced' ? 'good' : status === 'new' ? 'warn' : 'neutral');
 
 const phoneLabel = (digits: string | null) => {
   if (!digits) return '';
@@ -89,16 +90,25 @@ export function CaseWorkspace({ caseId, compact = false, currentConversationId =
     <div className={`cs-root ${compact ? 'compact' : ''}`}>
       <header className="cs-head">
         <div>
-          <small>Caso {formatCaseNumber(current.number)} · {CASE_ORIGIN_LABELS[current.origin]}</small>
+          <small>
+            Caso {formatCaseNumber(current.number)} · {REPORT_TYPE_LABELS[current.type]} · {CASE_ORIGIN_LABELS[current.origin]}
+            {compact ? (
+              <>
+                {' · '}
+                <Link href={`/plataforma/reports/${current.id}`}>Abrir caso completo</Link>
+              </>
+            ) : null}
+          </small>
           <textarea
             className="cs-subject"
-            rows={2}
+            rows={compact ? 3 : 2}
             value={subjectValue}
             maxLength={140}
+            readOnly={!current.internal}
             aria-label="Assunto do caso"
             onChange={(event) => setSubject(event.target.value)}
             onBlur={() => {
-              if (subject !== null && subject.trim() && subject.trim() !== current.subject) void change({ subject }, 'Assunto salvo.');
+              if (current.internal && subject !== null && subject.trim() && subject.trim() !== current.subject) void change({ subject }, 'Assunto salvo.');
               setSubject(null);
             }}
             onKeyDown={(event) => {
@@ -109,7 +119,7 @@ export function CaseWorkspace({ caseId, compact = false, currentConversationId =
             }}
           />
         </div>
-        <Badge tone={statusTone(current.status)}>{CASE_STATUS_LABELS[current.status]}</Badge>
+        <Badge tone={statusTone(current.status)}>{caseStatusLabel(current.type, current.status)}</Badge>
       </header>
 
       <div className="cs-fields">
@@ -117,7 +127,7 @@ export function CaseWorkspace({ caseId, compact = false, currentConversationId =
           Status
           <select value={current.status} disabled={busy} onChange={(event) => void change({ status: event.target.value }, 'Status atualizado.')}>
             {CASE_STATUSES.map((value) => (
-              <option key={value} value={value}>{CASE_STATUS_LABELS[value]}</option>
+              <option key={value} value={value}>{caseStatusLabel(current.type, value)}</option>
             ))}
           </select>
         </label>
@@ -149,16 +159,17 @@ export function CaseWorkspace({ caseId, compact = false, currentConversationId =
         {current.contactName ? <div><dt>Contato</dt><dd>{current.contactName}</dd></div> : null}
         {current.contactPhone ? <div><dt><Phone size={13} /> WhatsApp</dt><dd>{phoneLabel(current.contactPhone)}</dd></div> : null}
         {current.organizationName ? <div><dt>Empresa</dt><dd><Link href={`/plataforma/organizacoes/${current.organizationId}`}>{current.organizationName}</Link></dd></div> : null}
-        <div><dt>Aberto</dt><dd>{date(current.createdAt, true)}{current.createdByName ? ` · ${current.createdByName}` : ''}</dd></div>
+        <div><dt>Aberto</dt><dd>{date(current.createdAt, true)}</dd></div>
         {current.resolvedAt ? <div><dt>Resolvido</dt><dd>{date(current.resolvedAt, true)}</dd></div> : null}
       </dl>
 
       <details className="cs-section" open={!compact}>
-        <summary>Descrição</summary>
+        <summary>{current.internal ? 'Descrição' : 'Relato do cliente'}</summary>
         <textarea
           rows={compact ? 4 : 6}
           value={descriptionValue}
           maxLength={4000}
+          readOnly={!current.internal}
           placeholder="O que aconteceu e o que precisa ser feito"
           aria-label="Descrição do caso"
           onChange={(event) => setDescription(event.target.value)}
@@ -260,8 +271,9 @@ export function CreateCaseDialog({ conversation, onClose, onCreated }: { convers
   const [subject, setSubject] = useState(
     conversation ? suggestedSubject({ ticketTitle: conversation.ticketTitle, firstCustomerMessage: conversation.firstCustomerMessage, contactName: conversation.contactName, organizationName: conversation.organizationName }) : '',
   );
+  const [type, setType] = useState<ReportType>('support');
   const [priority, setPriority] = useState<CasePriority>(conversation?.urgent ? 'high' : 'medium');
-  const [status, setStatus] = useState<Exclude<CaseStatus, 'resolved'>>('new');
+  const [status, setStatus] = useState<Exclude<CaseStatus, 'resolved' | 'not_reproduced'>>('new');
   const [ownerId, setOwnerId] = useState<string | null>(null); // null until chosen: the server gives it to who creates it
   const [organizationId, setOrganizationId] = useState('');
   const [contactName, setContactName] = useState('');
@@ -280,6 +292,7 @@ export function CreateCaseDialog({ conversation, onClose, onCreated }: { convers
         body: {
           ...(conversation ? { conversationId: conversation.id } : { organizationId: organizationId || undefined, contactName, contactPhone }),
           subject,
+          type,
           priority,
           status,
           ...(ownerId !== null ? { ownerId: ownerId || null } : {}),
@@ -339,6 +352,14 @@ export function CreateCaseDialog({ conversation, onClose, onCreated }: { convers
         ) : null}
         <div className="cs-row">
           <label>
+            Tipo
+            <select value={type} onChange={(event) => setType(event.target.value as ReportType)}>
+              {REPORT_TYPES.map((value) => (
+                <option key={value} value={value}>{REPORT_TYPE_LABELS[value]}</option>
+              ))}
+            </select>
+          </label>
+          <label>
             Prioridade
             <select value={priority} onChange={(event) => setPriority(event.target.value as CasePriority)}>
               {CASE_PRIORITIES.map((value) => (
@@ -348,9 +369,9 @@ export function CreateCaseDialog({ conversation, onClose, onCreated }: { convers
           </label>
           <label>
             Status
-            <select value={status} onChange={(event) => setStatus(event.target.value as Exclude<CaseStatus, 'resolved'>)}>
-              {CASE_STATUSES.filter((value) => value !== 'resolved').map((value) => (
-                <option key={value} value={value}>{CASE_STATUS_LABELS[value]}</option>
+            <select value={status} onChange={(event) => setStatus(event.target.value as Exclude<CaseStatus, 'resolved' | 'not_reproduced'>)}>
+              {CASE_STATUSES.filter((value) => value !== 'resolved' && value !== 'not_reproduced').map((value) => (
+                <option key={value} value={value}>{caseStatusLabel(type, value)}</option>
               ))}
             </select>
           </label>

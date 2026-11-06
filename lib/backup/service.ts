@@ -3,7 +3,7 @@ import { sql } from '../db';
 import { brasiliaDay, nextBackupTime } from './dates';
 import { expiredCopyIds } from './rules';
 import { backupStorageConfigured, readBackupFile, removeBackupFile, saveBackupFile } from './storage';
-import { BACKUP_SECRET_COLUMNS, BACKUP_TABLES, type BackupFile, type BackupKind, type BackupStatus } from './tables';
+import { BACKUP_SECRET_COLUMNS, BACKUP_TABLES, backupRowFilter, type BackupFile, type BackupKind, type BackupStatus } from './tables';
 
 // Making, listing and cleaning the backups of an organization. The worker runs the nightly job; the app calls the same
 // functions for "Fazer backup agora". Restoring is in restore.ts.
@@ -70,7 +70,7 @@ export async function buildBackupFile(organizationId: string): Promise<{ file: B
 
   const results = await sql.transaction(
     BACKUP_TABLES.map((table) =>
-      sql.query(`SELECT COALESCE(jsonb_agg(to_jsonb(t) - $2::text[]), '[]'::jsonb) AS rows FROM ${table} t WHERE t.organization_id = $1`, [
+      sql.query(`SELECT COALESCE(jsonb_agg(to_jsonb(t) - $2::text[]), '[]'::jsonb) AS rows FROM ${table} t WHERE t.organization_id = $1${backupRowFilter(table, 't') ? ` AND ${backupRowFilter(table, 't')}` : ''}`, [
         organizationId,
         [...BACKUP_SECRET_COLUMNS],
       ]),

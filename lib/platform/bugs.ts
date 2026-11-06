@@ -7,12 +7,15 @@ import { ticketVariable } from '../livechat/auto-messages';
 import { getAutoMessage } from '../livechat/auto-store';
 import { notifyOrganization } from '../notifications';
 import { normalizePhone } from '../whatsapp/phone';
+import { assignee } from '../cases/people';
+import { changeLine, statusLine, textProblem, MAX_DESCRIPTION_LENGTH, MAX_SUBJECT_LENGTH, type CaseOrigin } from '../cases/rules';
 import { isUuid, PlatformError, type Actor } from './errors';
 import { formatTicketNumber, REPORT_TYPES, SUPPORT_CATEGORIES, type ReportType, type SupportCategory } from '../reports';
 
 export const BUG_STATUSES = [
   'new',
   'investigating',
+  'waiting',
   'resolved',
   'not_reproduced',
 ] as const;
@@ -35,9 +38,15 @@ function serializeBug(row: Record<string, unknown>) {
     supportCategory: (row.support_category as SupportCategory | null) ?? null,
     /** 'case' = written support (the thread lives in the ticket); 'chat' = a live chat (all of it happens in the Livechat). */
     channel: (row.channel === 'chat' ? 'chat' : 'case') as 'case' | 'chat',
-    organizationId: String(row.organization_id),
+    /** Where it came from: 'portal' = opened by a customer in their system; the others are the team's own (internal) cases. */
+    origin: ((row.origin as CaseOrigin | undefined) ?? 'portal') as CaseOrigin,
+    contactName: (row.contact_name as string | null) ?? null,
+    contactPhone: (row.contact_phone as string | null) ?? null,
+    ownerId: (row.owner_id as string | null) ?? null,
+    ownerName: (row.owner_name as string | null) ?? null,
+    organizationId: (row.organization_id as string | null) ?? null,
     organizationName: (row.organization_name as string | undefined) ?? null,
-    userId: String(row.user_id),
+    userId: (row.user_id as string | null) ?? null,
     userName: (row.user_name as string | undefined) ?? null,
     userEmail: (row.user_email as string | undefined) ?? null,
     title: String(row.title),
@@ -58,7 +67,7 @@ function serializeBug(row: Record<string, unknown>) {
 export type BugReport = ReturnType<typeof serializeBug>;
 
 const BUG_COLUMNS = `
-  b.report_type, b.ticket_number, b.support_category, b.channel,
+  b.report_type, b.ticket_number, b.support_category, b.channel, b.origin, b.contact_name, b.contact_phone, b.owner_id, ou.name AS owner_name,
   b.id, b.organization_id, b.user_id, b.title, b.description, b.page_url, b.user_agent, b.app_version,
   (b.screenshot IS NOT NULL) AS has_screenshot, b.status, b.priority, b.created_at, b.updated_at, b.resolved_at,
   o.name AS organization_name, u.name AS user_name, u.email AS user_email
@@ -66,7 +75,7 @@ const BUG_COLUMNS = `
 
 /** Owner inbox; `organizationId` narrows it to one organization. */
 export async function listBugReports(
-  filters: { organizationId?: string | null; userId?: string | null; /** Default: all. The owner's Reports ask for 'case' (live chats are worked in the Livechat). */ channel?: 'case' | 'chat' | 'all' } = {},
+  filters: { organizationId?: string | null; userId?: string | null; /** Default: all. */ channel?: 'case' | 'chat' | 'all'; /** What a customer sees: only the cases they opened themselves (never the team's internal ones). */ portalOnly?: boolean } = {},
 ) {
   const conditions: string[] = [];
   const params: unknown[] = [];
@@ -78,6 +87,7 @@ export async function listBugReports(
     params.push(filters.userId);
     conditions.push(`b.user_id = $${params.length}`);
   }
+  if (filters.portalOnly) conditions.push(`b.origin = 'portal'`);
   if (filters.channel === 'case' || filters.channel === 'chat') {
     params.push(filters.channel);
     conditions.push(`b.channel = $${params.length}`);
@@ -86,8 +96,9 @@ export async function listBugReports(
     `SELECT ${BUG_COLUMNS},
        (SELECT COUNT(*)::int FROM bug_messages m WHERE m.bug_id = b.id AND NOT m.internal) AS messages_count
      FROM bug_reports b
-     JOIN organizations o ON o.id = b.organization_id
-     JOIN users u ON u.id = b.user_id
+     LEFT JOIN organizations o ON o.id = b.organization_id
+     LEFT JOIN users u ON u.id = b.user_id
+     LEFT JOIN users ou ON ou.id = b.owner_id
      ${conditions.length ? `WHERE ${conditions.join(' AND ')}` : ''}
      ORDER BY b.created_at DESC
      LIMIT 500`,
@@ -107,8 +118,9 @@ export async function getBugReport(
   if (!isUuid(id)) throw new PlatformError('Relato não encontrado.', 404);
   const rows = await sql.query(
     `SELECT ${BUG_COLUMNS} FROM bug_reports b
-     JOIN organizations o ON o.id = b.organization_id
-     JOIN users u ON u.id = b.user_id
+     LEFT JOIN organizations o ON o.id = b.organization_id
+     LEFT JOIN users u ON u.id = b.user_id
+     LEFT JOIN users ou ON ou.id = b.owner_id
      WHERE b.id = $1`,
     [id],
   );
@@ -116,7 +128,7 @@ export async function getBugReport(
   if (
     !row ||
     (viewer.kind === 'organization' &&
-      String(row.organization_id) !== viewer.organizationId)
+      (String(row.organization_id) !== viewer.organizationId || row.origin !== 'portal'))
   ) {
     throw new PlatformError('Relato não encontrado.', 404);
   }
@@ -134,8 +146,30 @@ export async function getBugReport(
           await sql`SELECT id, status, unread_owner FROM livechat_conversations WHERE ticket_id = ${id} AND channel = 'web' ORDER BY (status = 'open') DESC, created_at DESC LIMIT 1`
         )[0] ?? null
       : null;
+  const conversations =
+    viewer.kind === 'owner'
+      ? (
+          await sql`SELECT id, channel, status, contact_phone, created_at, last_message_at, last_message_preview FROM livechat_conversations WHERE ticket_id = ${id} OR case_id = ${id} ORDER BY created_at DESC`
+        ).map((row) => ({
+          id: String(row.id),
+          channel: row.channel as 'web' | 'whatsapp',
+          status: row.status as 'open' | 'closed',
+          contactPhone: (row.contact_phone as string | null) ?? null,
+          createdAt: iso(row.created_at)!,
+          lastMessageAt: iso(row.last_message_at)!,
+          preview: (row.last_message_preview as string | null) ?? null,
+        }))
+      : [];
+  const events =
+    viewer.kind === 'owner'
+      ? (
+          await sql`SELECT e.id, e.kind, e.body, e.created_at, u.name AS author_name FROM bug_events e LEFT JOIN users u ON u.id = e.author_id WHERE e.bug_id = ${id} ORDER BY e.created_at DESC, e.id`
+        ).map((row) => ({ id: String(row.id), kind: String(row.kind), body: String(row.body), authorName: (row.author_name as string | null) ?? null, createdAt: iso(row.created_at)! }))
+      : [];
   return {
     report: serializeBug(row),
+    conversations,
+    events,
     chat: chat ? { id: String(chat.id), status: chat.status as 'open' | 'closed', unread: Number(chat.unread_owner) } : null,
     messages: messages.map((message) => ({
       id: String(message.id),
@@ -246,6 +280,8 @@ export async function addBugMessage(
   const text = cleanText(input.text, 10_000);
   if (!text) throw new PlatformError('Escreva a mensagem.');
   const internal = author.fromOwner && Boolean(input.internal);
+  // A case the team opened itself has no customer reading it: only notes make sense there.
+  if (report.origin !== 'portal' && !internal) throw new PlatformError('Este caso é interno (não foi aberto pelo cliente): registre uma anotação.', 409);
   // The conversation of a live chat is the chat itself (Livechat): the written thread belongs to cases.
   if (report.channel === 'chat' && !internal) throw new PlatformError('Este atendimento é um chat ao vivo: a conversa acontece no Livechat.', 409);
 
@@ -255,7 +291,7 @@ export async function addBugMessage(
     RETURNING id
   `;
   // The platform answering a ticket is the one thing the company should not have to go and look for.
-  if (author.fromOwner && !internal) {
+  if (author.fromOwner && !internal && report.organizationId) {
     await notifyOrganization(report.organizationId, {
       kind: 'support',
       severity: 'info',
@@ -268,7 +304,7 @@ export async function addBugMessage(
   // The organization writing back on a closed report reopens it.
   if (
     !author.fromOwner &&
-    (report.status === 'resolved' || report.status === 'not_reproduced')
+    (report.status === 'resolved' || report.status === 'not_reproduced' || report.status === 'waiting')
   ) {
     await sql`UPDATE bug_reports SET status = 'investigating', resolved_at = NULL, updated_at = NOW() WHERE id = ${id}`;
   } else {
@@ -277,6 +313,10 @@ export async function addBugMessage(
   return getBugReport(id, viewer);
 }
 
+/**
+ * { status?, priority?, ownerId? (null = nobody), subject?, description?, closingMessage? } — every change goes into the case's
+ * history. Subject and description belong to the customer on a ticket they opened, so only the team's own cases take them.
+ */
 export async function updateBugReport(
   id: string,
   input: Record<string, unknown>,
@@ -290,17 +330,51 @@ export async function updateBugReport(
   if (!BUG_PRIORITIES.includes(priority as BugPriority))
     throw new PlatformError('Prioridade inválida.');
 
+  let ownerId = report.ownerId;
+  let ownerName = report.ownerName;
+  if ('ownerId' in input) {
+    const next = input.ownerId ? await assignee(String(input.ownerId)) : null;
+    ownerId = next?.id ?? null;
+    ownerName = next?.name ?? null;
+  }
+  let title = report.title;
+  let description = report.description;
+  if ('subject' in input || 'description' in input) {
+    if (report.origin === 'portal') throw new PlatformError('O relato do cliente não é alterado. Registre uma anotação.', 409);
+    if ('subject' in input) {
+      const problem = textProblem(input.subject, 'o assunto', MAX_SUBJECT_LENGTH, true);
+      if (problem) throw new PlatformError(problem);
+      title = String(input.subject).trim();
+    }
+    if ('description' in input) {
+      const problem = textProblem(input.description, 'a descrição', MAX_DESCRIPTION_LENGTH, false);
+      if (problem) throw new PlatformError(problem);
+      description = typeof input.description === 'string' ? input.description.trim() : '';
+    }
+  }
+
   const closing =
     (status === 'resolved' || status === 'not_reproduced') &&
     report.status !== status;
+  const stillOpen = status === 'new' || status === 'investigating' || status === 'waiting';
   await sql`
     UPDATE bug_reports
-    SET status = ${status as string}, priority = ${priority as string}, updated_at = NOW(),
-        resolved_at = ${closing ? new Date().toISOString() : status === 'new' || status === 'investigating' ? null : report.resolvedAt}
+    SET status = ${status as string}, priority = ${priority as string}, owner_id = ${ownerId}, title = ${title}, description = ${description}, updated_at = NOW(),
+        resolved_at = ${closing ? new Date().toISOString() : stillOpen ? null : report.resolvedAt}
     WHERE id = ${id}
   `;
-  // Concluding a written case says goodbye: thanks, and how to ask again (the owner can edit or skip it: closingMessage "").
-  if (closing && report.channel === 'case') {
+
+  // The history: one line per thing that changed, with who did it.
+  const lines: Array<{ kind: 'status' | 'priority' | 'owner' | 'subject'; body: string }> = [];
+  if (status !== report.status) lines.push({ kind: 'status', body: statusLine(report.type, report.status as BugStatus, status as BugStatus) });
+  if (priority !== report.priority) lines.push({ kind: 'priority', body: changeLine.priority(report.priority, priority as BugPriority) });
+  if (ownerId !== report.ownerId) lines.push({ kind: 'owner', body: changeLine.owner(report.ownerName, ownerName) });
+  if (title !== report.title) lines.push({ kind: 'subject', body: changeLine.subject(title) });
+  for (const line of lines) await sql`INSERT INTO bug_events (bug_id, kind, author_id, body) VALUES (${id}, ${line.kind}, ${actor.id}, ${line.body})`;
+
+  // Concluding a written case says goodbye: thanks, and how to ask again (the owner can edit or skip it: closingMessage ""). Only to
+  // a customer who opened the ticket; a case of the team's own has nobody to thank.
+  if (closing && report.channel === 'case' && report.origin === 'portal') {
     const wanted = typeof input.closingMessage === 'string' ? input.closingMessage.trim() : (await getAutoMessage('case_closing', { chamado: ticketVariable(report.ticketNumber) })) ?? '';
     if (wanted) await addBugMessage(id, { userId: actor.id, fromOwner: true }, { text: wanted });
   }
@@ -312,8 +386,8 @@ export async function updateBugReport(
     targetType: 'bug_report',
     targetId: id,
     details: {
-      before: { status: report.status, priority: report.priority },
-      after: { status, priority },
+      before: { status: report.status, priority: report.priority, ownerId: report.ownerId },
+      after: { status, priority, ownerId },
     },
   });
   return getBugReport(id, { kind: 'owner' });

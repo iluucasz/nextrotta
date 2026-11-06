@@ -29,6 +29,14 @@ export const BACKUP_EXCLUDED = [
   'support_cases',
 ] as const;
 
+/**
+ * Rows of a backed-up table that are NOT the company's: the cases the team opened itself (internal notes about a contact) live in the same
+ * table as the company's own tickets. SQL for the alias of the table, or null when every row of the company belongs in the backup.
+ */
+export function backupRowFilter(table: string, alias: string): string | null {
+  return table === 'bug_reports' ? `${alias}.origin = 'portal'` : null;
+}
+
 /** Secrets never go into a backup file: it can be downloaded by the organization's admin. */
 export const BACKUP_SECRET_COLUMNS = ['password_hash', 'encrypted_password', 'access_token_enc', 'refresh_token_enc'] as const;
 

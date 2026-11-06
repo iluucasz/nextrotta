@@ -49,6 +49,7 @@ export const SUPPORT_CATEGORY_HINTS: Record<SupportCategory, string> = {
 export const REPORT_STATUS_LABELS = {
   new: 'Novo',
   investigating: 'Em análise',
+  waiting: 'Aguardando cliente',
   resolved: 'Resolvido',
   not_reproduced: 'Não reproduzido',
 };
@@ -58,6 +59,7 @@ export function reportStatusLabels(type: ReportType) {
     return {
       new: 'Recebida',
       investigating: 'Em análise',
+      waiting: 'Aguardando cliente',
       resolved: 'Concluída',
       not_reproduced: 'Não planejada',
     };
@@ -66,6 +68,7 @@ export function reportStatusLabels(type: ReportType) {
     return {
       new: 'Aberto',
       investigating: 'Em atendimento',
+      waiting: 'Aguardando cliente',
       resolved: 'Resolvido',
       not_reproduced: 'Encerrado',
     };

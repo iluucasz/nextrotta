@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { renderAutoMessage, ticketVariable, type ResolvedAutoMessage } from '@/lib/livechat/auto-messages';
 import { caseClosingMessage } from '@/lib/livechat/rules';
 import { AutoMessages } from './auto-messages';
-import { Cases } from './cases';
+import { CreateCaseDialog, useAssignees } from './case-workspace';
 import { useIsOwner } from './role';
 import { Livechat } from './livechat';
 import { useNotify } from './notice';
@@ -30,7 +30,7 @@ import {
   Title,
 } from './ui';
 
-export type BugStatus = 'new' | 'investigating' | 'resolved' | 'not_reproduced';
+export type BugStatus = 'new' | 'investigating' | 'waiting' | 'resolved' | 'not_reproduced';
 export type BugPriority = 'low' | 'medium' | 'high' | 'critical';
 
 export type BugRow = {
@@ -40,7 +40,13 @@ export type BugRow = {
   supportCategory: SupportCategory | null;
   /** 'case' = written support; 'chat' = a live chat, worked in the Livechat. */
   channel?: 'case' | 'chat';
-  organizationId: string;
+  /** 'portal' = opened by the customer in their system; the others are the team's own (internal) cases. */
+  origin?: 'portal' | 'livechat' | 'whatsapp' | 'manual';
+  contactName?: string | null;
+  contactPhone?: string | null;
+  ownerId?: string | null;
+  ownerName?: string | null;
+  organizationId: string | null;
   organizationName: string | null;
   userName: string | null;
   userEmail: string | null;
@@ -70,6 +76,7 @@ type BugMessage = {
 export const BUG_STATUS_LABELS: Record<BugStatus, string> = {
   new: 'Novo',
   investigating: 'Em análise',
+  waiting: 'Aguardando cliente',
   resolved: 'Resolvido',
   not_reproduced: 'Não reproduzido',
 };
@@ -98,7 +105,8 @@ export function BugTable({
     categoryText: bug.supportCategory ? SUPPORT_CATEGORY_LABELS[bug.supportCategory] : '',
     statusText: reportStatusLabels(bug.type ?? 'bug')[bug.status],
     priorityText: BUG_PRIORITY_LABELS[bug.priority],
-    organization: bug.organizationName ?? '—',
+    organization: bug.organizationName ?? bug.contactName ?? '—',
+    ownerText: bug.ownerName ?? 'Sem responsável',
   }));
   return (
     <DataTable
@@ -116,7 +124,7 @@ export function BugTable({
           label: 'Estado',
           // Open first: what still needs an answer (new or being handled), whatever the type of the report.
           defaultValue: OPEN_STATES,
-          match: (row, value) => (value === OPEN_STATES ? row.status === 'new' || row.status === 'investigating' : row.statusText === value),
+          match: (row, value) => (value === OPEN_STATES ? row.status === 'new' || row.status === 'investigating' || row.status === 'waiting' : row.statusText === value),
           options: [
             OPEN_STATES,
             ...new Set([
@@ -174,8 +182,9 @@ export function BugTable({
         {
           key: 'userName',
           label: 'Usuário',
-          render: (row) => row.userName ?? '—',
+          render: (row) => row.userName ?? row.contactName ?? '—',
         },
+        { key: 'ownerText', label: 'Responsável' },
         {
           key: 'pageUrl',
           label: 'Página',
@@ -204,7 +213,7 @@ export function BugTable({
       actions={(row) => (
         <Link href={`/plataforma/reports/${row.id}`}>Abrir</Link>
       )}
-      emptyText="Nenhum report recebido. Os clientes podem enviar bugs e sugestões pelo botão “Reports” no sistema."
+      emptyText="Nenhum caso por aqui. Os clientes abrem casos pelo botão “Reports” do sistema, e a equipe transforma conversas do Livechat em casos."
     />
   );
 }
@@ -225,19 +234,16 @@ export function Bugs({ id }: { id?: string }) {
   const bugs = useResource<{ bugs: BugRow[] }>(id ? null : '/bugs');
   // The automatic messages are the admins' to edit; a support user only works the inbox.
   const isOwner = useIsOwner();
-  const [type, setType] = useState<ReportType | 'all' | 'livechat' | 'cases' | 'auto'>('all');
-  // ?caso=<id> (from the Livechat) opens that case.
-  const [caseId, setCaseId] = useState<string | null>(null);
+  const [type, setType] = useState<ReportType | 'all' | 'livechat' | 'auto'>('all');
+  // Whose cases the list shows: everyone's, mine, or the ones nobody has taken yet.
+  const [scope, setScope] = useState<'all' | 'me' | 'none'>('all');
+  const [creating, setCreating] = useState(false);
+  const people = useAssignees();
   // Messages waiting in the live chat: shown on the tab from any other tab of Reports.
   const [chatUnread, setChatUnread] = useState(0);
   // ?chat=<id> (from a ticket) opens the Livechat with that conversation selected.
   const [chatId, setChatId] = useState<string | null>(null);
   useEffect(() => {
-    const wantedCase = new URLSearchParams(window.location.search).get('caso');
-    if (wantedCase) {
-      setCaseId(wantedCase);
-      setType('cases');
-    }
     const wanted = new URLSearchParams(window.location.search).get('chat');
     if (wanted) {
       setChatId(wanted);
@@ -265,77 +271,94 @@ export function Bugs({ id }: { id?: string }) {
   if (bugs.error)
     return <ErrorState message={bugs.error} onRetry={bugs.reload} />;
 
+  const meId = people.data?.meId ?? '';
   const list = bugs.data!.bugs.filter(
-    (report) => type === 'all' || type === 'livechat' || (report.type ?? 'bug') === type,
+    (report) =>
+      (type === 'all' || type === 'livechat' || type === 'auto' || (report.type ?? 'bug') === type) &&
+      (scope === 'all' || (scope === 'me' ? report.ownerId === meId : !report.ownerId)),
   );
-  const labels =
-    type === 'suggestion' || type === 'support'
-      ? reportStatusLabels(type)
-      : type === 'all'
-        ? {
-            new: 'Recebidos',
-            investigating: 'Em análise',
-            resolved: 'Concluídos',
-            not_reproduced: 'Encerrados',
-          }
-        : BUG_STATUS_LABELS;
+  // Four numbers: what is new, being worked, waiting for the customer, and done (resolved or closed without a fix).
+  const counts = [
+    ['Novos', list.filter((bug) => bug.status === 'new').length],
+    ['Em andamento', list.filter((bug) => bug.status === 'investigating').length],
+    ['Aguardando cliente', list.filter((bug) => bug.status === 'waiting').length],
+    ['Concluídos', list.filter((bug) => bug.status === 'resolved' || bug.status === 'not_reproduced').length],
+  ] as const;
   return (
     <>
       <Title
-        title="Reports"
-        description="Chamados de suporte, bugs e sugestões dos clientes, com acompanhamento e conversa em um só lugar."
+        title="Casos"
+        description="Suporte, bugs e sugestões: tudo é caso, com tipo, status, responsável, anotações e histórico."
+        action={
+          <button className="nr-btn primary" onClick={() => setCreating(true)}>
+            Novo caso
+          </button>
+        }
       />
-      <div className="nr-tabs" role="tablist" aria-label="Tipo de report">
-        {(isOwner ? (['all', 'support', 'bug', 'suggestion', 'livechat', 'cases', 'auto'] as const) : (['all', 'support', 'bug', 'suggestion', 'livechat', 'cases'] as const)).map((value) => (
+      <div className="nr-tabs" role="tablist" aria-label="Tipo de caso">
+        {(isOwner ? (['all', 'support', 'bug', 'suggestion', 'livechat', 'auto'] as const) : (['all', 'support', 'bug', 'suggestion', 'livechat'] as const)).map((value) => (
           <button
             key={value}
             role="tab"
             aria-selected={type === value}
             onClick={() => setType(value)}
           >
-            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : value === 'suggestion' ? 'Sugestões' : value === 'auto' ? 'Mensagens automáticas' : value === 'cases' ? 'Casos' : 'Livechat'}
+            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : value === 'suggestion' ? 'Sugestões' : value === 'auto' ? 'Mensagens automáticas' : 'Livechat'}
             {value === 'livechat' && chatUnread ? <b className="lc-tab-badge">{chatUnread}</b> : null}
           </button>
         ))}
       </div>
-      {type === 'cases' ? <Cases key={caseId ?? 'list'} initialId={caseId} /> : type === 'auto' ? <AutoMessages /> : type === 'livechat' ? <Livechat key={chatId ?? 'inbox'} initialId={chatId} /> : (
+      {type === 'auto' ? <AutoMessages /> : type === 'livechat' ? <Livechat key={chatId ?? 'inbox'} initialId={chatId} /> : (
         <>
       <div className="nr-metrics">
-        {(
-          ['new', 'investigating', 'resolved', 'not_reproduced'] as BugStatus[]
-        ).map((status) => (
-          <Metric
-            key={status}
-            label={labels[status]}
-            value={list.filter((bug) => bug.status === status).length}
-            detail="reports"
-          />
+        {counts.map(([label, value]) => (
+          <Metric key={label} label={label} value={value} detail="casos" />
         ))}
       </div>
       <Panel
         title={
           type === 'all'
-            ? 'Todos os reports'
+            ? 'Todos os casos'
             : type === 'support'
-              ? 'Chamados de suporte'
+              ? 'Casos de suporte'
               : type === 'bug'
-                ? 'Bugs reportados'
-                : 'Sugestões recebidas'
+                ? 'Bugs'
+                : 'Sugestões'
+        }
+        action={
+          <div className="lc-filters" role="tablist" aria-label="De quem">
+            {([['all', 'Todos'], ['me', 'Meus casos'], ['none', 'Sem responsável']] as const).map(([value, label]) => (
+              <button key={value} role="tab" aria-selected={scope === value} onClick={() => setScope(value)}>
+                {label}
+              </button>
+            ))}
+          </div>
         }
       >
-        <BugTable key={type} bugs={list} />
+        <BugTable key={`${type}-${scope}`} bugs={list} />
       </Panel>
         </>
       )}
+      {creating ? (
+        <CreateCaseDialog
+          onClose={() => setCreating(false)}
+          onCreated={(createdId) => window.location.assign(`/plataforma/reports/${createdId}`)}
+        />
+      ) : null}
     </>
   );
 }
 
 function BugDetail({ id }: { id: string }) {
   const notify = useNotify();
-  const detail = useResource<{ report: BugRow; chat: { id: string; status: 'open' | 'closed'; unread: number } | null; messages: BugMessage[] }>(
-    `/bugs/${id}`,
-  );
+  const detail = useResource<{
+    report: BugRow;
+    chat: { id: string; status: 'open' | 'closed'; unread: number } | null;
+    messages: BugMessage[];
+    conversations: Array<{ id: string; channel: 'web' | 'whatsapp'; status: 'open' | 'closed'; createdAt: string; preview: string | null }>;
+    events: Array<{ id: string; body: string; authorName: string | null; createdAt: string }>;
+  }>(`/bugs/${id}`);
+  const people = useAssignees();
   const [text, setText] = useState('');
   const [saving, setSaving] = useState(false);
   // Concluding a written case asks for the goodbye message (the status waiting for that answer).
@@ -346,7 +369,10 @@ function BugDetail({ id }: { id: string }) {
   if (detail.error)
     return <ErrorState message={detail.error} onRetry={detail.reload} />;
 
-  const { report, messages, chat } = detail.data!;
+  const { report, messages, chat, conversations, events } = detail.data!;
+  // A case the team opened itself has no customer to answer: only notes.
+  const internal = report.origin !== undefined && report.origin !== 'portal';
+  const meId = people.data?.meId ?? '';
   const labels = reportStatusLabels(report.type ?? 'bug');
   const isChat = report.channel === 'chat';
 
@@ -367,7 +393,16 @@ function BugDetail({ id }: { id: string }) {
     <>
       <Title
         title={report.title}
-        description={`${formatTicketNumber(report.ticketNumber)} · ${REPORT_TYPE_LABELS[report.type ?? 'bug']}${report.supportCategory ? ` · ${SUPPORT_CATEGORY_LABELS[report.supportCategory]}` : ''} · ${report.organizationName ?? ''} · ${report.userName ?? ''} · ${date(report.createdAt, true)}`}
+        description={[
+          `Caso ${formatTicketNumber(report.ticketNumber)}`,
+          REPORT_TYPE_LABELS[report.type ?? 'bug'],
+          report.supportCategory ? SUPPORT_CATEGORY_LABELS[report.supportCategory] : '',
+          report.organizationName ?? '',
+          report.userName ?? report.contactName ?? '',
+          date(report.createdAt, true),
+        ]
+          .filter(Boolean)
+          .join(' · ')}
         action={
           <div className="nr-actions">
             {chat ? (
@@ -378,12 +413,11 @@ function BugDetail({ id }: { id: string }) {
             <Link className="nr-btn" href="/plataforma/reports">
               Voltar à lista
             </Link>
-            <Link
-              className="nr-btn"
-              href={`/plataforma/organizacoes/${report.organizationId}`}
-            >
-              Abrir organização
-            </Link>
+            {report.organizationId ? (
+              <Link className="nr-btn" href={`/plataforma/organizacoes/${report.organizationId}`}>
+                Abrir organização
+              </Link>
+            ) : null}
           </div>
         }
       />
@@ -398,8 +432,9 @@ function BugDetail({ id }: { id: string }) {
               <br />
               Versão do sistema: {report.appVersion ?? '—'}
               <br />
-              Usuário: {report.userName ?? '—'}{' '}
+              {internal ? 'Contato' : 'Usuário'}: {report.userName ?? report.contactName ?? '—'}{' '}
               {report.userEmail ? `(${report.userEmail})` : ''}
+              {internal && report.contactPhone ? ` · ${report.contactPhone}` : ''}
             </p>
             {report.hasScreenshot ? (
               // eslint-disable-next-line @next/next/no-img-element
@@ -430,7 +465,7 @@ function BugDetail({ id }: { id: string }) {
                   onChange={(event) => {
                     const value = event.target.value as BugStatus;
                     const concluding = (value === 'resolved' || value === 'not_reproduced') && report.status !== value;
-                    if (concluding) {
+                    if (concluding && !internal) {
                       setClosingText('');
                       setClosing(value);
                       void casePrefill(report.ticketNumber).then(setClosingText);
@@ -447,6 +482,29 @@ function BugDetail({ id }: { id: string }) {
                 </select>
               </label>
             )}
+            <label className="nr-field">
+              Responsável
+              <span className="cs-owner">
+                <select
+                  value={report.ownerId ?? ''}
+                  disabled={saving}
+                  onChange={(event) => void run(() => api(`/bugs/${id}`, { method: 'PATCH', body: { ownerId: event.target.value || null } }), 'Responsável atualizado.')}
+                >
+                  <option value="">Sem responsável</option>
+                  {people.data?.assignees.map((person) => (
+                    <option key={person.id} value={person.id}>
+                      {person.name}
+                      {person.id === meId ? ' (você)' : ''}
+                    </option>
+                  ))}
+                </select>
+                {meId && report.ownerId !== meId ? (
+                  <button type="button" className="nr-btn" disabled={saving} onClick={() => void run(() => api(`/bugs/${id}`, { method: 'PATCH', body: { ownerId: meId } }), 'Você assumiu o caso.')}>
+                    Assumir
+                  </button>
+                ) : null}
+              </span>
+            </label>
             <label className="nr-field">
               Prioridade
               <select
@@ -486,8 +544,8 @@ function BugDetail({ id }: { id: string }) {
         </Panel>
       ) : (
       <Panel
-        title="Conversa e anotações"
-        description="As respostas aparecem para o usuário no sistema da empresa; as notas internas, só para você."
+        title={internal ? 'Anotações' : 'Conversa e anotações'}
+        description={internal ? 'Caso aberto pela equipe: as anotações são só da equipe.' : 'As respostas aparecem para o usuário no sistema da empresa; as notas internas, só para a equipe.'}
       >
         <div className="nr-pad">
           {messages.length ? (
@@ -507,7 +565,7 @@ function BugDetail({ id }: { id: string }) {
           ) : (
             <Empty
               title="Sem mensagens ainda"
-              text="Responda ao usuário ou registre uma nota interna."
+              text={internal ? 'Registre uma anotação.' : 'Responda ao usuário ou registre uma nota interna.'}
             />
           )}
           <label className="nr-field">
@@ -518,20 +576,22 @@ function BugDetail({ id }: { id: string }) {
             />
           </label>
           <div className="nr-actions mt-4">
+            {internal ? null : (
+              <button
+                className="nr-btn primary"
+                disabled={!text.trim() || saving}
+                onClick={() =>
+                  void run(async () => {
+                    await api(`/bugs/${id}`, { body: { text } });
+                    setText('');
+                  }, 'Resposta enviada ao usuário.')
+                }
+              >
+                Responder ao usuário
+              </button>
+            )}
             <button
-              className="nr-btn primary"
-              disabled={!text.trim() || saving}
-              onClick={() =>
-                void run(async () => {
-                  await api(`/bugs/${id}`, { body: { text } });
-                  setText('');
-                }, 'Resposta enviada ao usuário.')
-              }
-            >
-              Responder ao usuário
-            </button>
-            <button
-              className="nr-btn"
+              className={internal ? 'nr-btn primary' : 'nr-btn'}
               disabled={!text.trim() || saving}
               onClick={() =>
                 void run(async () => {
@@ -546,6 +606,38 @@ function BugDetail({ id }: { id: string }) {
         </div>
       </Panel>
       )}
+      <div className="nr-grid-2">
+        <Panel title="Atendimentos" description="As conversas do Livechat ligadas a este caso.">
+          <div className="nr-pad">
+            {conversations.length === 0 ? <p className="text-sm text-muted-foreground">Nenhuma conversa ligada a este caso.</p> : null}
+            {conversations.map((conversation) => (
+              <div className="nr-detail-row" key={conversation.id}>
+                <span>
+                  {conversation.channel === 'whatsapp' ? 'WhatsApp' : 'Chat do chamado'} · {conversation.status === 'open' ? 'aberta' : 'encerrada'}
+                  <small>
+                    {date(conversation.createdAt, true)}
+                    {conversation.preview ? ` · ${conversation.preview}` : ''}
+                  </small>
+                </span>
+                <Link href={`/plataforma/reports?chat=${conversation.id}`}>Abrir no Livechat</Link>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="Histórico" description="O que mudou no caso e quem mudou.">
+          <div className="nr-pad">
+            {events.length === 0 ? <p className="text-sm text-muted-foreground">Nada mudou ainda.</p> : null}
+            {events.map((event) => (
+              <div className="nr-note" key={event.id}>
+                <span>{event.body}</span>
+                <small>
+                  {date(event.createdAt, true)} · {event.authorName ?? 'Sistema'}
+                </small>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      </div>
       {closing ? (
         <Dialog open onOpenChange={(open) => !open && !saving && setClosing(null)}>
           <DialogContent className="nr-dialog sm:max-w-xl">

@@ -1,17 +1,26 @@
 // No dependencies on the database or the framework: used by the routes, the panel and the tests.
-// The cases of the team: vocabulary, limits, what a case starts with, and the history lines.
+// The cases of the team. A case is ONE kind of record: Suporte, Bug and Sugestão are its types (lib/reports.ts has the types, the
+// status words of each type and the support categories). This file adds what a case from a conversation needs: where it came from,
+// what it starts with, and the lines of its history.
+import { reportStatusLabels, REPORT_TYPES, type ReportType } from '../reports';
 
-export const CASE_STATUSES = ['new', 'working', 'waiting', 'resolved'] as const;
+export const CASE_STATUSES = ['new', 'investigating', 'waiting', 'resolved', 'not_reproduced'] as const;
 export type CaseStatus = (typeof CASE_STATUSES)[number];
-export const CASE_STATUS_LABELS: Record<CaseStatus, string> = { new: 'Novo', working: 'Em andamento', waiting: 'Aguardando cliente', resolved: 'Resolvido' };
+/** Statuses that still ask for work. */
+export const OPEN_STATUSES: readonly CaseStatus[] = ['new', 'investigating', 'waiting'];
+export const isOpenStatus = (status: string) => (OPEN_STATUSES as readonly string[]).includes(status);
+
+/** The words of the statuses for a type of case (the same ones the customer sees on their ticket). */
+export const caseStatusLabel = (type: ReportType, status: CaseStatus) => reportStatusLabels(type)[status];
 
 export const CASE_PRIORITIES = ['low', 'medium', 'high', 'critical'] as const;
 export type CasePriority = (typeof CASE_PRIORITIES)[number];
 export const CASE_PRIORITY_LABELS: Record<CasePriority, string> = { low: 'Baixa', medium: 'Média', high: 'Alta', critical: 'Crítica' };
 
-export const CASE_ORIGINS = ['livechat', 'whatsapp', 'manual'] as const;
+/** Where a case came from. "portal" is what the customer opened in their own system. */
+export const CASE_ORIGINS = ['portal', 'livechat', 'whatsapp', 'manual'] as const;
 export type CaseOrigin = (typeof CASE_ORIGINS)[number];
-export const CASE_ORIGIN_LABELS: Record<CaseOrigin, string> = { livechat: 'Chat ao vivo', whatsapp: 'WhatsApp', manual: 'Criado à mão' };
+export const CASE_ORIGIN_LABELS: Record<CaseOrigin, string> = { portal: 'Sistema do cliente', livechat: 'Chat ao vivo', whatsapp: 'WhatsApp', manual: 'Criado à mão' };
 
 export const MAX_SUBJECT_LENGTH = 140;
 export const MAX_DESCRIPTION_LENGTH = 4000;
@@ -19,8 +28,9 @@ export const MAX_NOTE_LENGTH = 2000;
 
 export const isCaseStatus = (value: unknown): value is CaseStatus => (CASE_STATUSES as readonly unknown[]).includes(value);
 export const isCasePriority = (value: unknown): value is CasePriority => (CASE_PRIORITIES as readonly unknown[]).includes(value);
+export const isCaseType = (value: unknown): value is ReportType => (REPORT_TYPES as readonly unknown[]).includes(value);
 
-/** "Caso #5001". */
+/** "#1024". */
 export const formatCaseNumber = (value: number | null | undefined) => (value ? `#${value}` : '#—');
 
 const squeeze = (text: string) => text.replace(/\s+/g, ' ').trim();
@@ -55,18 +65,16 @@ export function textProblem(value: unknown, label: string, max: number, required
   return null;
 }
 
-/** The line the history shows when a field of a case changes. */
+/** The lines the history shows when a field of a case changes. */
 export const changeLine = {
-  status: (from: CaseStatus, to: CaseStatus) => `Status: ${CASE_STATUS_LABELS[from]} → ${CASE_STATUS_LABELS[to]}`,
   priority: (from: CasePriority, to: CasePriority) => `Prioridade: ${CASE_PRIORITY_LABELS[from]} → ${CASE_PRIORITY_LABELS[to]}`,
   owner: (from: string | null, to: string | null) => (to ? `Responsável: ${from ?? 'ninguém'} → ${to}` : `Responsável removido (era ${from ?? 'ninguém'})`),
   subject: (to: string) => `Assunto alterado para “${to}”`,
 };
 
-/**
- * A resolved case must not be worked as if open: moving from "resolved" to any other status reopens it, and the history says so.
- * Returns the history line for a status change, with the reopening noted.
- */
-export function statusLine(from: CaseStatus, to: CaseStatus): string {
-  return from === 'resolved' && to !== 'resolved' ? `${changeLine.status(from, to)} (caso reaberto)` : changeLine.status(from, to);
+/** The history line for a status change, in the words of the case's type; leaving "resolved" says the case was reopened. */
+export function statusLine(type: ReportType, from: CaseStatus, to: CaseStatus): string {
+  const line = `Status: ${caseStatusLabel(type, from)} → ${caseStatusLabel(type, to)}`;
+  const closed = from === 'resolved' || from === 'not_reproduced';
+  return closed && !(to === 'resolved' || to === 'not_reproduced') ? `${line} (caso reaberto)` : line;
 }
