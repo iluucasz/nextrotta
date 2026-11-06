@@ -40,7 +40,7 @@ export function ProfileMenu({ owner, active }: { owner: OwnerProfile; active: bo
           <span className="nr-profile-avatar">{initial}</span>
           <span className="nr-profile-text">
             {owner.name}
-            <small>{support ? 'Atendente' : 'Dono da plataforma'}</small>
+            <small>{support ? 'Atendente' : 'Admin da plataforma'}</small>
           </span>
           <ChevronDown size={16} className="nr-profile-chevron" />
         </DropdownMenuTrigger>

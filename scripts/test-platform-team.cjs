@@ -64,7 +64,7 @@ test('team: there is an owner to act as', async () => {
 test('team: creating a support user checks the data and hands over a temporary password', async () => {
   await assert.rejects(team.createTeamMember({ name: 'A', email: email('curto') }, { id: owner.id }), /nome/i);
   await assert.rejects(team.createTeamMember({ name: 'Maria Atendente', email: 'sem-arroba' }, { id: owner.id }), /e-mail/i);
-  await assert.rejects(team.createTeamMember({ name: 'Maria Atendente', email: email('dono'), role: 'platform_owner' }, { id: owner.id }), /atendentes/i);
+  await assert.rejects(team.createTeamMember({ name: 'Maria Atendente', email: email('invalido'), role: 'admin' }, { id: owner.id }), /Admin ou Atendente/i);
 
   const result = await team.createTeamMember({ name: 'Maria Atendente', email: email('maria').toUpperCase() }, { id: owner.id });
   support = { id: String(result.user.id), email: email('maria'), role: 'platform_support' };
@@ -81,6 +81,25 @@ test('team: creating a support user checks the data and hands over a temporary p
   await assert.rejects(team.createTeamMember({ name: 'Outra Pessoa', email: support.email }, { id: owner.id }), /já é usado/i);
 });
 
+test('team: an admin can be created too, has the platform role and sees the team', async () => {
+  const result = await team.createTeamMember({ name: 'Paulo Admin', email: email('paulo'), role: 'platform_owner' }, { id: owner.id });
+  const admin = { id: String(result.user.id), email: email('paulo'), role: 'platform_owner' };
+  created.push(admin.id);
+  assert.equal(result.user.role, 'platform_owner');
+  const request = new Request('http://nextrotta.test/x', { headers: { cookie: `auth-token=${await tokenFor(admin)}` } });
+  assert.ok(await auth.verifyPlatformOwner(request), 'an admin passes the owner-only checks');
+  assert.equal(access.mayOpenPanelPath('platform_owner', '/plataforma/equipe'), true);
+  // The admin can manage others, but not the first admin nor themselves.
+  await assert.rejects(team.updateTeamMember(owner.id, { status: 'inactive' }, { id: admin.id }), /primeiro admin/i);
+  await assert.rejects(team.resetTeamPassword(owner.id, { id: admin.id }), /primeiro admin/i);
+  await assert.rejects(team.updateTeamMember(admin.id, { status: 'inactive' }, { id: admin.id }), /Minha conta/i);
+  const list = await team.listTeam(admin.id);
+  assert.equal(list.find((m) => m.id === admin.id).isYou, true);
+  assert.equal(list.find((m) => m.id === owner.id).isFounder, true);
+  assert.equal(list.filter((m) => m.isFounder).length, 1);
+  await team.updateTeamMember(support.id, { name: 'Maria Atendente' }, { id: admin.id });
+});
+
 test('team: the list shows the owner first and never anyone from a company', async () => {
   const list = await team.listTeam();
   assert.equal(list[0].role, 'platform_owner');
@@ -93,10 +112,10 @@ test('team: editing, the owner is not editable here, and the audit records who d
   const updated = await team.updateTeamMember(support.id, { name: 'Maria S. Atendente' }, { id: owner.id });
   assert.equal(updated.name, 'Maria S. Atendente');
   await assert.rejects(team.updateTeamMember(support.id, { status: 'banana' }, { id: owner.id }), /Situação/);
-  await assert.rejects(team.updateTeamMember(owner.id, { name: 'Outro nome' }, { id: owner.id }), /dono/i);
+  await assert.rejects(team.updateTeamMember(owner.id, { name: 'Outro nome' }, { id: owner.id }), /Minha conta/i);
   await assert.rejects(team.updateTeamMember('nao-e-uuid', {}, { id: owner.id }), /não encontrada/i);
   const audit = await sql`SELECT actor_role FROM audit_events WHERE target_id = ${support.id} AND action = 'team.updated'`;
-  assert.equal(audit.length, 1);
+  assert.ok(audit.length >= 1);
   assert.equal(audit[0].actor_role, 'platform_owner');
 });
 
@@ -130,7 +149,7 @@ test('team: resetting the password gives a new temporary one and invalidates the
   assert.equal(await auth.verifyPassword(supportPassword, row.password_hash), false);
   assert.equal(await auth.verifyPassword(result.temporaryPassword, row.password_hash), true);
   assert.equal(row.must_change_password, true);
-  await assert.rejects(team.resetTeamPassword(owner.id, { id: owner.id }), /dono/i);
+  await assert.rejects(team.resetTeamPassword(owner.id, { id: owner.id }), /Minha conta/i);
 });
 
 test('team: deactivating ends the session on the next request, reactivating brings it back', async () => {

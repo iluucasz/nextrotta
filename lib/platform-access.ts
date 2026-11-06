@@ -5,7 +5,7 @@ export type PlatformRole = 'platform_owner' | 'platform_support';
 
 export const PLATFORM_ROLES: PlatformRole[] = ['platform_owner', 'platform_support'];
 
-export const PLATFORM_ROLE_LABELS: Record<PlatformRole, string> = { platform_owner: 'Dono', platform_support: 'Atendente' };
+export const PLATFORM_ROLE_LABELS: Record<PlatformRole, string> = { platform_owner: 'Admin', platform_support: 'Atendente' };
 
 export const isPlatformRole = (role: unknown): role is PlatformRole => role === 'platform_owner' || role === 'platform_support';
 

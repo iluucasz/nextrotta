@@ -14,7 +14,7 @@ export async function withPlatformOwner(
   if (!owner) {
     // A support user is signed in but not allowed here: 403 (not 401, which would send them to the login page).
     const staff = await verifyPlatformStaff(request);
-    return NextResponse.json({ error: 'Acesso exclusivo do dono da plataforma.' }, { status: staff ? 403 : 401 });
+    return NextResponse.json({ error: 'Acesso exclusivo dos admins da plataforma.' }, { status: staff ? 403 : 401 });
   }
 
   try {
@@ -45,7 +45,7 @@ export async function withPlatformStaff(request: Request, handler: (staff: Token
 }
 
 export function requireOwnerRole(staff: TokenPayload) {
-  if (staff.role !== 'platform_owner') throw new PlatformError('Esta ação é exclusiva do dono da plataforma.', 403);
+  if (staff.role !== 'platform_owner') throw new PlatformError('Esta ação é exclusiva dos admins da plataforma.', 403);
 }
 
 export async function readJson(request: Request): Promise<Record<string, unknown>> {

@@ -7,11 +7,11 @@ import { api, date, errorMessage, ORGANIZATION_STATUS_LABELS, useOrganizationHos
 import { useNotify } from './notice';
 import { Badge, Confirm, DataTable, Editor, ErrorState, Loading, Metric, Panel, Title } from './ui';
 
-type Member = { id: string; name: string; email: string; role: 'platform_owner' | 'platform_support'; status: 'active' | 'inactive'; lastLoginAt: string | null; createdAt: string; mustChangePassword: boolean };
+type Member = { id: string; name: string; email: string; role: 'platform_owner' | 'platform_support'; status: 'active' | 'inactive'; lastLoginAt: string | null; createdAt: string; mustChangePassword: boolean; isYou: boolean; isFounder: boolean };
 
-const ROLE_TEXT = { platform_owner: 'Dono', platform_support: 'Atendente' };
+const ROLE_TEXT = { platform_owner: 'Admin', platform_support: 'Atendente' };
 
-/** The NextRotta's own team (owner only): who may enter the panel and what each one sees. */
+/** The NextRotta's own team (admins only): who may enter the panel and what each one sees. */
 export function Team() {
   const notify = useNotify();
   const { data, error, loading, reload } = useResource<{ team: Member[] }>('/team');
@@ -25,11 +25,12 @@ export function Team() {
 
   return (
     <>
-      <Title title="Equipe" action={<button className="nr-btn primary" onClick={() => setCreating(true)}>Novo atendente</button>} />
+      <Title title="Equipe" action={<button className="nr-btn primary" onClick={() => setCreating(true)}>Novo membro</button>} />
       <div className="nr-metrics">
-        <Metric label="Atendentes ativos" value={rows.filter((row) => row.role === 'platform_support' && row.status === 'active').length} detail="com acesso ao painel" />
+        <Metric label="Admins ativos" value={rows.filter((row) => row.role === 'platform_owner' && row.status === 'active').length} detail="acesso total" />
+        <Metric label="Atendentes ativos" value={rows.filter((row) => row.role === 'platform_support' && row.status === 'active').length} detail="Reports e Livechat" />
       </div>
-      <Panel title="Quem entra no painel" description="O atendente vê Reports, Livechat e as empresas (sem valores, planos nem entrar na conta delas). Só o dono mexe aqui.">
+      <Panel title="Quem entra no painel" description="Admin tem acesso total, inclusive a esta tela. Atendente vê só Reports, Livechat e as empresas (sem valores, planos nem entrar na conta delas).">
         {loading && !data ? (
           <Loading />
         ) : error ? (
@@ -46,8 +47,8 @@ export function Team() {
               { key: 'last', label: 'Último acesso', render: (row) => date(row.lastLoginAt, true) },
             ]}
             actions={(row) =>
-              row.role === 'platform_owner' ? (
-                <span className="text-xs text-muted-foreground">Você</span>
+              row.isYou || row.isFounder ? (
+                <span className="text-xs text-muted-foreground">{row.isYou ? 'Você' : 'Primeiro admin'}</span>
               ) : (
                 <>
                   <button className="nr-btn" onClick={() => setEditing(row)}>Editar</button>
@@ -62,14 +63,14 @@ export function Team() {
 
       {creating && (
         <Editor
-          title="Novo atendente"
+          title="Novo membro da equipe"
           description="A senha temporária aparece uma vez; no primeiro acesso a pessoa escolhe a própria."
-          fields={[{ key: 'name', label: 'Nome', required: true }, { key: 'email', label: 'E-mail de acesso', type: 'email', required: true }]}
-          initial={{ name: '', email: '' }}
-          submit="Criar atendente"
+          fields={[{ key: 'name', label: 'Nome', required: true }, { key: 'email', label: 'E-mail de acesso', type: 'email', required: true }, { key: 'role', label: 'Papel', type: 'select', required: true, options: [{ value: 'platform_support', label: 'Atendente (Reports, Livechat e empresas)' }, { value: 'platform_owner', label: 'Admin (acesso total)' }] }]}
+          initial={{ name: '', email: '', role: 'platform_support' }}
+          submit="Criar membro"
           onClose={() => setCreating(false)}
           onSave={async (values) => {
-            const result = await api<{ user: { name: string; email: string }; temporaryPassword: string }>('/team', { body: { name: values.name, email: values.email } });
+            const result = await api<{ user: { name: string; email: string }; temporaryPassword: string }>('/team', { body: { name: values.name, email: values.email, role: values.role } });
             setShown({ name: result.user.name, email: result.user.email, password: result.temporaryPassword });
             reload();
           }}
@@ -77,7 +78,7 @@ export function Team() {
       )}
       {editing && (
         <Editor
-          title="Editar atendente"
+          title="Editar membro"
           fields={[{ key: 'name', label: 'Nome', required: true }, { key: 'email', label: 'E-mail de acesso', type: 'email', required: true }]}
           initial={{ name: editing.name, email: editing.email }}
           onClose={() => setEditing(null)}
@@ -107,12 +108,12 @@ export function Team() {
       )}
       {toggling && (
         <Confirm
-          title={toggling.status === 'active' ? 'Desativar atendente' : 'Reativar atendente'}
+          title={toggling.status === 'active' ? 'Desativar membro' : 'Reativar membro'}
           description={toggling.status === 'active' ? `${toggling.name} perde o acesso agora, mesmo com a sessão aberta. Nada é apagado: dá para reativar depois.` : `${toggling.name} volta a entrar no painel com a senha que já tem.`}
           onClose={() => setToggling(null)}
           onConfirm={async () => {
             await api(`/team/${toggling.id}`, { method: 'PATCH', body: { status: toggling.status === 'active' ? 'inactive' : 'active' } });
-            notify(toggling.status === 'active' ? 'Atendente desativado.' : 'Atendente reativado.');
+            notify(toggling.status === 'active' ? 'Pessoa desativada.' : 'Pessoa reativada.');
             reload();
           }}
         />

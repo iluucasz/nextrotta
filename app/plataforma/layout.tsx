@@ -9,9 +9,9 @@ import { sql } from '@/lib/db';
 async function ownerProfile() {
   const token = (await cookies()).get('auth-token')?.value;
   const payload = token ? await verifyToken(token) : null;
-  if (!payload || !isPlatformRole(payload.role)) return { name: 'Dono da plataforma', email: '', role: 'platform_owner' as const };
+  if (!payload || !isPlatformRole(payload.role)) return { name: 'Admin da plataforma', email: '', role: 'platform_owner' as const };
   const rows = await sql`SELECT name, email FROM users WHERE id = ${payload.userId}`;
-  return { name: String(rows[0]?.name || (payload.role === 'platform_support' ? 'Atendente' : 'Dono da plataforma')), email: String(rows[0]?.email ?? ''), role: payload.role };
+  return { name: String(rows[0]?.name || (payload.role === 'platform_support' ? 'Atendente' : 'Admin da plataforma')), email: String(rows[0]?.email ?? ''), role: payload.role };
 }
 
 export default async function PlatformLayout({ children }: { children: ReactNode }) {

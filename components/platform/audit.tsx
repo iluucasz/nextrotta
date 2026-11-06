@@ -19,7 +19,7 @@ export type AuditEvent = {
 };
 
 const ACTOR_ROLE_LABELS: Record<string, string> = {
-  platform_owner: 'Dono da plataforma',
+  platform_owner: 'Admin da plataforma',
   admin: 'Administrador',
   technician: 'Técnico',
   system: 'Sistema',
