@@ -118,7 +118,7 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/notificacoes.md` — sino e página de notificações (`/admin/notificacoes`: Crítico, Atenção, Concluído, Aviso; limpar/restaurar por pessoa, migração `0039`): avisos da empresa (cobrança, chamados, Porto, folha, técnicos, peças, créditos, escala) e avisos gerais do NextRotta; como criar um novo.
 - `docs/lgpd-seguranca-contratos.md` — LGPD, segurança e contratos: papéis, o que existe, o que o advogado revisa, riscos, fluxo de pedido de titular e de incidente.
 - `docs/saas/equipe.md` — equipe da NextRotta (dono e atendentes): o que cada papel vê, como o dono gerencia, onde a regra mora (`lib/platform-access.ts`, `withPlatformStaff`).
-- `docs/livechat.md` — Livechat (inclui **Mensagens automáticas**, Reports → aba própria, `lib/livechat/auto-messages.ts`): chat ao vivo dos chamados urgentes + WhatsApp oficial (instância `nextrotta-suporte`, webhook `/api/webhooks/evolution`) numa caixa só em Reports → Livechat; limites e como conectar.
+- `docs/livechat.md` — Livechat (inclui **Casos** estilo console de atendimento, `lib/cases/`, e **Mensagens automáticas**, Reports → aba própria, `lib/livechat/auto-messages.ts`): chat ao vivo dos chamados urgentes + WhatsApp oficial (instância `nextrotta-suporte`, webhook `/api/webhooks/evolution`) numa caixa só em Reports → Livechat; limites e como conectar.
 - `docs/whatsapp-oficial.md` — número e e-mail oficiais, foto, capa e descrição do WhatsApp Business (imagens em `public/brand/`).
 - `docs/backups.md` — backups diários por empresa (00h, Blob privado, retenção do plano) e restauração pelo administrador.
 - `docs/dashboard-gerencial.md` — critérios financeiros do dashboard gerencial.

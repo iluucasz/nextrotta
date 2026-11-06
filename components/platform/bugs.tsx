@@ -7,6 +7,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { renderAutoMessage, ticketVariable, type ResolvedAutoMessage } from '@/lib/livechat/auto-messages';
 import { caseClosingMessage } from '@/lib/livechat/rules';
 import { AutoMessages } from './auto-messages';
+import { Cases } from './cases';
 import { useIsOwner } from './role';
 import { Livechat } from './livechat';
 import { useNotify } from './notice';
@@ -224,12 +225,19 @@ export function Bugs({ id }: { id?: string }) {
   const bugs = useResource<{ bugs: BugRow[] }>(id ? null : '/bugs');
   // The automatic messages are the admins' to edit; a support user only works the inbox.
   const isOwner = useIsOwner();
-  const [type, setType] = useState<ReportType | 'all' | 'livechat' | 'auto'>('all');
+  const [type, setType] = useState<ReportType | 'all' | 'livechat' | 'cases' | 'auto'>('all');
+  // ?caso=<id> (from the Livechat) opens that case.
+  const [caseId, setCaseId] = useState<string | null>(null);
   // Messages waiting in the live chat: shown on the tab from any other tab of Reports.
   const [chatUnread, setChatUnread] = useState(0);
   // ?chat=<id> (from a ticket) opens the Livechat with that conversation selected.
   const [chatId, setChatId] = useState<string | null>(null);
   useEffect(() => {
+    const wantedCase = new URLSearchParams(window.location.search).get('caso');
+    if (wantedCase) {
+      setCaseId(wantedCase);
+      setType('cases');
+    }
     const wanted = new URLSearchParams(window.location.search).get('chat');
     if (wanted) {
       setChatId(wanted);
@@ -278,19 +286,19 @@ export function Bugs({ id }: { id?: string }) {
         description="Chamados de suporte, bugs e sugestões dos clientes, com acompanhamento e conversa em um só lugar."
       />
       <div className="nr-tabs" role="tablist" aria-label="Tipo de report">
-        {(isOwner ? (['all', 'support', 'bug', 'suggestion', 'livechat', 'auto'] as const) : (['all', 'support', 'bug', 'suggestion', 'livechat'] as const)).map((value) => (
+        {(isOwner ? (['all', 'support', 'bug', 'suggestion', 'livechat', 'cases', 'auto'] as const) : (['all', 'support', 'bug', 'suggestion', 'livechat', 'cases'] as const)).map((value) => (
           <button
             key={value}
             role="tab"
             aria-selected={type === value}
             onClick={() => setType(value)}
           >
-            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : value === 'suggestion' ? 'Sugestões' : value === 'auto' ? 'Mensagens automáticas' : 'Livechat'}
+            {value === 'all' ? 'Todos' : value === 'support' ? 'Suporte' : value === 'bug' ? 'Bugs' : value === 'suggestion' ? 'Sugestões' : value === 'auto' ? 'Mensagens automáticas' : value === 'cases' ? 'Casos' : 'Livechat'}
             {value === 'livechat' && chatUnread ? <b className="lc-tab-badge">{chatUnread}</b> : null}
           </button>
         ))}
       </div>
-      {type === 'auto' ? <AutoMessages /> : type === 'livechat' ? <Livechat key={chatId ?? 'inbox'} initialId={chatId} /> : (
+      {type === 'cases' ? <Cases key={caseId ?? 'list'} initialId={caseId} /> : type === 'auto' ? <AutoMessages /> : type === 'livechat' ? <Livechat key={chatId ?? 'inbox'} initialId={chatId} /> : (
         <>
       <div className="nr-metrics">
         {(

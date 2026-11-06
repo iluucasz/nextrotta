@@ -2,12 +2,14 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, CheckCheck, FileText, Headset, LoaderCircle, MessageCircle, Paperclip, QrCode, Search, Send, Ticket, Unplug, X } from 'lucide-react';
+import { ArrowLeft, Building2, CheckCheck, FileText, FolderOpen, FolderPlus, Headset, LoaderCircle, MessageCircle, Paperclip, QrCode, Search, Send, Ticket, Unplug, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { firstName, renderAutoMessage, ticketVariable, type ResolvedAutoMessage } from '@/lib/livechat/auto-messages';
 import { ATTACHMENT_TYPES, attachmentProblem, chatClosingMessage, isImageType } from '@/lib/livechat/rules';
 import { api, errorMessage } from './api';
+import { CaseWorkspace, CreateCaseDialog, type CaseSource } from './case-workspace';
 import { useNotify } from './notice';
+import { QuickReplies } from './quick-replies';
 import { useIsOwner } from './role';
 import './livechat.css';
 
@@ -27,6 +29,10 @@ type Conversation = {
   unreadOwner: number;
   lastMessageAt: string;
   lastMessagePreview: string | null;
+  /** The case this conversation was turned into (null = still just a conversation). */
+  caseId: string | null;
+  caseNumber: number | null;
+  caseStatus: string | null;
 };
 type Message = { id: string; direction: 'in' | 'out'; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; autoKey?: string | null; attachment: { id: string; fileName: string; contentType: string; size: number } | null; createdAt: string };
 const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
@@ -93,6 +99,12 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
   const [pairing, setPairing] = useState<string | null>(null);
   const [qrAt, setQrAt] = useState(0);
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
+  // The case beside the conversation (service-console style): open by default on a wide screen, a slide-over on a narrow one.
+  const [casePanel, setCasePanel] = useState(false);
+  const [creatingCase, setCreatingCase] = useState<CaseSource | null>(null);
+  useEffect(() => {
+    if (window.matchMedia('(min-width: 1280px)').matches) setCasePanel(true);
+  }, []);
 
   const loadList = useCallback(async () => {
     try {
@@ -226,7 +238,7 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
         </span>
       </div>
 
-      <div className={`lc-shell ${current ? 'has-thread' : ''}`}>
+      <div className={`lc-shell ${current ? 'has-thread' : ''} ${current && casePanel ? 'with-case' : ''}`}>
         <aside className="lc-list" aria-label="Conversas">
           <div className="lc-list-head">
             <label className="lc-search">
@@ -263,6 +275,7 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
                     <span className="lc-preview">
                       {conversation.urgent && conversation.status === 'open' ? <em className="lc-urgent">Urgente</em> : null}
                       {conversation.status === 'closed' ? <em className="lc-closed">Encerrada</em> : null}
+                      {conversation.caseNumber ? <em className="lc-case-tag">Caso #{conversation.caseNumber}</em> : null}
                       {conversation.lastMessagePreview ?? subtitleOf(conversation)}
                     </span>
                     {conversation.unreadOwner ? <b className="lc-unread">{conversation.unreadOwner}</b> : null}
@@ -274,7 +287,7 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
         </aside>
 
         <section className="lc-thread" aria-label="Conversa">
-          {current ? <Thread key={current.id} conversation={current} onBack={() => setSelected(null)} onChanged={() => void loadList()} /> : (
+          {current ? <Thread key={current.id} conversation={current} onBack={() => setSelected(null)} onChanged={() => void loadList()} casePanelOpen={casePanel} onToggleCasePanel={() => setCasePanel((value) => !value)} onShowCasePanel={() => setCasePanel(true)} onCreateCase={(source) => setCreatingCase(source)} /> : (
             <div className="lc-placeholder">
               <Headset size={46} />
               <h3>Livechat NextRotta</h3>
@@ -282,7 +295,60 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
             </div>
           )}
         </section>
+
+        {current && casePanel ? (
+          <aside className="lc-case" aria-label="Caso">
+            <header>
+              <strong>{current.caseNumber ? `Caso #${current.caseNumber}` : 'Caso'}</strong>
+              <button type="button" aria-label="Fechar o painel do caso" onClick={() => setCasePanel(false)}>
+                <X size={18} />
+              </button>
+            </header>
+            <div className="lc-case-body">
+              {current.caseId ? (
+                <CaseWorkspace key={current.caseId} caseId={current.caseId} compact currentConversationId={current.id} onChanged={() => void loadList()} />
+              ) : (
+                <div className="lc-case-empty">
+                  <FolderPlus size={34} />
+                  <h3>Esta conversa ainda não é um caso</h3>
+                  <p>Se não deu para resolver agora, transforme em caso: ele ganha status, prioridade, responsável e anotações, e você trata depois.</p>
+                  <button
+                    className="nr-btn primary"
+                    onClick={() =>
+                      void (async () => {
+                        const data = await api<{ messages: Message[] }>(`/livechat/${current.id}`).catch(() => ({ messages: [] as Message[] }));
+                        setCreatingCase({
+                          id: current.id,
+                          ticketTitle: current.ticketTitle,
+                          firstCustomerMessage: data.messages.find((message) => message.direction === 'in' && message.kind !== 'system')?.body ?? null,
+                          contactName: current.userName ?? current.contactName,
+                          organizationName: current.organizationName,
+                          urgent: current.urgent,
+                          channel: current.channel,
+                        });
+                      })()
+                    }
+                  >
+                    Transformar em caso
+                  </button>
+                </div>
+              )}
+            </div>
+          </aside>
+        ) : null}
       </div>
+
+      {creatingCase ? (
+        <CreateCaseDialog
+          conversation={creatingCase}
+          onClose={() => setCreatingCase(null)}
+          onCreated={() => {
+            setCreatingCase(null);
+            setCasePanel(true);
+            void loadList();
+          }}
+        />
+      ) : null}
 
       {qr ? (
         <Dialog open onOpenChange={(open) => !open && setQr(null)}>
@@ -333,7 +399,7 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
   );
 }
 
-function Thread({ conversation, onBack, onChanged }: { conversation: Conversation; onBack: () => void; onChanged: () => void }) {
+function Thread({ conversation, onBack, onChanged, casePanelOpen, onToggleCasePanel, onShowCasePanel, onCreateCase }: { conversation: Conversation; onBack: () => void; onChanged: () => void; casePanelOpen: boolean; onToggleCasePanel: () => void; onShowCasePanel: () => void; onCreateCase: (source: CaseSource) => void }) {
   const notify = useNotify();
   const [messages, setMessages] = useState<Message[] | null>(null);
   const [text, setText] = useState('');
@@ -349,6 +415,7 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
   const [pending, setPending] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const textRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastAt = useRef<string | null>(null);
 
@@ -494,6 +561,10 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
               <span className="lc-btn-text">Chamado</span>
             </Link>
           ) : null}
+          <button className={`nr-btn ${casePanelOpen ? 'lc-on' : ''}`} onClick={onToggleCasePanel} aria-pressed={casePanelOpen} title="Mostrar ou esconder o caso">
+            <FolderOpen size={16} />
+            <span className="lc-btn-text">{conversation.caseNumber ? `Caso #${conversation.caseNumber}` : 'Caso'}</span>
+          </button>
           {conversation.status === 'open' ? (
             <button
               className="nr-btn"
@@ -644,7 +715,31 @@ function Thread({ conversation, onBack, onChanged }: { conversation: Conversatio
           <button type="button" className="lc-attach-btn" aria-label="Anexar arquivo" title="Anexar arquivo ou imagem" disabled={sending} onClick={() => fileRef.current?.click()}>
             <Paperclip size={20} />
           </button>
+          <QuickReplies
+            conversation={conversation}
+            disabled={sending}
+            onPick={(picked) => {
+              setText((current) => (current.trim() ? `${current.trimEnd()}\n${picked}` : picked));
+              requestAnimationFrame(() => textRef.current?.focus());
+            }}
+          />
+          <button
+            type="button"
+            className="lc-attach-btn"
+            aria-label={conversation.caseId ? `Ver o caso #${conversation.caseNumber}` : 'Transformar em caso'}
+            title={conversation.caseId ? `Ver o caso #${conversation.caseNumber}` : 'Transformar em caso'}
+            disabled={sending}
+            onClick={() => {
+              if (conversation.caseId) return onShowCasePanel();
+              onShowCasePanel();
+              const first = messages?.find((message) => message.direction === 'in' && message.kind !== 'system')?.body ?? null;
+              onCreateCase({ id: conversation.id, ticketTitle: conversation.ticketTitle, firstCustomerMessage: first, contactName: conversation.userName ?? conversation.contactName, organizationName: conversation.organizationName, urgent: conversation.urgent, channel: conversation.channel });
+            }}
+          >
+            {conversation.caseId ? <FolderOpen size={20} /> : <FolderPlus size={20} />}
+          </button>
           <textarea
+            ref={textRef}
             value={text}
             onChange={(event) => setText(event.target.value)}
             onPaste={(event) => {

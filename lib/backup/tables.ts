@@ -25,6 +25,8 @@ export const BACKUP_EXCLUDED = [
   'legal_acceptances', 'data_subject_requests',
   // The platform's support inbox (live chat, WhatsApp): records of the platform, never rolled back with a company's restore.
   'livechat_conversations', 'livechat_attachments',
+  // The team's cases (internal records about conversations and contacts): never part of a company's backup or restore.
+  'support_cases',
 ] as const;
 
 /** Secrets never go into a backup file: it can be downloaded by the organization's admin. */

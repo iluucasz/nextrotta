@@ -21,13 +21,15 @@ export type ChatMessage = ReturnType<typeof serializeMessage>;
 const COLUMNS = `
   c.id, c.channel, c.organization_id, c.ticket_id, c.user_id, c.contact_name, c.contact_phone, c.status, c.urgent,
   c.unread_owner, c.unread_customer, c.last_message_at, c.last_message_preview, c.created_at, c.closed_at,
-  o.name AS organization_name, o.slug AS organization_slug, b.ticket_number, b.title AS ticket_title, u.name AS user_name
+  o.name AS organization_name, o.slug AS organization_slug, b.ticket_number, b.title AS ticket_title, u.name AS user_name,
+  c.case_id, sc.case_number, sc.status AS case_status
 `;
 const FROM = `
   livechat_conversations c
   LEFT JOIN organizations o ON o.id = c.organization_id
   LEFT JOIN bug_reports b ON b.id = c.ticket_id
   LEFT JOIN users u ON u.id = c.user_id
+  LEFT JOIN support_cases sc ON sc.id = c.case_id
 `;
 
 function serializeConversation(row: Record<string, unknown>) {
@@ -51,6 +53,10 @@ function serializeConversation(row: Record<string, unknown>) {
     lastMessagePreview: (row.last_message_preview as string | null) ?? null,
     createdAt: iso(row.created_at)!,
     closedAt: iso(row.closed_at),
+    /** The case this conversation was turned into (a service-console case, see lib/cases). */
+    caseId: (row.case_id as string | null) ?? null,
+    caseNumber: row.case_number == null ? null : Number(row.case_number),
+    caseStatus: (row.case_status as string | null) ?? null,
   };
 }
 

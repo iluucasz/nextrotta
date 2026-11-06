@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { linkInboundToOpenCase } from '@/lib/cases/store';
 import { autoReplyToInbound, LIVECHAT_INSTANCE, webhookTokenMatches } from '@/lib/livechat/whatsapp';
 import { parseEvolutionWebhook } from '@/lib/livechat/rules';
 import { storeWhatsAppMessage } from '@/lib/livechat/store';
@@ -37,6 +38,7 @@ export async function POST(request: NextRequest) {
       if (saved) {
         stored += 1;
         // Greeting, away notice, note about files: only for what the customer wrote, and it never fails the webhook.
+        await linkInboundToOpenCase(saved.id);
         await autoReplyToInbound(event, saved.id);
       }
     }

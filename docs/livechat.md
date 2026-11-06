@@ -53,6 +53,17 @@ Livechat), que aparece no celular que guarda o número. O eco dessa mensagem no 
 ele mesmo nunca viram conversa). Uma vez por conversa e janela de 10 minutos. Falta provar com o número real que o WhatsApp entrega
 uma mensagem para o próprio número (foi testado só com o Evolution simulado).
 
+## Casos (estilo console de atendimento)
+
+Uma conversa que não foi resolvida na hora vira um **caso** para ser tratado depois. O caso é registro **próprio da equipe** (`support_cases`, migração `0046`), separado dos chamados que o cliente abre no sistema: pode ser de alguém que ainda não é cliente (WhatsApp sem empresa) e nunca é apagado, só **Resolvido**.
+
+- **No Livechat:** ao lado da conversa há o painel **Caso** (aberto por padrão em tela larga; deslizante em tela estreita). Sem caso, o botão **Transformar em caso** (também no ícone de pasta da caixa de resposta) abre uma janela com assunto (sugerido pelo título do chamado ou pelo que o cliente disse primeiro), prioridade, status, responsável (você, por padrão) e anotação inicial; o contato, a empresa e o final da conversa (como descrição) vêm da conversa. Com caso, o painel mostra **status** (Novo, Em andamento, Aguardando cliente, Resolvido), **prioridade**, **responsável** (com **Assumir**), assunto e descrição editáveis, os **atendimentos** (conversas ligadas ao caso) e **anotações internas** com o **histórico** (cada mudança registra quem fez e quando). A lista de conversas mostra a etiqueta "Caso #…".
+- **Caixa de resposta:** ícones de **anexo**, de **mensagem automática** (raio: a lista das mensagens automáticas com o nome do cliente e o chamado já preenchidos, para editar e enviar; nada sai sozinho dali) e de **caso**.
+- **Reports → Casos:** a lista (Meus casos, Sem responsável, Todos; abertos ou por status; busca por assunto, contato, número ou telefone) e a página de cada caso. **Novo caso** cria um à mão (empresa e contato digitados).
+- **Cliente que escreve de novo:** enquanto o caso do número estiver aberto (não resolvido), uma nova conversa dele no WhatsApp entra no mesmo caso (`linkInboundToOpenCase`, chamada pelo webhook); um caso resolvido não puxa conversa nova.
+- **Quem pode:** dono/admin e atendentes (rotas `withPlatformStaff`, `/api/platform/cases`). O caso fica fora do backup e da restauração da empresa (`BACKUP_EXCLUDED`).
+- Código: regras em `lib/cases/rules.ts` (sem banco), banco em `lib/cases/store.ts`, tela em `components/platform/case-workspace.tsx` e `cases.tsx`, respostas rápidas em `quick-replies.tsx`. Teste: `node scripts/test-cases.cjs`.
+
 ## Mensagens automáticas
 
 Reports → **Mensagens automáticas** (só admins editam; o atendente não vê a aba). Cada mensagem tem liga/desliga, texto com variáveis (`{nome}`, `{chamado}`, `{horario}`; as que faltam somem com a pontuação), prévia e "Restaurar padrão". Só o que o admin mudou fica no banco (`livechat_auto_messages`, migração `0045`; `NULL` = padrão do código em `lib/livechat/auto-messages.ts`); as mensagens enviadas ficam marcadas (`livechat_messages.auto_key`, "Mensagem automática" no chat).
