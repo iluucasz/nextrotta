@@ -66,3 +66,6 @@
   .nr-platform .nr-ni-bulk { margin-left: 0; width: 100%; }
   .nr-platform .nr-ni-filters label, .nr-platform .nr-ni-filters select { width: 100%; }
 }
+
+/* Panels have no inner padding of their own (the content brings .nr-pad). */
+.nr-platform .nr-ni-body { padding-top: 20px; }

@@ -133,6 +133,7 @@ export function NoticeInbox() {
       </div>
 
       <Panel className="nr-ni-panel">
+        <div className="nr-pad nr-ni-body">
         <div className="nr-ni-filters">
           <div className="nr-tabs nr-ni-views" role="tablist" aria-label="Ver">
             <button role="tab" aria-selected={view === 'active'} onClick={() => setView('active')}>
@@ -251,6 +252,7 @@ export function NoticeInbox() {
             )}
           </div>
         )}
+        </div>
       </Panel>
 
       {clearing && (
