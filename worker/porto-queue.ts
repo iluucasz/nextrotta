@@ -8,7 +8,7 @@ import { sendOwnerAlert } from '../lib/platform/alerts';
 import { brasiliaNow, timeToMinutes } from '../lib/whatsapp/dates';
 import { cachedOrganizationSettings, cachedPlatformSettings, cachedPortoOrganizations } from './cached-reads';
 import { isJobDue, JOB_CATCH_UP_MINUTES } from './job-schedule';
-import { runWithRetries, type RetryInfo } from './job-retry';
+import { loginRejectionLooksTransient, runWithRetries, type RetryInfo } from './job-retry';
 import { portoLockInfo, setMaxBrowsers, waitForPortoLock } from './porto-lock';
 
 /**
@@ -85,6 +85,35 @@ export async function loadLastRuns(today: string) {
   loadedDay = today;
 }
 
+/**
+ * Whether a "wrong CPF or password" from the portal should be tried again later for this organization:
+ * only when the saved credentials got in within the last 48 hours (see loginRejectionLooksTransient).
+ * A failure to read the evidence means "no": the safe side is not to repeat a possibly wrong password.
+ */
+async function loginRejectionLooksTransientFor(organizationId: string): Promise<boolean> {
+  try {
+    const [config] = await sql`
+      SELECT updated_at, last_login_test_at, last_login_test_ok FROM porto_config WHERE organization_id = ${organizationId}
+    `;
+    if (!config) return false;
+    // A dry run logs in too, so it counts as proof; skipped and failed runs do not.
+    const [run] = await sql`
+      SELECT MAX(started_at) AS at FROM porto_sync_log
+      WHERE organization_id = ${organizationId} AND status IN ('success', 'partial', 'dry_run')
+        AND started_at > NOW() - INTERVAL '48 hours'
+    `;
+    const candidates = [run?.at, config.last_login_test_ok === true ? config.last_login_test_at : null]
+      .filter(Boolean)
+      .map((value) => new Date(value as string).getTime());
+    return loginRejectionLooksTransient({
+      lastWorkingLoginAt: candidates.length ? new Date(Math.max(...candidates)) : null,
+      credentialsSavedAt: (config.updated_at as string | null) ?? null,
+    });
+  } catch {
+    return false;
+  }
+}
+
 function enqueue(hooks: Hooks, organizationId: string, job: JobKind, runDay: string) {
   const key = `${organizationId}:${job}`;
   if (tasks.has(key)) return;
@@ -111,13 +140,15 @@ function enqueue(hooks: Hooks, organizationId: string, job: JobKind, runDay: str
   };
 
   void (async () => {
+    // Decided before the first attempt, from what was known then (a failed attempt proves nothing new).
+    const retryLoginRejection = await loginRejectionLooksTransientFor(organizationId);
     if (job === 'hours') {
-      const { result, attempts } = await runWithRetries({ run: () => attempt(() => runHoursJob({ organizationId, manual: false })), onRetry });
+      const { result, attempts } = await runWithRetries({ run: () => attempt(() => runHoursJob({ organizationId, manual: false })), onRetry, retryLoginRejection });
       hooks.log(`Resultado (horas, ${organizationId}):`, JSON.stringify({ status: result.status, rows_written: result.rows_written, warnings: result.warnings?.length ?? 0, attempts }));
       await handleProblems(hooks, organizationId, jobLabel, result, runDay, attempts);
       if (result.status === 'success' || result.status === 'partial') await hooks.afterHours(organizationId, runDayDate ?? new Date());
     } else {
-      const { result, attempts } = await runWithRetries({ run: () => attempt(() => runScheduleJob({ organizationId, manual: false })), onRetry });
+      const { result, attempts } = await runWithRetries({ run: () => attempt(() => runScheduleJob({ organizationId, manual: false })), onRetry, retryLoginRejection });
       hooks.log(`Resultado (escala, ${organizationId}):`, JSON.stringify({ status: result.status, warnings: result.warnings?.length ?? 0, attempts }));
       await handleProblems(hooks, organizationId, jobLabel, result, runDay, attempts);
     }

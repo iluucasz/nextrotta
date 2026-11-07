@@ -29,7 +29,10 @@ export function needsSupport(message: string | null | undefined): boolean {
 }
 
 export const PORTO_LOGIN_MESSAGES: Record<PortoLoginReason, string> = {
-  credentials_rejected: 'O Porto não aceitou o CPF ou a senha. Se você trocou a senha no Portal do Prestador, atualize aqui em “Alterar”.',
+  // Deliberately neutral: the portal answers "wrong CPF or password" also when it hiccups (seen live 06/11/2026,
+  // right after a working login and right before another one), so the text must not accuse the password.
+  credentials_rejected:
+    'O Porto recusou o login desta vez. Pode ser uma instabilidade do portal: o robô tenta de novo sozinho. Se continuar, confira o CPF e a senha em “Alterar”.',
   password_expired:
     'A senha do Porto expirou. Entre no Portal do Prestador, escolha uma nova senha e depois atualize aqui em “Alterar”.',
   no_confirmation:
@@ -97,13 +100,26 @@ export function buildLoginFailureMessage(reason: PortoLoginReason, diagnostics: 
  * A rejected login is not tried again: it is already attempted twice inside a run, and repeating a
  * wrong password risks locking the Porto account. Recognises the old wording too (rows already stored).
  */
+/** The first wording of `credentials_rejected` (accused the password); rows stored with it are shown with the current one. */
+const PREVIOUS_CREDENTIALS_REJECTED =
+  'O Porto não aceitou o CPF ou a senha. Se você trocou a senha no Portal do Prestador, atualize aqui em “Alterar”.';
+
 /** Wordings already stored in the history before they were rewritten. */
-const PREVIOUS_SENTENCES = ['O Porto aceitou o CPF e a senha, mas não abriu a sessão.'];
+const PREVIOUS_SENTENCES = ['O Porto aceitou o CPF e a senha, mas não abriu a sessão.', PREVIOUS_CREDENTIALS_REJECTED];
 
 export function isPortoLoginRejection(message: string | null | undefined): boolean {
   const text = message ?? '';
   if (text.startsWith(LEGACY_LOGIN_PREFIX)) return true;
   return [...Object.values(PORTO_LOGIN_MESSAGES), ...PREVIOUS_SENTENCES].some((sentence) => text.startsWith(sentence));
+}
+
+/**
+ * The portal said "wrong CPF or password" (and nothing else: not an expired password, a block or a missing QRA).
+ * The only login rejection that can be a portal hiccup, so the only one the worker may try again.
+ */
+export function isCredentialsRejection(message: string | null | undefined): boolean {
+  const text = message ?? '';
+  return text.startsWith(PORTO_LOGIN_MESSAGES.credentials_rejected) || text.startsWith(PREVIOUS_CREDENTIALS_REJECTED);
 }
 
 export type PortoErrorText = { message: string; technical: string | null };
@@ -142,6 +158,7 @@ export function describePortoError(raw: string | null | undefined): PortoErrorTe
     const signals = technical ? signalsFromTrace(technical) : null;
     return { message: PORTO_LOGIN_MESSAGES[signals ? classifyLoginFailure(signals) : 'no_confirmation'], technical };
   }
+  if (isCredentialsRejection(text)) return { message: PORTO_LOGIN_MESSAGES.credentials_rejected, technical };
   if (isPortoLoginRejection(text)) return { message, technical };
 
   if (text.startsWith(LOGIN_PAGE_NOT_OPENED)) return { message: LOGIN_PAGE_MESSAGE, technical: text };

@@ -53,6 +53,11 @@ test('describePortoError: the sentence for the screen, the trace kept apart', ()
   assert.equal(e.describePortoError(legacyEmpty).message, M.no_confirmation);
   const legacyInvalid = 'Login no Porto falhou — verifique CPF e senha, ou o portal pode ter mudado. (url=u qraLookup(status=200, body="{"status":"invalid","message":"Erro ao realizar a consulta dos dados"}") modalVisible=false sessionCheck(status=200, body="x"))';
   assert.equal(e.describePortoError(legacyInvalid).message, M.credentials_rejected);
+  // Rows stored with the first wording (it accused the password) are shown with the neutral one.
+  const accusing = 'O Porto não aceitou o CPF ou a senha. Se você trocou a senha no Portal do Prestador, atualize aqui em “Alterar”. (url=u qraLookup(status=200, body="x"))';
+  assert.equal(e.describePortoError(accusing).message, M.credentials_rejected);
+  assert.equal(e.isCredentialsRejection(accusing), true);
+  assert.equal(e.isCredentialsRejection(`${M.password_expired} (url=x)`), false);
   // A legacy text cut short by the 300-character limit still gets a sentence.
   assert.equal(e.describePortoError('Login no Porto falhou — verifique CPF e senha, ou o portal pode ter mudado. (url=u qraLo').message, M.no_confirmation);
 
