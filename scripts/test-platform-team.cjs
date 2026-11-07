@@ -33,7 +33,7 @@ test('access: the owner opens every page of the panel', () => {
 });
 
 test('access: a support user opens Reports, the companies (read-only) and their account, nothing else', () => {
-  const allowed = ['/plataforma/reports', '/plataforma/reports/abc', '/plataforma/bugs', '/plataforma/organizacoes', '/plataforma/organizacoes/abc', '/plataforma/configuracoes', '/plataforma/configuracoes/'];
+  const allowed = ['/plataforma/reports', '/plataforma/reports/abc', '/plataforma/bugs', '/plataforma/notificacoes', '/plataforma/organizacoes', '/plataforma/organizacoes/abc', '/plataforma/configuracoes', '/plataforma/configuracoes/'];
   const denied = ['/plataforma', '/plataforma/', '/plataforma/financeiro', '/plataforma/planos', '/plataforma/cupons', '/plataforma/creditos-ia', '/plataforma/recursos', '/plataforma/leads', '/plataforma/site', '/plataforma/operacao', '/plataforma/privacidade', '/plataforma/auditoria', '/plataforma/equipe', '/plataforma/organizacoes/nova', '/plataforma/organizacoes/abc/provisionamento', '/plataforma/organizacoes/abc/acesso', '/plataformax', '/login'];
   for (const path of allowed) assert.equal(access.mayOpenPanelPath('platform_support', path), true, path);
   for (const path of denied) assert.equal(access.mayOpenPanelPath('platform_support', path), false, path);

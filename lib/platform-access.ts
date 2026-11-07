@@ -13,7 +13,7 @@ export const isPlatformRole = (role: unknown): role is PlatformRole => role === 
 export const SUPPORT_HOME = '/plataforma/reports';
 
 /** The parts of the panel a support user may open, by the first segment after /plataforma. */
-export const SUPPORT_SECTIONS = ['reports', 'bugs', 'organizacoes', 'configuracoes'] as const;
+export const SUPPORT_SECTIONS = ['reports', 'bugs', 'notificacoes', 'organizacoes', 'configuracoes'] as const;
 
 /** The segments after /plataforma ("/plataforma/organizacoes/abc" -> ["organizacoes", "abc"]). */
 export function panelSegments(pathname: string): string[] {

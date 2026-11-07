@@ -1,6 +1,8 @@
 // Relative imports only: compiled into the VPS worker (worker/tsconfig.json).
 import { hostname } from 'node:os';
 import { sql } from './db';
+import { notifyPlatform } from './platform/notice-alerts';
+import { resolveNotices } from './platform/notices';
 
 const WORKER_ID = process.env.WORKER_ID || hostname();
 const STARTED_AT = new Date().toISOString();
@@ -48,10 +50,23 @@ export async function trackRun<T>(job: string, organizationId: string | null, ru
   try {
     const result = await run();
     await sql`UPDATE worker_runs SET status = 'success', finished_at = NOW() WHERE id = ${id}`;
+    if (job !== 'platform_checks') await resolveNotices(`job:failed:${job}:${organizationId ?? 'all'}:`).catch(() => undefined);
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await sql`UPDATE worker_runs SET status = 'error', finished_at = NOW(), error = ${message.slice(0, 2000)} WHERE id = ${id}`;
+    // A platform routine that fails (billing, credits, backups...) is what nobody else would notice. The checks themselves never report on themselves.
+    if (job !== 'platform_checks') {
+      await notifyPlatform({
+        organizationId,
+        category: 'system',
+        severity: 'warning',
+        title: `A rotina "${job}" falhou`,
+        body: message.slice(0, 500),
+        href: '/plataforma/operacao',
+        dedupeKey: `job:failed:${job}:${organizationId ?? 'all'}:${new Date().toISOString().slice(0, 10)}`,
+      });
+    }
     throw error;
   }
 }

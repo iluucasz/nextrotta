@@ -6,6 +6,7 @@ import { backupStorageConfigured } from '../lib/backup/storage';
 import { runBillingMaintenance } from '../lib/billing/billing';
 import { grantMonthlyCredits } from '../lib/platform/ai-credits';
 import { expireCoupons } from '../lib/platform/coupons';
+import { runPlatformChecks } from '../lib/platform/notice-checks';
 import { collectVpsMetrics, flushVpsMetrics, runAutomaticVpsCleanup, vpsAgentConfigured } from '../lib/platform/vps';
 import { recordHeartbeat, trackRun } from '../lib/worker-health';
 import { refreshAllInstanceStatuses } from '../lib/whatsapp/instance';
@@ -136,6 +137,13 @@ async function heartbeat() {
 async function maintenance() {
   invalidateCachedReads();
   await heartbeat();
+  // What the owner would otherwise have to open each company to find out (limits, WhatsApp, robot, backups, waiting cases, the platform).
+  try {
+    const result = await runPlatformChecks();
+    if (result) log('Avisos da plataforma:', JSON.stringify(result));
+  } catch (error) {
+    log('Verificações da plataforma falharam:', error);
+  }
   if (vpsAgentConfigured()) {
     try {
       const written = await flushVpsMetrics();

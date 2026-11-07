@@ -6,6 +6,8 @@ import { startWebConversation } from '../livechat/store';
 import { ticketVariable } from '../livechat/auto-messages';
 import { getAutoMessage } from '../livechat/auto-store';
 import { notifyOrganization } from '../notifications';
+import { notifyPlatform } from './notice-alerts';
+import { resolveNotices } from './notices';
 import { normalizePhone } from '../whatsapp/phone';
 import { assignee } from '../cases/people';
 import { changeLine, statusLine, textProblem, MAX_DESCRIPTION_LENGTH, MAX_SUBJECT_LENGTH, type CaseOrigin } from '../cases/rules';
@@ -240,6 +242,19 @@ export async function createBugReport(
     RETURNING id, ticket_number
   `;
   const ticketId = String(rows[0].id);
+  // A live chat reaches the team through the Livechat alert below; a written case needs its own entry in the inbox.
+  if (!chat) {
+    await notifyPlatform({
+      organizationId: reporter.organizationId,
+      category: 'support',
+      audience: 'staff',
+      severity: type === 'bug' ? 'warning' : 'info',
+      title: `${type === 'bug' ? 'Novo bug' : type === 'suggestion' ? 'Nova sugestão' : 'Novo caso de suporte'}: ${title}`.slice(0, 200),
+      body: description.slice(0, 300),
+      href: `/plataforma/reports/${ticketId}`,
+      dedupeKey: `case:new:${ticketId}`,
+    });
+  }
   if (chat) {
     try {
       const user = (await sql`SELECT name FROM users WHERE id = ${reporter.userId}`)[0];
@@ -290,6 +305,22 @@ export async function addBugMessage(
     VALUES (${id}, ${author.userId}, ${author.fromOwner}, ${internal}, ${text})
     RETURNING id
   `;
+  // The team answered: what was waiting for an answer in the inbox is done. The customer writing again is news.
+  if (author.fromOwner && !internal) {
+    await resolveNotices(`case:new:${id}`).catch(() => undefined);
+    await resolveNotices(`case:reply:${id}`).catch(() => undefined);
+  } else if (!author.fromOwner) {
+    await notifyPlatform({
+      organizationId: report.organizationId,
+      category: 'support',
+      audience: 'staff',
+      severity: 'info',
+      title: `O cliente respondeu no caso ${formatTicketNumber(report.ticketNumber)}`,
+      body: text.slice(0, 300),
+      href: `/plataforma/reports/${id}`,
+      dedupeKey: `case:reply:${id}`,
+    });
+  }
   // The platform answering a ticket is the one thing the company should not have to go and look for.
   if (author.fromOwner && !internal && report.organizationId) {
     await notifyOrganization(report.organizationId, {
@@ -363,6 +394,9 @@ export async function updateBugReport(
         resolved_at = ${closing ? new Date().toISOString() : stillOpen ? null : report.resolvedAt}
     WHERE id = ${id}
   `;
+  // Someone took the case (or closed it): it no longer waits in the inbox as new.
+  if (status !== 'new') await resolveNotices(`case:new:${id}`).catch(() => undefined);
+  if (!stillOpen) await resolveNotices(`case:reply:${id}`).catch(() => undefined);
 
   // The history: one line per thing that changed, with who did it.
   const lines: Array<{ kind: 'status' | 'priority' | 'owner' | 'subject'; body: string }> = [];

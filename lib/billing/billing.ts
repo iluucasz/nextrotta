@@ -2,6 +2,7 @@ import { recordAudit } from '../audit';
 import { sql } from '../db';
 import { createClosingBackup } from '../backup/service';
 import { notifyOrganization } from '../notifications';
+import { notifyPlatform } from '../platform/notice-alerts';
 import { calculateSubscriptionValue, type BillingCycle } from '../plans';
 import { PlatformError, type Actor } from '../platform/errors';
 import {
@@ -280,6 +281,15 @@ export async function activateBilling(organizationId: string, input: { firstDueD
     targetId: organizationId,
     details: { firstDueDate, value },
   });
+  await notifyPlatform({
+    organizationId,
+    category: 'billing',
+    severity: 'success',
+    title: `Cobrança ativada: ${brl(value)}`,
+    body: `Primeiro vencimento em ${formatDate(firstDueDate)}.`,
+    href: `/plataforma/organizacoes/${organizationId}`,
+    dedupeKey: `billing:activated:${organizationId}:${firstDueDate}`,
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -459,6 +469,15 @@ export async function cancelBilling(organizationId: string, actor: Actor) {
     targetType: 'subscription',
     targetId: organizationId,
     details: { asaasSubscriptionId: context.asaas_subscription_id },
+  });
+  await notifyPlatform({
+    organizationId,
+    category: 'growth',
+    severity: 'warning',
+    title: 'Assinatura cancelada',
+    body: 'A cobrança recorrente foi encerrada no Asaas.',
+    href: `/plataforma/organizacoes/${organizationId}`,
+    dedupeKey: `billing:canceled:${organizationId}:${brasiliaToday()}`,
   });
 }
 

@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { recordAudit } from '../audit';
 import { sql } from '../db';
 import { isUuid, PlatformError, type Actor } from './errors';
+import { notifyPlatform } from './notice-alerts';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ORIGINS = ['contratar', 'sob_medida', 'contato'] as const;
@@ -42,7 +43,7 @@ export async function submitLead(input: Record<string, unknown>, sourceIp: strin
     }
   }
 
-  await sql`
+  const inserted = await sql`
     INSERT INTO leads (name, company, email, phone, technicians, plan_key, cycle, message, origin, source_hash)
     VALUES (
       ${name}, ${company}, ${email}, ${clip(input.phone, 40) || null},
@@ -50,7 +51,16 @@ export async function submitLead(input: Record<string, unknown>, sourceIp: strin
       ${clip(input.plan, 40) || null}, ${input.cycle === 'annual' ? 'annual' : input.cycle === 'monthly' ? 'monthly' : null},
       ${message || null}, ${origin}, ${sourceHash}
     )
+    RETURNING id
   `;
+  await notifyPlatform({
+    category: 'growth',
+    severity: 'info',
+    title: `Novo contato: ${company}`,
+    body: `${name} (${email})${message ? ` — ${message.slice(0, 200)}` : ''}`,
+    href: '/plataforma/leads',
+    dedupeKey: `lead:new:${inserted[0]?.id ?? ''}`,
+  });
   return { accepted: true };
 }
 

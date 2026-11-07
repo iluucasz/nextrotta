@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import { Plus } from 'lucide-react';
 import { api, date, useResource } from './api';
+import { NoticeInbox } from './notice-inbox';
+import { useIsOwner } from './role';
 import { useNotify } from './notice';
 import { Badge, Confirm, DataTable, Editor, ErrorState, Loading, Panel, Title, type Field } from './ui';
 
@@ -23,7 +25,32 @@ type PlatformNotification = {
 
 const SEVERITY_LABELS = { info: 'Informação', success: 'Boa notícia', warning: 'Atenção', critical: 'Urgente' };
 
+/** The team's notifications: the inbox of what is happening in the companies, and (for admins) the notices published to the customers. */
 export function Notifications() {
+  const owner = useIsOwner();
+  const [tab, setTab] = useState<'inbox' | 'clients'>('inbox');
+  return (
+    <>
+      <Title
+        title="Notificações"
+        description={owner ? 'O que está acontecendo nas empresas e na plataforma, e os avisos que você publica para os clientes.' : 'O que está acontecendo no atendimento.'}
+      />
+      {owner && (
+        <div className="nr-tabs" role="tablist" aria-label="Tipo de notificação">
+          <button role="tab" aria-selected={tab === 'inbox'} onClick={() => setTab('inbox')}>
+            Alertas da equipe
+          </button>
+          <button role="tab" aria-selected={tab === 'clients'} onClick={() => setTab('clients')}>
+            Avisos aos clientes
+          </button>
+        </div>
+      )}
+      {owner && tab === 'clients' ? <ClientNotices /> : <NoticeInbox />}
+    </>
+  );
+}
+
+function ClientNotices() {
   const notify = useNotify();
   const list = useResource<{ notifications: PlatformNotification[] }>('/notifications');
   const organizations = useResource<{ organizations: { id: string; name: string }[] }>('/organizations');
@@ -63,17 +90,16 @@ export function Notifications() {
 
   return (
     <>
-      <Title
-        title="Notificações"
-        description="Avisos que aparecem no sino do sistema: para todas as empresas, ou só para uma. As notificações automáticas de cada empresa (cobranças, chamados, robô do Porto) saem sozinhas."
+      <Panel
+        title="Avisos publicados"
+        description="Aparecem no sino do sistema das empresas: para todas, ou só para uma. As notificações automáticas de cada empresa (cobranças, chamados, robô do Porto) saem sozinhas."
         action={
           <button className="nr-btn primary" onClick={() => setCreating(true)}>
             <Plus size={15} />
             Nova notificação
           </button>
         }
-      />
-      <Panel title="Avisos publicados">
+      >
         <DataTable
           rows={rows}
           defaultSort="createdAt"

@@ -76,7 +76,7 @@ export async function organizationHasFeature(organizationId: string, feature: Pl
 /** First day of the current month in Brasília, as a timestamp boundary. */
 const MONTH_START_SQL = `date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo'`;
 
-async function currentUsage(organizationId: string, key: keyof PlanLimits): Promise<number> {
+export async function currentUsage(organizationId: string, key: keyof PlanLimits): Promise<number> {
   const queries: Record<keyof PlanLimits, string> = {
     maxUsers: `SELECT COUNT(*)::int AS used FROM users
                WHERE organization_id = $1 AND deleted_at IS NULL AND status = 'active'`,

@@ -1,5 +1,7 @@
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { sql } from '../db';
+import { notifyPlatform } from '../platform/notice-alerts';
+import { resolveNotices } from '../platform/notices';
 import { brasiliaDay, nextBackupTime } from './dates';
 import { expiredCopyIds } from './rules';
 import { backupStorageConfigured, readBackupFile, removeBackupFile, saveBackupFile } from './storage';
@@ -254,9 +256,20 @@ export async function runDailyBackups(): Promise<{ made: number; failed: number 
   for (const organization of organizations) {
     try {
       if (await createBackup(String(organization.id), 'daily', null)) made += 1;
+      await resolveNotices(`backup:fail:${organization.id}:`).catch(() => undefined);
     } catch (error) {
       failed += 1;
       console.error(`[backup] ${organization.id}:`, error);
+      // Told at once (the platform check only notices after 36 hours without a copy).
+      await notifyPlatform({
+        organizationId: String(organization.id),
+        category: 'backup',
+        severity: 'warning',
+        title: 'O backup diário da empresa falhou',
+        body: (error instanceof Error ? error.message : String(error)).slice(0, 500),
+        href: `/plataforma/organizacoes/${organization.id}`,
+        dedupeKey: `backup:fail:${organization.id}:${today}`,
+      });
     }
   }
   return { made, failed };

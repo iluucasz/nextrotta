@@ -1,5 +1,8 @@
 import { sql } from './db';
 import { brasiliaDateKey } from './formatters';
+import { mirrorRule } from './platform/notice-meta';
+import { resolveNotices } from './platform/notices';
+import { notifyPlatform } from './platform/notice-alerts';
 
 /**
  * Notifications. Two kinds share one table: what is going on for one company (organization_id set: charges,
@@ -70,7 +73,28 @@ export async function createNotification(input: NotificationInput): Promise<stri
     RETURNING id
   `;
 
-  return rows[0] ? String(rows[0].id) : null;
+  const id = rows[0] ? String(rows[0].id) : null;
+  if (id && input.organizationId) await mirrorToPlatform(input.organizationId, input, title);
+  return id;
+}
+
+/**
+ * What a company is told that the NextRotta's people must also follow (a payment, a late charge, credits running out,
+ * the robot failing) goes to their inbox too, with a key of its own so that the company's bell resolving it resolves it there.
+ */
+async function mirrorToPlatform(organizationId: string, input: NotificationInput, title: string) {
+  const rule = mirrorRule(input.kind, input.severity ?? 'info');
+  if (!rule) return;
+  await notifyPlatform({
+    organizationId,
+    category: rule.category,
+    severity: rule.severity,
+    title,
+    // The company's text speaks to the company ("Regularize em Assinatura"); only the robot and credits ones describe the problem.
+    body: input.kind === 'billing' ? '' : (input.body ?? ''),
+    href: `/plataforma/organizacoes/${organizationId}`,
+    dedupeKey: input.dedupeKey ? `org:${organizationId}:${input.dedupeKey}` : null,
+  });
 }
 
 /** For events inside other flows (a payment, a reply): a failure here must never break the flow itself. */
@@ -270,6 +294,8 @@ export async function resolveNotifications(organizationId: string, dedupePrefix:
       AND archived_at IS NULL
       AND dedupe_key LIKE ${`${dedupePrefix}%`}
   `;
+  // The same problem in the NextRotta's inbox ends with it.
+  await resolveNotices(`org:${organizationId}:${dedupePrefix}`).catch(() => undefined);
 }
 
 function addDays(dateKey: string, days: number) {

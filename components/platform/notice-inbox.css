@@ -1,0 +1,68 @@
+/* The NextRotta team's inbox (notice-inbox.tsx) and the bell in the header (notice-bell.tsx). */
+
+.nr-platform .nr-ni-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 18px; }
+.nr-platform .nr-ni-card {
+  display: flex; flex-direction: column; gap: 2px; text-align: left; padding: 14px 16px; border-radius: 10px;
+  border: 1px solid var(--nr-line); background: #fff; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s;
+}
+.nr-platform .nr-ni-card span { font-size: 14px; color: var(--nr-muted); }
+.nr-platform .nr-ni-card strong { font-size: 28px; line-height: 1.1; color: var(--nr-ink); }
+.nr-platform .nr-ni-card small { font-size: 12px; color: var(--nr-muted); }
+.nr-platform .nr-ni-card:hover { border-color: #b9cdbf; }
+.nr-platform .nr-ni-card[aria-pressed='true'] { border-color: #246347; box-shadow: 0 0 0 2px #e2eee5; }
+.nr-platform .nr-ni-card.critical strong { color: #bd4d3b; }
+.nr-platform .nr-ni-card.warning strong { color: #a88133; }
+.nr-platform .nr-ni-card.success strong { color: #28805d; }
+
+.nr-platform .nr-ni-filters .nr-ni-views { margin: 0 8px 0 0; padding: 0; border: 0; align-self: end; }
+.nr-platform .nr-ni-filters { display: flex; flex-wrap: wrap; align-items: end; gap: 12px 16px; margin-bottom: 14px; }
+.nr-platform .nr-ni-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--nr-muted); }
+.nr-platform .nr-ni-filters select { min-width: 170px; padding: 7px 10px; border: 1px solid var(--nr-line); border-radius: 6px; background: #fff; font-size: 14px; color: var(--nr-ink); }
+.nr-platform .nr-ni-filters .nr-ni-check { flex-direction: row; align-items: center; gap: 7px; padding-bottom: 8px; }
+.nr-platform .nr-ni-bulk { display: flex; gap: 8px; margin-left: auto; }
+
+.nr-platform .nr-ni-day { margin: 18px 0 6px; font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--nr-muted); }
+.nr-platform .nr-ni-item {
+  position: relative; display: flex; gap: 14px; align-items: flex-start; padding: 12px 14px 12px 18px; margin-bottom: 8px;
+  border: 1px solid var(--nr-line); border-radius: 10px; background: #fff;
+}
+.nr-platform .nr-ni-item.read { background: #fbfcfb; }
+.nr-platform .nr-ni-item.resolved { opacity: 0.62; }
+.nr-platform .nr-ni-bar { position: absolute; left: 0; top: 10px; bottom: 10px; width: 4px; border-radius: 0 4px 4px 0; background: #b7c3bb; }
+.nr-platform .nr-ni-item.critical .nr-ni-bar { background: #d8604b; }
+.nr-platform .nr-ni-item.warning .nr-ni-bar { background: #e0b04f; }
+.nr-platform .nr-ni-item.success .nr-ni-bar { background: #3d9a75; }
+.nr-platform .nr-ni-main { flex: 1; min-width: 0; }
+.nr-platform .nr-ni-head { display: flex; align-items: center; gap: 8px; }
+.nr-platform .nr-ni-item.read .nr-ni-head strong { font-weight: 500; }
+.nr-platform .nr-ni-dot { width: 8px; height: 8px; border-radius: 50%; background: #246347; flex: none; }
+.nr-platform .nr-ni-main p { margin: 4px 0 0; font-size: 14px; color: #4d5b53; overflow-wrap: anywhere; white-space: pre-line; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.nr-platform .nr-ni-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin-top: 8px; font-size: 13px; color: var(--nr-muted); }
+.nr-platform .nr-ni-meta a { color: #246347; font-weight: 500; }
+.nr-platform .nr-ni-meta a:hover { text-decoration: underline; }
+.nr-platform .nr-ni-tag { padding: 2px 8px; border-radius: 5px; background: #eff2f5; color: #63707d; }
+.nr-platform .nr-ni-item.critical .nr-ni-tag:not(.soft):not(.good) { background: #fff0ec; color: #bd4d3b; }
+.nr-platform .nr-ni-item.warning .nr-ni-tag:not(.soft):not(.good) { background: #fff6e5; color: #a88133; }
+.nr-platform .nr-ni-item.success .nr-ni-tag:not(.soft):not(.good) { background: #e9f6ef; color: #28805d; }
+.nr-platform .nr-ni-tag.good { background: #e9f6ef; color: #28805d; }
+.nr-platform .nr-ni-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+.nr-platform .nr-ni-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--nr-line); background: #fff; color: #5a6a60; cursor: pointer; }
+.nr-platform .nr-ni-icon:hover { background: #f1f6f2; color: #246347; }
+.nr-platform .nr-ni-more { display: block; margin: 12px auto 0; }
+
+/* The bell in the header. */
+.nr-platform .nr-bell { position: relative; display: inline-grid; place-items: center; width: 38px; height: 38px; border-radius: 8px; color: #4d5b53; }
+.nr-platform .nr-bell:hover { background: #eef3ef; color: #246347; }
+.nr-platform .nr-bell b {
+  position: absolute; top: 3px; right: 2px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #246347; color: #fff;
+  font-size: 11px; font-weight: 600; line-height: 18px; text-align: center;
+}
+.nr-platform .nr-bell.urgent b { background: #d8604b; }
+
+@media (max-width: 760px) {
+  .nr-platform .nr-ni-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .nr-platform .nr-ni-item { flex-wrap: wrap; }
+  .nr-platform .nr-ni-actions { width: 100%; justify-content: flex-end; }
+  .nr-platform .nr-ni-bulk { margin-left: 0; width: 100%; }
+  .nr-platform .nr-ni-filters label, .nr-platform .nr-ni-filters select { width: 100%; }
+}

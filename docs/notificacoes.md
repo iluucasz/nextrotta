@@ -54,3 +54,38 @@ As verificações de `lib/notification-checks.ts` (`runNotificationChecks`) roda
 Para avisar de algo novo: `await notifyOrganization(organizationId, { kind, severity, title, body, href, dedupeKey })`.
 
 Teste: `node scripts/test-notifications.cjs` (usa o banco de desenvolvimento; cria uma empresa de teste e a deixa arquivada).
+
+---
+
+# Notificações da equipe (dono e atendentes)
+
+A caixa de quem cuida da plataforma: o que acontece nas empresas e na própria NextRotta, sem precisar abrir cada empresa. Tela em **Painel → Notificações → "Alertas da equipe"** (a aba "Avisos aos clientes" é a tela antiga de publicar avisos no sino das empresas) e um **sino no cabeçalho** do painel com o número de não lidas (vermelho quando há algo crítico). Atendentes veem só o que é do atendimento.
+
+## Dados (migração `0048`)
+
+- `platform_notices`: assunto (`category`), importância (`severity`: Crítico, Atenção, Concluído, Aviso, os mesmos quatro das empresas), público (`audience`: `owner` = só admins; `staff` = admins e atendentes), título, texto, link do painel, empresa (ou nenhuma, quando é da plataforma), `dedupe_key`, `occurrences`, `last_seen_at` e `resolved_at`.
+- **Chave de repetição enquanto aberto:** um problema que continua não avisa de novo (só soma `occurrences`); quando acaba é **resolvido** (`resolved_at`) e, se voltar, vira aviso novo. Nada é apagado.
+- `platform_notice_reads`: leitura e "limpar" **por pessoa** (`read_at`, `dismissed_at`); a aba Limpas restaura.
+- Assuntos (`lib/platform/notice-meta.ts`, um lugar só): Pagamentos, Limites, Robô do Porto, WhatsApp, Backups, Créditos de IA, Atendimento (`support`, único para atendentes), Clientes e vendas, Privacidade, Plataforma.
+
+## Código
+
+- `lib/platform/notices.ts` (banco: `insertNotice`, `resolveNotices`, `listNotices`, leitura/limpeza), `lib/platform/notice-alerts.ts` (`notifyPlatform`, nunca quebra o fluxo; `syncPlatformNotices`; avisa o **WhatsApp do dono** quando é crítico e só para admins, uma vez por aviso), `lib/platform/notice-checks.ts` (varredura), `lib/platform/notice-meta.ts` (regras puras).
+- API: `GET/POST /api/platform/notices` (`withPlatformStaff`; o atendente só enxerga `staff`). `?check=1` pede a varredura (só em produção, no máximo a cada 10 min).
+- Tela: `components/platform/notice-inbox.tsx` e `notice-bell.tsx` (estilo `notice-inbox.css`). Seção `notificacoes` em `PLATFORM_SECTIONS` e em `SUPPORT_SECTIONS`.
+- Exceção ao território da IA de design (autorizada pelo dono em 07/11/2026): `shell.tsx` (sino e menu do atendente), `notifications.tsx` (abas), `notice-*`.
+
+## De onde vêm os avisos
+
+| Origem | Aviso | Importância |
+|---|---|---|
+| Espelho do sino da empresa (`mirrorRule`, em `createNotification`/`resolveNotifications`) | Pagamento confirmado, cobrança vencida, pagamento em atraso, acesso pausado, assinatura em dia; créditos de IA acabando/acabaram; robô do Porto falhou ou com avisos | conforme a empresa |
+| Eventos | Cobrança ativada, assinatura cancelada, empresa nova pelo site, novo contato (lead), caso novo, cliente respondeu num caso, backup diário que falhou, rotina do worker que falhou | sucesso, atenção, aviso |
+| Alertas do WhatsApp do dono (`sendOwnerAlert`) | Tela do Porto mudou, execução travada, fila atrasada, saldo da IA, pedido de privacidade, chat urgente | crítico/atenção |
+| Varredura (worker a cada 30 min + painel aberto) | **Plataforma:** worker sem sinal há 75 min, Asaas ou IA com erro. **Limites** por empresa (armazenamento, usuários, mensagens de WhatsApp e execuções do Porto do mês): 90% aviso, 100% atenção. WhatsApp da empresa desconectado. Robô do Porto ligado e sem importar há 2 dias. Sem backup há 36 h (crítico). Ninguém entra há 14 dias. Caso escrito sem resposta há 24 h | variados |
+
+O que é da vida da empresa (folha, despesas, peças, escala) **não** sobe para a equipe, e limites/WhatsApp/módulos não são espelhados (a varredura já cobre, mesmo que ninguém abra o sistema da empresa).
+
+Para avisar de algo novo: `await notifyPlatform({ organizationId, category, severity, title, body, href, dedupeKey })`; para uma condição que pode acabar, uma verificação nova em `platformChecks()` (cada uma com o seu prefixo de chave: o que sumiu da lista é resolvido sozinho). Teste: `node scripts/test-platform-notices.cjs` (usa o banco de desenvolvimento; `collectPlatformFindings` lê os achados reais sem gravar).
+
+Pendências: configurar quais assuntos mandam WhatsApp (hoje só os críticos); a varredura só roda em produção quando alguém abre o painel ou no worker (que precisa da versão nova na VPS e das migrações aplicadas).

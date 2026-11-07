@@ -10,6 +10,8 @@ import {
 } from '../whatsapp/evolution';
 import { evolutionServer } from '../whatsapp/store';
 import { PlatformError } from './errors';
+import { noticeForAlertKind } from './notice-meta';
+import { insertNotice } from './notices';
 import { getPlatformSettings } from './settings';
 
 /**
@@ -19,7 +21,7 @@ import { getPlatformSettings } from './settings';
  * key makes each incident alert once — also across worker restarts. Never throws.
  */
 
-export type OwnerAlertKind = 'porto_layout' | 'porto_stuck' | 'porto_queue_late' | 'vps' | 'worker' | 'ai_balance' | 'privacy_request' | 'livechat';
+export type OwnerAlertKind = 'porto_layout' | 'porto_stuck' | 'porto_queue_late' | 'vps' | 'worker' | 'ai_balance' | 'privacy_request' | 'livechat' | 'notice';
 
 /** Fixed name of the platform's instance on the shared Evolution server (reserved as a subdomain). */
 export const PLATFORM_ALERTS_INSTANCE = 'nextrotta-alertas';
@@ -30,6 +32,8 @@ export async function sendOwnerAlert(input: {
   title: string;
   lines: string[];
   organizationIds?: string[];
+  /** The alert already is a notice in the inbox (notice-alerts.ts): do not add a second one. */
+  skipFeed?: boolean;
 }): Promise<{ sent: boolean; duplicate?: boolean; reason?: string }> {
   try {
     const body = input.lines.slice(0, 15).map((line) => `• ${line}`).join('\n') + (input.lines.length > 15 ? `\n• … e mais ${input.lines.length - 15}` : '');
@@ -40,6 +44,19 @@ export async function sendOwnerAlert(input: {
       RETURNING key
     `;
     if (!claimed.length) return { sent: false, duplicate: true };
+
+    // The same incident is also in the inbox of the owner's panel (and of the support users, for chats).
+    if (!input.skipFeed) {
+      const meta = noticeForAlertKind(input.kind);
+      await insertNotice({
+        organizationId: input.organizationIds?.length === 1 ? input.organizationIds[0] : null,
+        ...meta,
+        title: input.title,
+        body: body,
+        href: input.organizationIds?.length === 1 ? `/plataforma/organizacoes/${input.organizationIds[0]}` : '/plataforma/operacao',
+        dedupeKey: `alert:${input.key}`,
+      }).catch((error) => console.error('[platform-alerts] inbox entry not written:', input.key, error));
+    }
 
     const reason = await deliver(`🚨 *NextRotta — plataforma*: ${input.title}\n\n${body}\n\nDetalhes no painel do dono → Operação.`);
     await sql`

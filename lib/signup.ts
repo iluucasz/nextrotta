@@ -8,6 +8,7 @@ import { sql } from './db';
 import { ACCOUNT_DOCUMENTS, LEGAL_DOCUMENTS } from './legal/versions';
 import { grantBonusCredits } from './platform/ai-credits';
 import { PlatformError } from './platform/errors';
+import { notifyPlatform } from './platform/notice-alerts';
 import { quoteBuilderSelection } from './platform/modules';
 import { checkSlugAvailability } from './platform/organizations';
 import { getPlatformSettings } from './platform/settings';
@@ -217,6 +218,15 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
     details: { plan: plan.key, cycle: quote.cycle, billingDay: quote.billingDay, setupFee: quote.setupFee, modules: quote.modules.map((module) => module.key) },
   });
   await autoAssignQuietly(organizationId);
+  await notifyPlatform({
+    organizationId,
+    category: 'growth',
+    severity: 'success',
+    title: `Nova empresa pelo site: ${company}`,
+    body: `Plano ${plan.name}, ciclo ${quote.cycle === 'annual' ? 'anual' : 'mensal'}${needsPayment ? '. Aguardando o pagamento da implantação.' : '.'}`,
+    href: `/plataforma/organizacoes/${organizationId}`,
+    dedupeKey: `signup:${organizationId}`,
+  });
 
   // Setup fee to pay now; without one, the subscription starts right away (first charge next month).
   if (needsPayment) {
