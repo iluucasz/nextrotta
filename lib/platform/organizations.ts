@@ -6,6 +6,7 @@ import { createClosingBackup } from '../backup/service';
 import { cancelBilling } from '../billing/billing';
 import { checkLimit } from '../billing/entitlements';
 import { sql } from '../db';
+import { mercadoPagoMissingConfig } from '../mercadopago/config';
 import { getOrganizationSettings } from '../organization-settings-store';
 import { calculateSubscriptionValue, type BillingCycle } from '../plans';
 import { getAccessById } from '../organization-access';
@@ -115,7 +116,7 @@ export async function getOrganizationDetail(organizationId: string) {
   // Live WhatsApp state (stored by getInstanceStatus) instead of whatever was last saved.
   await getInstanceStatus(organizationId).catch(() => null);
 
-  const [usage, porto, whatsapp, settings, provisioning, subscription] = await Promise.all([
+  const [usage, porto, whatsapp, settings, provisioning, subscription, mercadoPago] = await Promise.all([
     sql`
       SELECT
         (SELECT COUNT(*)::int FROM technicians WHERE organization_id = ${organizationId}
@@ -145,6 +146,18 @@ export async function getOrganizationDetail(organizationId: string) {
     getOrganizationSettings(organizationId),
     getProvisioning(organizationId),
     getSubscription(organizationId),
+    // Mercado Pago (Venda de Peças): each technician connects their own account to the platform's
+    // application, so the state of an organization is the state of its technicians' connections.
+    sql`
+      SELECT COUNT(*)::int AS accounts,
+             COUNT(*) FILTER (WHERE last_error IS NOT NULL)::int AS "withError",
+             COUNT(*) FILTER (WHERE live_mode IS TRUE)::int AS live,
+             COUNT(*) FILTER (WHERE live_mode IS FALSE)::int AS test,
+             MAX(connected_at) AS "lastConnectedAt",
+             (ARRAY_AGG(last_error ORDER BY refreshed_at DESC NULLS LAST) FILTER (WHERE last_error IS NOT NULL))[1] AS "lastError"
+      FROM mercadopago_accounts
+      WHERE organization_id = ${organizationId} AND disconnected_at IS NULL
+    `,
   ]);
   const access = await getAccessById(organizationId);
 
@@ -154,6 +167,7 @@ export async function getOrganizationDetail(organizationId: string) {
     integrations: {
       porto: porto[0] ?? { configured: false, automationEnabled: false },
       whatsapp: whatsapp[0] ?? { enabled: false },
+      mercadoPago: { ...mercadoPago[0], platformMissing: mercadoPagoMissingConfig() },
     },
     settings,
     provisioning,

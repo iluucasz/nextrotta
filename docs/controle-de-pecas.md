@@ -73,7 +73,7 @@ O dinheiro da venda é sempre do técnico. Os tokens ficam cifrados (AES-256-GCM
 | `MERCADOPAGO_REDIRECT_URI`, `MERCADOPAGO_WEBHOOK_URL` | Opcionais: sobrescrevem os endereços montados a partir de `ROOT_DOMAIN` |
 | `MERCADOPAGO_FALLBACK_PAYER_EMAIL` | Opcional: e-mail do pagador no Pix quando a venda não tem (padrão: `pagador@<domínio>`). Não pode ser o e-mail do técnico. |
 
-5. Conferir em Painel → Configurações → Integrações ("Mercado Pago (Venda de Peças)").
+5. Conferir em `/plataforma/configuracoes` (lista de integrações da plataforma: "Mercado Pago (Venda de Peças)") e, por empresa, na aba Integrações da empresa (card "Mercado Pago": contas de técnico conectadas).
 6. Incluir o recurso "Venda de Peças" nos planos desejados (Planos, no painel), ou liberar para uma organização específica.
 7. Cada técnico precisa de conta no Mercado Pago com **chave Pix** cadastrada e, para maquininha, um Point vinculado. Em Venda de Peças → Ajustes, o admin define nome da empresa, formas de pagamento, rodapé do recibo e dia do acerto.
 

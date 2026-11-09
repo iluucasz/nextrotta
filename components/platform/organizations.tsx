@@ -157,6 +157,15 @@ type OrganizationDetailData = {
       lastError?: string | null;
     };
     whatsapp: { enabled: boolean; instance?: string | null; state?: string | null; number?: string | null; checkedAt?: string | null };
+    mercadoPago: {
+      accounts: number;
+      withError: number;
+      live: number;
+      test: number;
+      lastConnectedAt?: string | null;
+      lastError?: string | null;
+      platformMissing: string[];
+    };
   };
   settings: OrganizationSettings;
   provisioning: Provisioning | null;
@@ -1268,6 +1277,44 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
                   </>
                 ) : null}
               </p>
+            </div>
+          </Panel>
+          <Panel title="Mercado Pago">
+            <div className="nr-pad">
+              <Badge
+                tone={
+                  integrations.mercadoPago.platformMissing.length || integrations.mercadoPago.withError
+                    ? 'bad'
+                    : integrations.mercadoPago.accounts
+                      ? 'good'
+                      : 'warn'
+                }
+              >
+                {integrations.mercadoPago.platformMissing.length
+                  ? 'Plataforma sem credenciais'
+                  : integrations.mercadoPago.withError
+                    ? 'Conta com erro'
+                    : integrations.mercadoPago.accounts
+                      ? 'Conectado'
+                      : 'Não conectado'}
+              </Badge>
+              <p className="my-4 text-xs">
+                {integrations.mercadoPago.accounts} conta(s) de técnico conectada(s)
+                {integrations.mercadoPago.accounts ? ` (${integrations.mercadoPago.live} real, ${integrations.mercadoPago.test} teste)` : ''}
+                {integrations.mercadoPago.lastConnectedAt ? (
+                  <>
+                    <br />
+                    Última conexão: {date(integrations.mercadoPago.lastConnectedAt, true)}
+                  </>
+                ) : null}
+                {integrations.mercadoPago.platformMissing.length ? (
+                  <>
+                    <br />
+                    Falta no ambiente: {integrations.mercadoPago.platformMissing.join(', ')}
+                  </>
+                ) : null}
+              </p>
+              {integrations.mercadoPago.lastError && <p className="nr-error text-xs">{integrations.mercadoPago.lastError}</p>}
             </div>
           </Panel>
           <Panel title="Armazenamento">
