@@ -87,9 +87,9 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 > `docker exec nextrotta-worker npx playwright-core install chromium` (vale até o container ser recriado). Correção
 > definitiva no `worker/Dockerfile`: `npm ci` com o lockfile, `playwright-core` fixado em 1.64.1, `npx playwright-core
 > install` (sempre o navegador da versão instalada) e um teste de abertura do navegador que derruba o build se as versões
-> divergirem. A imagem nova entra no próximo deploy. **Atenção:** não recriar o worker a partir da imagem
-> `20261107-1` (o navegador certo está só no container atual): para recriar, montar antes uma imagem nova com o
-> Dockerfile corrigido.
+> divergirem. **Imagem nova no ar às 10h15 (Brasília):** `nextrotta-worker:20261109-1` (mesmo código de 07/11, só o
+> Dockerfile corrigido; só o navegador 1248, abre sem erro). Container recriado com as mesmas opções de sempre; o
+> container antigo e a imagem `20261107-1` foram removidos. Código anterior da VPS em `/opt/nextrotta/app.bak-20261109`.
 >
 > **05/11/2026 — worker atualizado com os backups.** `nextrotta-worker:20261105-1` (código atual: backups diários às 00:00,
 > backup antes do bloqueio, recuperação do Porto etc.) no lugar do `20261014-1`, com `BLOB_READ_WRITE_TOKEN` no
