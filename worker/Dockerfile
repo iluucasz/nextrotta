@@ -14,15 +14,25 @@ ENV TZ=America/Sao_Paulo
 
 # node_modules lives at /app so both /app/lib (shared with the Next.js app) and /app/worker can
 # resolve dependencies via Node's normal upward node_modules lookup.
-COPY worker/package.json ./package.json
-RUN npm install
+#
+# `npm ci` installs exactly what the lockfile says. The image used to run `npm install` without the
+# lockfile, so each build resolved the newest playwright-core of the day, and the browser downloaded
+# below came from a different Playwright version ("Executable doesn't exist at
+# …/chromium_headless_shell-1248", 07/11/2026).
+COPY worker/package.json worker/package-lock.json ./
+RUN npm ci
 
 COPY lib ./lib
 COPY worker ./worker
 
 # Real Chromium binary for playwright-core's local-dev path (see lib/porto-integration/browser.ts)
 # — the VPS isn't a serverless runtime, so @sparticuz/chromium's binary is never used here.
-RUN npx playwright install --with-deps chromium
+#
+# `playwright-core install`, not `npx playwright install`: `playwright` is not a dependency, so npx
+# would download whatever version is newest and fetch a browser revision that playwright-core
+# (pinned in package.json) does not look for. The check below fails the build if they ever disagree.
+RUN npx playwright-core install --with-deps chromium
+RUN node -e "require('playwright-core').chromium.launch().then(b => b.close())"
 
 # Compiled with the real TypeScript compiler, not run live through tsx/esbuild — confirmed live
 # that esbuild's transform injects a `__name(...)` helper call into functions that

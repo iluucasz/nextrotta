@@ -80,6 +80,15 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 
 > **07/11/2026 — worker com a caixa de alertas da equipe e as tentativas de login do Porto.** `nextrotta-worker:20261107-1` no lugar do `20261105-1`. O container antigo **não** fica parado (o monitor da VPS avisa o dono de todo container `nextrotta-*` parado): foi removido, e a imagem `nextrotta-worker:20261105-1` continua na VPS. Voltar atrás: `docker stop nextrotta-worker && docker rm nextrotta-worker && docker run -d --name nextrotta-worker --restart unless-stopped --label com.nextrotta.owner=nextrotta --memory=3g --shm-size=512m --network nextrotta-net --log-opt max-size=20m --log-opt max-file=5 --env-file /opt/nextrotta/worker.env nextrotta-worker:20261105-1`. Código anterior em `/opt/nextrotta/app.bak-20261107`. Mesmas opções (`--memory=3g --shm-size=512m`, `nextrotta-net`, sem porta publicada, `worker.env` sem mudança). Feito com o worker ocioso (13h24 em Brasília). Conferido: sobe, o servidor HTTP responde 401 sem segredo pelo proxy e a varredura da plataforma rodou às 16:30 (UTC) sem achados nem erro. Traz a retentativa de login recusado (15, 20 e 30 min) e a varredura que alimenta Notificações (`docs/notificacoes.md`).
 >
+> **09/11/2026 — robô do Porto sem navegador (corrigido).** A imagem `nextrotta-worker:20261107-1` foi montada com
+> `playwright-core` 1.64.1 (o `npm install` ignorava o lockfile) e o navegador veio de `npx playwright install`, que baixa
+> outra versão: o código procurava `chromium_headless_shell-1248` e só existia o `-1254`. Todas as importações do Porto
+> falharam de 07/11 20:20 até a correção. Correção imediata no container que está no ar:
+> `docker exec nextrotta-worker npx playwright-core install chromium` (vale até o container ser recriado). Correção
+> definitiva no `worker/Dockerfile`: `npm ci` com o lockfile, `playwright-core` fixado em 1.64.1, `npx playwright-core
+> install` (sempre o navegador da versão instalada) e um teste de abertura do navegador que derruba o build se as versões
+> divergirem. A imagem nova entra no próximo deploy.
+>
 > **05/11/2026 — worker atualizado com os backups.** `nextrotta-worker:20261105-1` (código atual: backups diários às 00:00,
 > backup antes do bloqueio, recuperação do Porto etc.) no lugar do `20261014-1`, com `BLOB_READ_WRITE_TOKEN` no
 > `/opt/nextrotta/worker.env` (cópia do env anterior em `worker.env.bak-20261105`; código anterior em
