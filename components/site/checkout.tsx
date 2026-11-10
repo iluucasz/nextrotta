@@ -173,7 +173,8 @@ export function MarketingCheckout() {
     setModules((current) => (current.includes(key) ? current.filter((item) => item !== key) : [...current, key]));
 
   useEffect(() => {
-    setRootDomain(window.location.host);
+    // The site may be opened on www.nextrotta.app, but companies live on <slug>.nextrotta.app (no www).
+    setRootDomain(window.location.host.replace(/^www\./, ''));
     fetch('/api/public/plans', { cache: 'no-store' })
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error())))
       .then((data: { plans: PlanOption[]; builder?: BuilderOption | null }) => {

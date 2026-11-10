@@ -99,7 +99,8 @@ export function chargeStatusLabel(status: string) {
  */
 export function useOrganizationHost() {
   const [rootHost, setRootHost] = useState('nextrotta.app');
-  useEffect(() => setRootHost(window.location.host), []);
+  // The panel may be opened on www.nextrotta.app, but companies live on <slug>.nextrotta.app (no www).
+  useEffect(() => setRootHost(window.location.host.replace(/^www\./, '')), []);
   return useCallback((slug: string) => `${slug}.${rootHost}`, [rootHost]);
 }
 
