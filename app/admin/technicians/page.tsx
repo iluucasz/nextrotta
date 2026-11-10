@@ -1,8 +1,9 @@
 'use client';
 
 import { TechnicianPrivacyDialog } from '@/components/technician-privacy';
+import { ImportPortoDialog } from '@/components/porto/import-dialog';
 import { useEffect, useMemo, useState } from 'react';
-import { Eye, MoreHorizontal, Pencil, Power, Search, ShieldCheck, Trash2, UserPlus, Users, WalletCards } from 'lucide-react';
+import { Download, Eye, MoreHorizontal, Pencil, Power, Search, ShieldCheck, Trash2, UserPlus, Users, WalletCards } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
 import { EmptyState } from '@/components/empty-state';
@@ -115,6 +116,8 @@ export default function TechniciansPage() {
   const [loadError, setLoadError] = useState('');
   const [reloadKey, setReloadKey] = useState(0);
   const [privacyTechnician, setPrivacyTechnician] = useState<Technician | null>(null);
+  const [portoImportOpen, setPortoImportOpen] = useState(false);
+  const [importMessage, setImportMessage] = useState('');
 
   useEffect(() => {
     async function loadTechnicians() {
@@ -331,11 +334,21 @@ export default function TechniciansPage() {
         title="Técnicos"
         description="Cadastro de colaboradores, QRA, comissão, benefícios e status operacional."
       >
+        <Button type="button" variant="outline" onClick={() => setPortoImportOpen(true)}>
+          <Download className="h-4 w-4" />
+          Importar do Porto
+        </Button>
         <Button type="button" onClick={openCreateDialog}>
           <UserPlus className="h-4 w-4" />
           Novo técnico
         </Button>
       </PageHeader>
+
+      {importMessage ? (
+        <div role="status" className="mb-3 rounded-md border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+          {importMessage}
+        </div>
+      ) : null}
 
       {loadError ? (
         <div role="alert" className="mb-3 flex flex-wrap items-center justify-between gap-3 rounded-md border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">
@@ -660,6 +673,16 @@ export default function TechniciansPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {portoImportOpen ? (
+        <ImportPortoDialog
+          onClose={() => setPortoImportOpen(false)}
+          onImported={(message) => {
+            setImportMessage(message);
+            setReloadKey((value) => value + 1);
+          }}
+        />
+      ) : null}
 
       {privacyTechnician ? (
         <TechnicianPrivacyDialog technician={privacyTechnician} onClose={() => setPrivacyTechnician(null)} onChanged={() => setReloadKey((value) => value + 1)} />
