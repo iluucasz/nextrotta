@@ -38,7 +38,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
   const s = settings;
   const rows = await sql`
     INSERT INTO organization_settings (
-      organization_id, commission_mode, commission_percentage, commission_rate, commission_minimum, commission_maximum, base_salary, va_allowance, vr_allowance,
+      organization_id, commission_mode, commission_percentage, commission_rate, commission_minimum, commission_maximum, commission_formula, base_salary, va_allowance, vr_allowance,
       va_deducts_from_commission, vr_deducts_from_commission, va_payment, vr_payment,
       competence_source, settle_previous_month_until_day, month_closing_day,
       monthly_hours, overtime_multiplier, daily_break_minutes, default_shift_start, default_shift_end,
@@ -49,7 +49,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
       finance_due_soon_days, finance_categories, updated_at, updated_by
     )
     VALUES (
-      ${organizationId}, ${s.commissionMode}, ${s.commissionPercentage}, ${s.commissionRate}, ${s.commissionMinimum}, ${s.commissionMaximum}, ${s.baseSalary}, ${s.vaAllowance}, ${s.vrAllowance},
+      ${organizationId}, ${s.commissionMode}, ${s.commissionPercentage}, ${s.commissionRate}, ${s.commissionMinimum}, ${s.commissionMaximum}, ${JSON.stringify(s.commissionFormula)}::jsonb, ${s.baseSalary}, ${s.vaAllowance}, ${s.vrAllowance},
       ${s.vaDeductsFromCommission}, ${s.vrDeductsFromCommission}, ${s.vaPayment}, ${s.vrPayment},
       ${s.competenceSource}, ${s.settlePreviousMonthUntilDay}, ${s.monthClosingDay},
       ${s.monthlyHours}, ${s.overtimeMultiplier}, ${s.dailyBreakMinutes}, ${s.defaultShiftStart}, ${s.defaultShiftEnd},
@@ -65,6 +65,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
         commission_rate = EXCLUDED.commission_rate,
         commission_minimum = EXCLUDED.commission_minimum,
         commission_maximum = EXCLUDED.commission_maximum,
+        commission_formula = EXCLUDED.commission_formula,
         base_salary = EXCLUDED.base_salary,
         va_allowance = EXCLUDED.va_allowance,
         vr_allowance = EXCLUDED.vr_allowance,

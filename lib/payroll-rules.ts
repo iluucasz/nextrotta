@@ -1,6 +1,7 @@
 // The folha's arithmetic, in one place: the server (preview, calculate) and the Folha screen use the same
 // functions, so what the admin sees while editing is what the system would have calculated.
 // Dependency-free on purpose (also read by the tests). Relative imports only.
+import { commissionFromFormula, formulaUsesSource, type CommissionFormula } from './commission-formula';
 import type { BenefitPayment, CommissionMode, OrganizationSettings, ServiceAwardTier } from './organization-settings';
 
 export function roundCents(value: number | string | null | undefined): number {
@@ -63,8 +64,24 @@ export function benefitsExplanation(rules: Pick<BenefitRules, 'vaPayment' | 'vrP
     : `${base} Não abatem a comissão.`;
 }
 
-/** What the amount stored next to a commission mode means: a percentage, or R$ per service, hour or day. */
-export type RateKind = 'percent' | 'service' | 'hour' | 'day';
+/** What the amount stored next to a commission mode means: a percentage, or R$ per service, hour or day ("amount": a company's own formula). */
+export type RateKind = 'percent' | 'service' | 'hour' | 'day' | 'amount';
+
+/**
+ * The values a technician can have of their own for this way of paying. One for the fixed modes; for the company's
+ * own formula, whichever of the percentage and the R$ value its steps read (maybe both, maybe none).
+ */
+export function rateKindsOf(mode: CommissionMode, formula?: CommissionFormula | null): RateKind[] {
+  if (mode !== 'custom') {
+    const kind = rateKindOf(mode);
+    return kind ? [kind] : [];
+  }
+  if (!formula) return [];
+  const kinds: RateKind[] = [];
+  if (formulaUsesSource(formula, 'percentage')) kinds.push('percent');
+  if (formulaUsesSource(formula, 'rate')) kinds.push('amount');
+  return kinds;
+}
 
 export function rateKindOf(mode: CommissionMode): RateKind | null {
   switch (mode) {
@@ -110,6 +127,8 @@ export interface CommissionInput extends BenefitDeduction {
   /** Guaranteed minimum and cap of the month's commission, in R$ (0 = not used). */
   minimum?: number;
   maximum?: number;
+  /** The company's own calculation (the custom mode). */
+  formula?: CommissionFormula | null;
 }
 
 /**
@@ -118,6 +137,7 @@ export interface CommissionInput extends BenefitDeduction {
  * - `per_service`: a fixed amount for each OS of the month.
  * - `per_hour`: a fixed amount for each hour worked in the month.
  * - `per_day`: a fixed amount for each day worked in the month.
+ * - `custom`: the company's own steps (lib/commission-formula.ts); the production is the month's OS total.
  * - `none`: there is no commission.
  * Except for `none`, the result is held between the guaranteed minimum and the cap when they are set.
  */
@@ -139,6 +159,19 @@ export function calculateCommissionValue(input: CommissionInput): number {
       break;
     case 'per_day':
       value = roundCents(Math.max(0, input.daysWorked ?? 0) * rate);
+      break;
+    case 'custom':
+      value = commissionFromFormula(input.formula, {
+        production: Math.max(0, input.totalServices),
+        services: Math.max(0, input.serviceCount ?? 0),
+        hours: Math.max(0, input.totalHours ?? 0),
+        days: Math.max(0, input.daysWorked ?? 0),
+        salary: input.baseSalary,
+        vr: input.vrAllowance,
+        va: input.vaAllowance,
+        percentage: input.percentage,
+        rate,
+      });
       break;
     default:
       value = roundCents(Math.max(0, commissionBase(input.totalServices, input.percentage) - fixedCosts(input.baseSalary, input.vrAllowance, input.vaAllowance, input)));

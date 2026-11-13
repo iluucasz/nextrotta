@@ -27,6 +27,7 @@ import { cn } from '@/lib/utils';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { defaultCompetenceMonth, hasPeriods, isPeriodKey, periodKeys, periodLabel } from '@/lib/pay-calendar';
+import { evaluateCommissionFormula, formulaUsesSource } from '@/lib/commission-formula';
 import type { CommissionMode } from '@/lib/organization-settings';
 import { calculateServiceAward, valueOrDefault } from '@/lib/organization-settings';
 import {
@@ -38,7 +39,6 @@ import {
   commissionBase,
   type CommissionInput,
   deductionOf,
-  rateKindOf,
   fixedCosts,
   type PayrollDetails,
 } from '@/lib/payroll-rules';
@@ -441,7 +441,10 @@ export default function PayrollPage() {
   const [confirmingClose, setConfirmingClose] = useState(false);
   const activeTechnicianRef = useRef('');
   const commissionMode: CommissionMode = organizationSettings.commissionMode ?? 'excess';
-  const needsHours = commissionMode === 'per_hour' || commissionMode === 'per_day';
+  const needsHours =
+    commissionMode === 'per_hour' ||
+    commissionMode === 'per_day' ||
+    (commissionMode === 'custom' && (formulaUsesSource(organizationSettings.commissionFormula, 'hours') || formulaUsesSource(organizationSettings.commissionFormula, 'days')));
   const selectedCompetenceYear = Number(competenceMonth.slice(0, 4)) || new Date().getFullYear();
   const selectedCompetenceMonth = Number(competenceMonth.slice(5, 7)) || new Date().getMonth() + 1;
   const competenceYearOptions = useMemo(
@@ -587,6 +590,7 @@ export default function PayrollPage() {
               rate: commissionRate,
               minimum: organizationSettings.commissionMinimum,
               maximum: organizationSettings.commissionMaximum,
+              formula: organizationSettings.commissionFormula,
             });
         const discountsTotal = payrollItem
           ? roundMoney(payrollItem.discounts_total)
@@ -800,6 +804,7 @@ export default function PayrollPage() {
     rate: details?.commissionRate ?? selectedRow?.commissionRate ?? organizationSettings.commissionRate,
     minimum: organizationSettings.commissionMinimum,
     maximum: organizationSettings.commissionMaximum,
+    formula: organizationSettings.commissionFormula,
     ...deductionOf(organizationSettings),
   };
   const isClosed = draftStatus === 'closed';
@@ -1028,7 +1033,6 @@ export default function PayrollPage() {
 
   let commissionHint: string | undefined;
   if (draft) {
-    const unit = rateKindOf(commissionMode);
     const rate = commissionContext.rate ?? 0;
     if (commissionMode === 'none') {
       commissionHint = 'A empresa não paga comissão (Configurações).';
@@ -1038,6 +1042,22 @@ export default function PayrollPage() {
       commissionHint = `${commissionContext.serviceCount} OS × ${money(rate)}${rate > 0 ? '' : '\nSem valor por OS: defina em Configurações ou no cadastro do técnico.'}`;
     } else if (commissionMode === 'per_hour') {
       commissionHint = `${hoursText(commissionContext.totalHours ?? 0)} h × ${money(rate)} por hora${rate > 0 ? '' : '\nSem valor por hora: defina em Configurações ou no cadastro do técnico.'}`;
+    } else if (commissionMode === 'custom') {
+      const trace = evaluateCommissionFormula(organizationSettings.commissionFormula, {
+        production: moneyValue(draft.total_services_value),
+        services: commissionContext.serviceCount ?? 0,
+        hours: commissionContext.totalHours ?? 0,
+        days: commissionContext.daysWorked ?? 0,
+        salary: moneyValue(draft.base_salary),
+        vr: moneyValue(draft.vr_deduction),
+        va: moneyValue(draft.va_deduction),
+        percentage: currentCommissionPercentage,
+        rate,
+      });
+      commissionHint = trace.steps.length
+        ? trace.steps.map((line, index) => `${index + 1}. ${line.label}: ${line.text} = ${money(line.value)}`).join('\n')
+        : 'O cálculo personalizado ainda não foi montado (Configurações → Pagamento).';
+      if (trace.raw < 0) commissionHint += '\nO cálculo deu negativo: a comissão fica em R$ 0,00.';
     } else if (commissionMode === 'per_day') {
       const days = commissionContext.daysWorked ?? 0;
       commissionHint = `${days} ${days === 1 ? 'dia' : 'dias'} × ${money(rate)}${rate > 0 ? '' : '\nSem valor por dia: defina em Configurações ou no cadastro do técnico.'}`;
@@ -1053,7 +1073,7 @@ ${fixedParts.length ? `menos o fixo de ${money(draftFixed)} (${fixedParts.join('
 Ainda não passou do fixo: faltam ${money(roundMoney(draftFixed - draftBase))} de produção.`;
     }
     // The company's guaranteed minimum and cap, said when they changed the month's result.
-    if (unit && commissionMode !== 'none') {
+    if (commissionMode !== 'none') {
       const { minimum = 0, maximum = 0 } = commissionContext;
       const raw = calculateCommissionValue({ ...commissionContext, minimum: 0, maximum: 0, totalServices: draft.total_services_value, baseSalary: draft.base_salary, vrAllowance: draft.vr_deduction, vaAllowance: draft.va_deduction });
       if (maximum > 0 && raw > maximum) commissionHint += `\nTeto de ${money(maximum)} aplicado (o cálculo daria ${money(raw)}).`;

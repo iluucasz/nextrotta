@@ -12,6 +12,7 @@ import {
   type CommissionMode,
   type OrganizationSettings,
 } from '@/lib/organization-settings';
+import type { CommissionFormula } from '@/lib/commission-formula';
 import { parseCutDays, type CompetenceSource } from '@/lib/pay-calendar';
 
 /** The settings screens are split by subject; each one saves only the fields it shows (the API keeps the rest). */
@@ -48,6 +49,8 @@ export type FormState = Record<NumericKey, string> &
   Record<TimeKey, string> &
   Record<BooleanKey, boolean> & {
     commissionMode: CommissionMode;
+    /** The company's own calculation (the "Personalizado" mode). */
+    commissionFormula: CommissionFormula;
     competenceSource: CompetenceSource;
     /** How the month is cut into payment periods: not at all, in two fortnights (one cut day) or at a list of days. */
     periodMode: PeriodMode;
@@ -79,6 +82,7 @@ export function parseNumber(value: string) {
 export function toForm(settings: OrganizationSettings): FormState {
   return {
     commissionMode: settings.commissionMode,
+    commissionFormula: settings.commissionFormula,
     commissionPercentage: formatNumber(settings.commissionPercentage),
     commissionRate: formatNumber(settings.commissionRate),
     commissionMinimum: formatNumber(settings.commissionMinimum),
@@ -128,6 +132,7 @@ export function toPayload(form: FormState, group: SettingsGroup) {
     case 'payment':
       return {
         commissionMode: form.commissionMode,
+        commissionFormula: form.commissionFormula,
         commissionPercentage: number('commissionPercentage'),
         commissionRate: number('commissionRate'),
         commissionMinimum: number('commissionMinimum'),

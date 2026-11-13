@@ -42,7 +42,7 @@ import type { Technician, TechnicianStatus } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { DEFAULT_ORGANIZATION_SETTINGS, valueOrDefault, type OrganizationSettings } from '@/lib/organization-settings';
-import { rateKindOf, type RateKind } from '@/lib/payroll-rules';
+import { rateKindsOf, type RateKind } from '@/lib/payroll-rules';
 import { PhoneInput } from '@/components/phone-input';
 import { formatPhoneInput, validatePhone } from '@/lib/whatsapp/phone';
 
@@ -96,6 +96,7 @@ const RATE_UNITS: Record<Exclude<RateKind, 'percent'>, { label: string; suffix: 
   service: { label: 'Valor por OS', suffix: '/OS' },
   hour: { label: 'Valor por hora', suffix: '/h' },
   day: { label: 'Valor por dia', suffix: '/dia' },
+  amount: { label: 'Valor da comissão', suffix: '' },
 };
 
 export default function TechniciansPage() {
@@ -310,7 +311,9 @@ export default function TechniciansPage() {
   const activeTechnicians = technicians.filter((technician) => technician.status === 'active');
   const activeCount = activeTechnicians.length;
   // What the commission is made of depends on how the company pays it: a percentage, or R$ per OS, hour or day.
-  const rateKind = rateKindOf(organizationSettings.commissionMode);
+  const rateKinds = rateKindsOf(organizationSettings.commissionMode, organizationSettings.commissionFormula);
+  const rateKind = rateKinds[0] ?? null;
+  const amountKind = rateKinds.find((kind) => kind !== 'percent') ?? null;
   const rateOf = (technician: Technician) =>
     rateKind === 'percent'
       ? valueOrDefault(technician.commission_percentage, organizationSettings.commissionPercentage)
@@ -527,7 +530,7 @@ export default function TechniciansPage() {
                     </div>
 
                     <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-                      {rateKind === 'percent' ? (
+                      {rateKinds.includes('percent') ? (
                         <label className="text-sm">
                           <span className="mb-1.5 block font-medium">Comissão %</span>
                           <input
@@ -545,9 +548,10 @@ export default function TechniciansPage() {
                             Vazio ou 0 usa o padrão da empresa ({formatPercent(organizationSettings.commissionPercentage)}).
                           </p>
                         </label>
-                      ) : rateKind !== null ? (
+                      ) : null}
+                      {amountKind !== null ? (
                         <label className="text-sm">
-                          <span className="mb-1.5 block font-medium">{RATE_UNITS[rateKind].label} (R$)</span>
+                          <span className="mb-1.5 block font-medium">{RATE_UNITS[amountKind].label} (R$)</span>
                           <input
                             type="number"
                             min={0}
@@ -563,7 +567,7 @@ export default function TechniciansPage() {
                           />
                           <p className="mt-1.5 text-xs leading-5 text-muted-foreground">
                             Vazio ou 0 usa o padrão da empresa ({formatCurrency(organizationSettings.commissionRate)}
-                            {RATE_UNITS[rateKind].suffix}).
+                            {RATE_UNITS[amountKind].suffix}).
                           </p>
                         </label>
                       ) : null}

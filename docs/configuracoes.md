@@ -19,7 +19,7 @@ Código: `components/settings/form.ts` (`useSettingsForm(grupo)` carrega tudo, m
 
 ## Como a comissão é paga (`commissionMode`, migrações `0030` e `0033`)
 
-Cada empresa escolhe uma das seis regras em Configurações → Pagamento. O cálculo é um só
+Cada empresa escolhe uma das sete regras em Configurações → Pagamento (a sétima, "Personalizado", é montada pela própria empresa: seção abaixo). O cálculo é um só
 (`lib/payroll-rules.ts`), usado pela API (`/api/payroll/preview`) e pela tela da Folha:
 
 - `excess` (padrão, regra do cliente original): comissão = `% da produção − salário − VR − VA`, nunca abaixo de zero.
@@ -27,12 +27,25 @@ Cada empresa escolhe uma das seis regras em Configurações → Pagamento. O cá
 - `per_service`: comissão = `valor por OS × número de OS` do mês.
 - `per_hour`: comissão = `valor por hora × horas trabalhadas` no mês (`work_hours`).
 - `per_day`: comissão = `valor por dia × dias com horas` no mês.
+- `custom`: o cálculo que a empresa monta em etapas (ver "Comissão personalizada", abaixo).
 - `none`: não há comissão (a linha some da folha).
 
 O valor por OS, hora ou dia é `commissionRate` (padrão da empresa) e `technicians.commission_rate` (do técnico; 0 usa o padrão).
 `commissionMinimum` (mínimo garantido) e `commissionMaximum` (teto) seguram a comissão do mês em qualquer modo, menos `none`.
 Na Folha, a janela do técnico explica a conta ("42 OS × R$ 30,00", "168,5 h × R$ 18,00") e avisa quando o mínimo ou o teto agiu.
 Teste: `scripts/test-payroll-rules.cjs`.
+
+## Comissão personalizada (`commissionMode = 'custom'`, `commissionFormula`, migração `0054`)
+
+Para a empresa cujo jeito de pagar não cabe nas outras seis: em Configurações → Pagamento → "Personalizado" → **Montar o cálculo**, uma janela leva a empresa a montar a comissão **em etapas**, respondendo a perguntas. Regra pura em `lib/commission-formula.ts` (sem dependências; servidor, Folha, janela e worker usam a mesma); janela em `components/settings/formula-builder.tsx`.
+
+- **O que uma etapa lê** (`FormulaSource`): do mês, a produção (total das OS), o nº de OS, as horas e os dias trabalhados; do técnico, salário base, VR, VA, o percentual e o valor por unidade (cadastro do técnico, ou o padrão da empresa quando vazio); um número fixo; ou o resultado de uma etapa anterior.
+- **Tipos de etapa:** porcentagem de algo; multiplicar ("valor por unidade"); dividir (divisão por zero dá 0); somar e tirar (vários valores de uma vez: "salário, VR e VA"); garantir um mínimo; limitar a um teto; **faixas** (4 jeitos: valor fixo da faixa atingida, % da faixa atingida sobre o total, cada parte paga um valor por unidade, cada parte paga uma % — como tabela progressiva); **condição** ("se a produção for maior ou igual a X, vale isto; senão, aquilo").
+- **Resultado:** a última etapa é a comissão, nunca abaixo de zero. Cada etapa é arredondada ao centavo (o que o exemplo mostra soma exatamente o que a folha paga). O mínimo garantido e o teto de Configurações continuam valendo depois. Os botões "VR/VA abate da comissão" não se aplicam: quem decide é a fórmula (pode tirar `VR` e `VA` numa etapa).
+- **Na janela:** modelos prontos (sobre o excedente, por faixas de OS, só depois da meta, com mínimo e teto) e etapas do zero; à direita, um **mês de exemplo editável** (só os dados que as etapas leem), o que cada etapa dá e "E se o mês for diferente?" (50%, 100% e 150% da produção, OS, horas e dias). Nada do exemplo é salvo. Máximo de 12 etapas e 10 faixas por etapa; apagar uma etapa troca o que a usava por 0.
+- **Valores do técnico:** o cadastro do técnico (e Configurações → "Percentual padrão"/"Valor padrão por unidade") só pede o percentual ou o valor que alguma etapa realmente lê (`rateKindsOf` em `lib/payroll-rules.ts`).
+- **Guardado** como JSON em `organization_settings.commission_formula`, lido de forma estrita (`normalizeCommissionFormula` recusa qualquer coisa que não seja um conjunto de etapas conhecidas: não há código nem expressão livre). Salvar com o modo `custom` e uma fórmula incompleta é recusado com a etapa errada nomeada. Na Folha, a janela do técnico mostra o passo a passo ("1. Parte da produção: Percentual do técnico (30%) de Produção do mês (R$ 10.000,00) = R$ 3.000,00"). A planilha do backup e o assistente de IA leem a fórmula em palavras.
+- **Testes:** `scripts/test-commission-formula.cjs` (regras, validação, modelos e o modelo "excedente" igual ao modo fixo) e `scripts/test-commission-formula-flow.cjs` (banco: salva/lê, a folha do servidor, valores do técnico, teto, condição; empresa `zz-teste-formula`). Verificado no Chrome.
 
 ## Períodos de pagamento (`periodCutDays`, migração `0051`)
 

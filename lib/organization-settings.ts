@@ -2,6 +2,7 @@
 // by the platform owner). Dependency-free on purpose: imported by client screens, API routes and the
 // VPS worker (worker/tsconfig.json) alike. Relative imports only. Storage: organization-settings-store.ts.
 
+import { EMPTY_FORMULA, normalizeCommissionFormula, validateCommissionFormula, type CommissionFormula } from './commission-formula';
 import { COMPETENCE_SOURCES, MAX_PERIOD_CUTS, normalizeClosingDay, normalizeCutDays, type CompetenceSource } from './pay-calendar';
 
 export type ServiceAwardTier = {
@@ -12,8 +13,8 @@ export type ServiceAwardTier = {
 };
 
 /** How commission is paid: see lib/payroll-rules.ts. */
-export type CommissionMode = 'excess' | 'percentage' | 'per_service' | 'per_hour' | 'per_day' | 'none';
-export const COMMISSION_MODES: CommissionMode[] = ['excess', 'percentage', 'per_service', 'per_hour', 'per_day', 'none'];
+export type CommissionMode = 'excess' | 'percentage' | 'per_service' | 'per_hour' | 'per_day' | 'custom' | 'none';
+export const COMMISSION_MODES: CommissionMode[] = ['excess', 'percentage', 'per_service', 'per_hour', 'per_day', 'custom', 'none'];
 
 /** How a meal/food voucher reaches the technician: loaded on a card, or paid in cash apart from the account payment. */
 export type BenefitPayment = 'card' | 'cash';
@@ -30,6 +31,8 @@ export type OrganizationSettings = {
   /** Guaranteed minimum and cap of a technician's commission in the month, in R$ (0 = not used). */
   commissionMinimum: number;
   commissionMaximum: number;
+  /** The company's own calculation, in steps (the `custom` mode; ignored by the others). */
+  commissionFormula: CommissionFormula;
   baseSalary: number;
   vaAllowance: number;
   vrAllowance: number;
@@ -140,6 +143,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   commissionRate: 0,
   commissionMinimum: 0,
   commissionMaximum: 0,
+  commissionFormula: EMPTY_FORMULA,
   baseSalary: 0,
   vaAllowance: 0,
   vrAllowance: 0,
@@ -312,6 +316,7 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
     commissionRate: number('commissionRate'),
     commissionMinimum: number('commissionMinimum'),
     commissionMaximum: number('commissionMaximum'),
+    commissionFormula: normalizeCommissionFormula(pick(source, 'commissionFormula')),
     baseSalary: number('baseSalary'),
     vaAllowance: number('vaAllowance'),
     vrAllowance: number('vrAllowance'),
@@ -366,6 +371,12 @@ function validateField(key: keyof OrganizationSettings, value: unknown, all: Org
     case 'commissionMaximum':
       if (!(n >= 0 && n <= MAX_RATE * 100)) return 'O mínimo e o teto da comissão não podem ser negativos.';
       return key === 'commissionMaximum' && n > 0 && all.commissionMinimum > n ? 'O teto da comissão não pode ser menor que o mínimo.' : null;
+    case 'commissionFormula': {
+      // Only a company that pays by its own calculation needs it to be complete; the others just keep what was saved.
+      if (all.commissionMode !== 'custom') return null;
+      const [first] = validateCommissionFormula(value as CommissionFormula);
+      return first ? `Cálculo personalizado: ${first}` : null;
+    }
     case 'baseSalary':
     case 'vaAllowance':
     case 'vrAllowance':
@@ -466,6 +477,7 @@ const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
   commissionRate: 'O valor da comissão por OS, hora ou dia deve ficar entre 0 e 100.000.',
   commissionMinimum: 'O mínimo da comissão não pode ser negativo.',
   commissionMaximum: 'O teto da comissão não pode ser negativo nem menor que o mínimo.',
+  commissionFormula: 'Monte o cálculo personalizado da comissão.',
   baseSalary: 'Salário, VA e VR não podem ser negativos.',
   vaAllowance: 'Salário, VA e VR não podem ser negativos.',
   vrAllowance: 'Salário, VA e VR não podem ser negativos.',

@@ -369,6 +369,7 @@ export async function calculatePayroll(
     rate: allowances.commission_rate,
     minimum: settings.commissionMinimum,
     maximum: settings.commissionMaximum,
+    formula: settings.commissionFormula,
   });
   const extraordinaryAward = calculateServiceAward(serviceCount, settings.serviceAwardTiers);
 

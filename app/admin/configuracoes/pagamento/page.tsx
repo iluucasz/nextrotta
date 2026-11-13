@@ -1,16 +1,19 @@
 'use client';
 
+import { useState } from 'react';
 import { Plus, Trash2 } from 'lucide-react';
 import { Panel } from '@/components/management-ui';
 import { Button } from '@/components/ui/button';
-import { newTier, useSettingsForm } from '@/components/settings/form';
+import { FormulaBuilderDialog } from '@/components/settings/formula-builder';
+import { newTier, parseNumber, useSettingsForm } from '@/components/settings/form';
 import type { PeriodMode } from '@/components/settings/form';
 import { Choice, NumberField, SettingsPage, TextField, Toggle } from '@/components/settings/kit';
 import type { OptionHelp } from '@/components/settings/option-help';
+import { describeFormulaStep, formulaUsesSource, stepName } from '@/lib/commission-formula';
 import type { BenefitPayment, CommissionMode } from '@/lib/organization-settings';
 import type { CompetenceSource } from '@/lib/pay-calendar';
 
-const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: string; help: OptionHelp }> = [
+const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: string; help: OptionHelp; wide?: boolean }> = [
   {
     value: 'excess',
     title: 'Sobre o excedente',
@@ -131,6 +134,34 @@ const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: st
         },
       ],
       note: 'Os campos de percentual, mínimo garantido e teto não aparecem neste modo.',
+    },
+  },
+  {
+    value: 'custom',
+    title: 'Personalizado',
+    text: 'Monte o seu cálculo, etapa por etapa',
+    wide: true,
+    help: {
+      what: 'Para a empresa que paga de um jeito só seu. Você monta o cálculo em etapas, respondendo a perguntas: uma porcentagem de algo, um valor por unidade, tirar o salário e os vales, pagar por faixas, pagar só depois de uma meta, garantir um mínimo. Cada etapa pode usar o resultado das anteriores, e a última é a comissão do mês.',
+      examples: [
+        {
+          title: 'Exemplo: faixas de OS (42 OS no mês)',
+          rows: [
+            ['As primeiras 40 OS: R$ 20 cada', 'R$ 800'],
+            ['Da 41ª em diante: R$ 30 cada (2 OS)', 'R$ 60'],
+          ],
+          result: ['Comissão', 'R$ 860'],
+        },
+        {
+          title: 'Exemplo: só depois da meta',
+          rows: [
+            ['1. 20% da produção (R$ 10.000)', 'R$ 2.000'],
+            ['2. Se a produção passar de R$ 8.000, vale a etapa 1', 'R$ 2.000'],
+          ],
+          result: ['Comissão (com R$ 7.000 de produção: R$ 0)', 'R$ 2.000'],
+        },
+      ],
+      note: 'Na janela, um exemplo de um mês mostra o que cada etapa dá enquanto você monta. O mínimo garantido e o teto abaixo continuam valendo. Salário e vales só entram na conta se você os usar numa etapa.',
     },
   },
 ];
@@ -274,7 +305,7 @@ const COMPETENCE_OPTIONS: Array<{ value: CompetenceSource; title: string; text: 
 ];
 
 /** The amount that goes with each way of paying: a percentage, or R$ per service, hour or day. */
-const RATE_FIELD: Record<Exclude<CommissionMode, 'none'>, { label: string; unit: string; position: 'start' | 'end'; help: string }> = {
+const RATE_FIELD: Record<Exclude<CommissionMode, 'none' | 'custom'>, { label: string; unit: string; position: 'start' | 'end'; help: string }> = {
   excess: { label: 'Percentual', unit: '%', position: 'end', help: 'Percentual sobre o total das OS do técnico. Cada técnico pode ter o seu no cadastro; sem valor próprio, vale este.' },
   percentage: { label: 'Percentual', unit: '%', position: 'end', help: 'Percentual sobre o total das OS do técnico. Cada técnico pode ter o seu no cadastro; sem valor próprio, vale este.' },
   per_service: { label: 'Valor por OS', unit: 'R$', position: 'start', help: 'Quanto o técnico recebe por cada OS do mês. Cada técnico pode ter um valor próprio no cadastro; sem valor próprio, vale este.' },
@@ -286,24 +317,101 @@ export default function PagamentoPage() {
   const api = useSettingsForm('payment');
   const { form, update } = api;
   const mode = form.commissionMode;
-  const rateField = mode === 'none' ? null : RATE_FIELD[mode];
+  const isCustom = mode === 'custom';
+  const rateField = mode === 'none' || isCustom ? null : RATE_FIELD[mode];
   const isPercent = mode === 'excess' || mode === 'percentage';
+  const [building, setBuilding] = useState(false);
+  const formula = form.commissionFormula;
+  // A custom calculation asks for the company's default percentage / R$ value only when one of its steps reads it.
+  const usesPercentage = isCustom && formulaUsesSource(formula, 'percentage');
+  const usesRate = isCustom && formulaUsesSource(formula, 'rate');
 
   return (
     <SettingsPage api={api} title="Pagamento" description="Como a comissão e o prêmio dos técnicos são calculados.">
       <Panel title="Comissão">
         <Choice label="Como a comissão é paga" value={mode} options={COMMISSION_OPTIONS} onChange={(value) => update('commissionMode', value)} />
-        {rateField ? (
+        {isCustom ? (
+          <div className="st-formula">
+            {formula.steps.length ? (
+              <>
+                <ol className="st-formula-steps">
+                  {formula.steps.map((step, index) => (
+                    <li key={step.id}>
+                      <div>
+                        <strong>{stepName(step, index)}</strong>
+                        <span>{describeFormulaStep(formula, index)}</span>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+                <div className="st-formula-actions">
+                  <Button type="button" variant="outline" onClick={() => setBuilding(true)}>
+                    Editar o cálculo
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <div className="st-formula-empty">
+                <span>Nenhum cálculo montado.</span>
+                <Button type="button" onClick={() => setBuilding(true)}>
+                  Montar o cálculo
+                </Button>
+              </div>
+            )}
+          </div>
+        ) : null}
+        {building ? (
+          <FormulaBuilderDialog
+            formula={formula}
+            defaults={{
+              percentage: parseNumber(form.commissionPercentage),
+              rate: parseNumber(form.commissionRate),
+              salary: parseNumber(form.baseSalary),
+              vr: parseNumber(form.vrAllowance),
+              va: parseNumber(form.vaAllowance),
+            }}
+            onClose={() => setBuilding(false)}
+            onApply={(next) => {
+              update('commissionFormula', next);
+              setBuilding(false);
+            }}
+          />
+        ) : null}
+        {rateField || isCustom ? (
           <div className="st-fields three st-divider">
-            <NumberField
-              id="commission-value"
-              label={rateField.label}
-              unit={rateField.unit}
-              unitPosition={rateField.position}
-              help={rateField.help}
-              value={isPercent ? form.commissionPercentage : form.commissionRate}
-              onChange={(value) => update(isPercent ? 'commissionPercentage' : 'commissionRate', value)}
-            />
+            {rateField ? (
+              <NumberField
+                id="commission-value"
+                label={rateField.label}
+                unit={rateField.unit}
+                unitPosition={rateField.position}
+                help={rateField.help}
+                value={isPercent ? form.commissionPercentage : form.commissionRate}
+                onChange={(value) => update(isPercent ? 'commissionPercentage' : 'commissionRate', value)}
+              />
+            ) : null}
+            {usesPercentage ? (
+              <NumberField
+                id="commission-percentage"
+                label="Percentual padrão"
+                unit="%"
+                unitPosition="end"
+                help="Usado nas etapas que pedem o percentual do técnico. Cada técnico pode ter o seu no cadastro; sem valor próprio, vale este."
+                value={form.commissionPercentage}
+                onChange={(value) => update('commissionPercentage', value)}
+              />
+            ) : null}
+            {usesRate ? (
+              <NumberField
+                id="commission-rate"
+                label="Valor padrão por unidade"
+                unit="R$"
+                unitPosition="start"
+                help="Usado nas etapas que pedem o valor por unidade do técnico (por OS, hora ou dia, como você montou). Cada técnico pode ter o seu no cadastro; sem valor próprio, vale este."
+                value={form.commissionRate}
+                onChange={(value) => update('commissionRate', value)}
+              />
+            ) : null}
             <NumberField
               id="commission-minimum"
               label="Mínimo garantido"

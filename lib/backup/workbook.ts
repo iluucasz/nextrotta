@@ -1,5 +1,6 @@
 import { PassThrough } from 'node:stream';
 import ExcelJS from 'exceljs';
+import { describeFormulaStep, normalizeCommissionFormula, stepName } from '../commission-formula';
 import { organizationPublicUrl } from '../tenant-host';
 import { BACKUP_KIND_LABELS, type BackupFile, type BackupKind } from './tables';
 
@@ -257,7 +258,7 @@ const HUMAN: Record<string, string> = {
 
 /** The settings read in words (organization_settings and parts_settings). */
 const SETTING_LABELS: Record<string, string> = {
-  commission_percentage: 'Comissão (%)', commission_mode: 'Como a comissão é calculada', commission_rate: 'Valor da comissão (por OS, hora ou dia)', commission_minimum: 'Comissão mínima do mês', commission_maximum: 'Comissão máxima do mês',
+  commission_percentage: 'Comissão (%)', commission_mode: 'Como a comissão é calculada', commission_formula: 'Cálculo personalizado da comissão', commission_rate: 'Valor da comissão (por OS, hora ou dia)', commission_minimum: 'Comissão mínima do mês', commission_maximum: 'Comissão máxima do mês',
   base_salary: 'Salário base padrão', va_allowance: 'VA padrão', vr_allowance: 'VR padrão', monthly_hours: 'Jornada mensal (horas)', overtime_multiplier: 'Adicional de hora extra (vezes)', daily_break_minutes: 'Intervalo diário (minutos)',
   service_award_tiers: 'Faixas de prêmio por produção', default_shift_start: 'Início do turno padrão', default_shift_end: 'Fim do turno padrão', monthly_hours_warning_floor: 'Avisar horas do mês abaixo de',
   fortnight_split_day: 'Dia que divide a quinzena (antigo)', period_cut_days: 'Dias de corte do pagamento', month_closing_day: 'Dia de fechamento do mês', va_deducts_from_commission: 'VA abate da comissão', vr_deducts_from_commission: 'VR abate da comissão', va_payment: 'Como o VA é pago', vr_payment: 'Como o VR é pago', competence_source: 'Quem define o mês da OS importada', settle_previous_month_until_day: 'Acerto do mês anterior até o dia', charge_cancelled_service_planned: 'Cobrar serviço cancelado que estava planejado', porto_hours_import_time: 'Horário da importação de horas (Porto)', porto_schedule_import_time: 'Horário da importação da escala (Porto)',
@@ -266,7 +267,7 @@ const SETTING_LABELS: Record<string, string> = {
   porto_alert_phone: 'WhatsApp para alertas do robô', finance_due_soon_days: 'Avisar contas que vencem em (dias)', finance_categories: 'Categorias de despesa', porto_laudo_grace_hours: 'Prazo do laudo (horas)',
   payment_methods: 'Formas de pagamento aceitas', receipt_footer: 'Rodapé do recibo', settlement_day: 'Dia do acerto', company_name: 'Nome da empresa nos termos', updated_at: 'Atualizado em',
 };
-const SETTING_WORDS: Record<string, Record<string, string>> = { commission_mode: { excess: 'Só o que passa do salário, VA e VR', percentage: 'Percentual sobre as OS', per_service: 'Valor por OS', per_hour: 'Valor por hora', per_day: 'Valor por dia', none: 'Sem comissão' } };
+const SETTING_WORDS: Record<string, Record<string, string>> = { commission_mode: { excess: 'Só o que passa do salário, VA e VR', percentage: 'Percentual sobre as OS', per_service: 'Valor por OS', per_hour: 'Valor por hora', per_day: 'Valor por dia', custom: 'Cálculo montado pela empresa', none: 'Sem comissão' } };
 
 const USER_COLUMNS: Record<string, string> = {
   user_id: 'Pessoa', created_by: 'Cadastrado por', updated_by: 'Atualizado por', uploaded_by: 'Enviado por', started_by: 'Iniciado por', closed_by: 'Fechado por', acknowledged_by: 'Confirmado por', canceled_by: 'Cancelado por',
@@ -694,11 +695,16 @@ function writeSettings(workbook: ExcelJS.stream.xlsx.WorkbookWriter, plan: Plan)
   for (const [key, value] of entries) {
     if (key === 'organization_id' || key.endsWith('_by') || key === 'deleted_by') continue;
     const kind = guessKind(key, value);
+    const formula = key === 'commission_formula' ? normalizeCommissionFormula(value) : null;
     const shown =
       value === null || value === undefined
         ? ''
-        : typeof value === 'object'
-          ? clip(JSON.stringify(value))
+        : formula
+          ? formula.steps.length
+            ? formula.steps.map((step, index) => `${index + 1}. ${stepName(step, index)}: ${describeFormulaStep(formula, index)}`).join('\n')
+            : 'Nenhum cálculo montado'
+          : typeof value === 'object'
+            ? clip(JSON.stringify(value))
           : cellValue(value, kind === 'json' ? 'text' : kind, SETTING_WORDS[key]);
     const added = sheet.addRow([SETTING_LABELS[key] ?? humanize(key), shown]);
     if (NUMBER_FORMATS[kind]) added.getCell(2).numFmt = NUMBER_FORMATS[kind]!;

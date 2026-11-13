@@ -159,6 +159,9 @@
   right: 12px;
   display: inline-flex;
 }
+.mg-dashboard .st-choice-item.wide {
+  grid-column: 1 / -1;
+}
 .mg-dashboard .st-choice-item > button.selected {
   border-color: var(--primary);
   background: #f6f4ff;
@@ -646,4 +649,66 @@
 }
 .bk-steps b {
   color: var(--foreground);
+}
+
+/* the company's own commission calculation (Personalizado): its steps in words and the button that opens the builder */
+.mg-dashboard .st-formula {
+  display: grid;
+  gap: 14px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--card);
+}
+.mg-dashboard .st-formula-steps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+  counter-reset: formula-step;
+}
+.mg-dashboard .st-formula-steps li {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
+  counter-increment: formula-step;
+}
+.mg-dashboard .st-formula-steps li::before {
+  content: counter(formula-step);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  background: #f1eefe;
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+.mg-dashboard .st-formula-steps strong {
+  display: block;
+  font-size: 15px;
+}
+.mg-dashboard .st-formula-steps span {
+  display: block;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .st-formula-empty {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+.mg-dashboard .st-formula-actions {
+  display: flex;
+  justify-content: flex-start;
 }

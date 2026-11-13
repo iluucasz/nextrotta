@@ -211,13 +211,13 @@ export function Choice<T extends string>({
 }: {
   label: string;
   value: T;
-  options: Array<{ value: T; title: string; text: string; help?: OptionHelp }>;
+  options: Array<{ value: T; title: string; text: string; help?: OptionHelp; /** Takes the whole row (an option that opens its own builder). */ wide?: boolean }>;
   onChange: (value: T) => void;
 }) {
   return (
     <div role="radiogroup" aria-label={label} className="st-choice">
       {options.map((option) => (
-        <div key={option.value} className={cn('st-choice-item', option.help && 'has-help')}>
+        <div key={option.value} className={cn('st-choice-item', option.help && 'has-help', option.wide && 'wide')}>
           <button type="button" role="radio" aria-checked={value === option.value} onClick={() => onChange(option.value)} className={cn(value === option.value && 'selected')}>
             <strong>{option.title}</strong>
             <small>{option.text}</small>
