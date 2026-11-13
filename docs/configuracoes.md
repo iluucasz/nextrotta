@@ -34,6 +34,18 @@ O valor por OS, hora ou dia é `commissionRate` (padrão da empresa) e `technici
 Na Folha, a janela do técnico explica a conta ("42 OS × R$ 30,00", "168,5 h × R$ 18,00") e avisa quando o mínimo ou o teto agiu.
 Teste: `scripts/test-payroll-rules.cjs`.
 
+## Mês das OS (`competenceSource` e `settlePreviousMonthUntilDay`, migração `0049`)
+
+Configurações → Pagamento → "Mês das OS". É o começo do **calendário de pagamento** de cada empresa (regras puras em `lib/pay-calendar.ts`, teste `scripts/test-pay-calendar.cjs`; fluxo da importação em `scripts/test-pay-calendar-flow.cjs`). Os padrões mantêm o comportamento anterior.
+
+- **`competenceSource`** — quem define o mês de cada OS importada:
+  - `batch` (padrão): o admin escolhe o mês e a quinzena (Q1/Q2) ao importar e o arquivo inteiro entra neles.
+  - `service_date`: cada OS entra no mês da própria data, e a quinzena segue o dia (`fortnightSplitDay`). Uma planilha de OP com setembro, outubro e novembro preenche cada mês sozinha; a janela de importação mostra quantas OS há por mês e deixa desmarcar os meses que não devem entrar. O servidor refaz esse cálculo (não confia no que a tela manda).
+  - Nesse modo, a OS de um técnico cuja **folha do mês já está fechada** é recusada ("A folha de 10/2026 deste técnico já está fechada"), porque a folha fechada não é recalculada: a janela avisa antes e oferece "Importar também as OS de folha fechada" (`allow_closed_payroll`). No modo `batch` essa checagem não existe (comportamento de antes).
+- **`settlePreviousMonthUntilDay`** (0 a 28, padrão 0) — até esse dia do mês, Serviços e Folha abrem no mês anterior (quem acerta outubro até 5 de novembro usa 5). 0 = sempre o mês atual.
+
+Ainda **não** existe: dias de corte livres (mensal, `[10, 20]`, semanal), dia de fechamento do mês diferente do último dia, esconder Q1/Q2 nas telas de quem paga por mês e o VA/VR pago em dinheiro à parte. Estão planejados como as próximas fases do calendário.
+
 ## Onde fica
 
 - `lib/organization-settings.ts`: tipos, padrões de organização nova (`DEFAULT_ORGANIZATION_SETTINGS`),
@@ -60,6 +72,8 @@ Teste: `scripts/test-payroll-rules.cjs`.
 | Campo | Padrão de organização nova | Onde é usado |
 |---|---|---|
 | Comissão (percentual ou valor por OS/hora/dia), mínimo e teto, salário base, VA, VR | 25%, R$ 0 (valor), R$ 0, R$ 0, R$ 0, R$ 0 | Folha (servidor e tela), Faturamento, cadastro de técnico (valor inicial e campo vazio). Vale o do técnico quando > 0 (`valueOrDefault`). |
+| Quem define o mês da OS importada | Mês do lote | Importação de OS (`/api/services/import`) — ver "Mês das OS". |
+| Acerto do mês anterior até o dia | 0 (desligado) | Mês com que Serviços e Folha abrem. |
 | Jornada mensal | 220 h | Hora extra da folha, banco de horas, painel do técnico, `{meta_mes}` do WhatsApp. |
 | Adicional de hora extra | 50% (×1,5) | Folha: `max(0, horas − jornada) × (salário ÷ jornada) × multiplicador`. |
 | Intervalo diário | 60 min | Horas da escala/apontamento, robô do Porto, dashboard gerencial, modal de almoço da planilha. |

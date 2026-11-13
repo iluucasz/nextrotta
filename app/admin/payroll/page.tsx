@@ -26,6 +26,7 @@ import type { Discount, Payroll, Service, ServiceFortnight, Technician } from '@
 import { cn } from '@/lib/utils';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
+import { defaultCompetenceMonth } from '@/lib/pay-calendar';
 import type { CommissionMode } from '@/lib/organization-settings';
 import { calculateServiceAward, valueOrDefault } from '@/lib/organization-settings';
 import {
@@ -406,7 +407,7 @@ function AmountRow({
 export default function PayrollPage() {
   const { user, loading } = useAppSession();
   // Technicians' empty commission/salary/VA/VR fall back to the organization's defaults.
-  const { settings: organizationSettings } = useOrganizationSettings();
+  const { settings: organizationSettings, loaded: settingsLoaded } = useOrganizationSettings();
   const [payroll, setPayroll] = useState<Payroll[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [services, setServices] = useState<Service[]>([]);
@@ -417,6 +418,13 @@ export default function PayrollPage() {
   const [pdfRowId, setPdfRowId] = useState('');
   const [competenceMonth, setCompetenceMonth] = useState(brasiliaDateKey().slice(0, 7));
   const [isDataLoading, setIsDataLoading] = useState(true);
+
+  // Companies that settle the month after it ends open on the previous month until their settle day.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    const target = defaultCompetenceMonth(brasiliaDateKey(), organizationSettings.settlePreviousMonthUntilDay);
+    setCompetenceMonth((current) => (current === brasiliaDateKey().slice(0, 7) ? target : current));
+  }, [settingsLoaded, organizationSettings.settlePreviousMonthUntilDay]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [dataError, setDataError] = useState('');
   const [selectedRow, setSelectedRow] = useState<PayrollRow | null>(null);

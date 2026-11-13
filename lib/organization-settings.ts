@@ -2,6 +2,8 @@
 // by the platform owner). Dependency-free on purpose: imported by client screens, API routes and the
 // VPS worker (worker/tsconfig.json) alike. Relative imports only. Storage: organization-settings-store.ts.
 
+import { COMPETENCE_SOURCES, type CompetenceSource } from './pay-calendar';
+
 export type ServiceAwardTier = {
   /** Number of OS (services) in the month that reaches this tier. */
   minServices: number;
@@ -27,6 +29,10 @@ export type OrganizationSettings = {
   baseSalary: number;
   vaAllowance: number;
   vrAllowance: number;
+  /** Who decides the month of an imported OS: the batch (one month for the whole file) or each OS's own date. */
+  competenceSource: CompetenceSource;
+  /** Until this day of the month the screens still open on the previous month (0 = the current month always). */
+  settlePreviousMonthUntilDay: number;
 
   // Workday and hours
   /** Monthly hours target: hour-bank goal and divisor of the hourly rate. */
@@ -121,6 +127,8 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   baseSalary: 0,
   vaAllowance: 0,
   vrAllowance: 0,
+  competenceSource: 'batch',
+  settlePreviousMonthUntilDay: 0,
 
   monthlyHours: 220,
   overtimeMultiplier: 1.5,
@@ -283,6 +291,8 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
     baseSalary: number('baseSalary'),
     vaAllowance: number('vaAllowance'),
     vrAllowance: number('vrAllowance'),
+    competenceSource: COMPETENCE_SOURCES.includes(text('competenceSource') as CompetenceSource) ? (text('competenceSource') as CompetenceSource) : null,
+    settlePreviousMonthUntilDay: number('settlePreviousMonthUntilDay'),
     monthlyHours: number('monthlyHours'),
     overtimeMultiplier: number('overtimeMultiplier'),
     dailyBreakMinutes: number('dailyBreakMinutes'),
@@ -331,6 +341,10 @@ function validateField(key: keyof OrganizationSettings, value: unknown, all: Org
     case 'vaAllowance':
     case 'vrAllowance':
       return n >= 0 ? null : 'Salário, VA e VR não podem ser negativos.';
+    case 'competenceSource':
+      return COMPETENCE_SOURCES.includes(value as CompetenceSource) ? null : 'Escolha quem define o mês de cada OS importada.';
+    case 'settlePreviousMonthUntilDay':
+      return isInteger(n) && n >= 0 && n <= 28 ? null : 'O dia do acerto do mês anterior deve ser um número inteiro entre 0 e 28.';
     case 'monthlyHours':
       return n > 0 && n <= 744 ? null : 'A jornada mensal deve ser maior que zero (até 744 horas).';
     case 'overtimeMultiplier':
@@ -421,6 +435,8 @@ const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
   baseSalary: 'Salário, VA e VR não podem ser negativos.',
   vaAllowance: 'Salário, VA e VR não podem ser negativos.',
   vrAllowance: 'Salário, VA e VR não podem ser negativos.',
+  competenceSource: 'Escolha quem define o mês de cada OS importada.',
+  settlePreviousMonthUntilDay: 'O dia do acerto do mês anterior deve ser um número inteiro entre 0 e 28.',
   monthlyHours: 'A jornada mensal deve ser maior que zero (até 744 horas).',
   overtimeMultiplier: 'O adicional de hora extra deve ficar entre 1 (sem adicional) e 5.',
   dailyBreakMinutes: 'O intervalo diário deve ser um número inteiro de minutos entre 0 e 240.',

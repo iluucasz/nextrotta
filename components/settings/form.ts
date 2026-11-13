@@ -11,6 +11,7 @@ import {
   type CommissionMode,
   type OrganizationSettings,
 } from '@/lib/organization-settings';
+import type { CompetenceSource } from '@/lib/pay-calendar';
 
 /** The settings screens are split by subject; each one saves only the fields it shows (the API keeps the rest). */
 export type SettingsGroup = 'payment' | 'hours' | 'porto' | 'finance';
@@ -23,6 +24,7 @@ type NumericKey =
   | 'baseSalary'
   | 'vaAllowance'
   | 'vrAllowance'
+  | 'settlePreviousMonthUntilDay'
   | 'monthlyHours'
   | 'overtimePercent'
   | 'dailyBreakMinutes'
@@ -42,6 +44,7 @@ export type FormState = Record<NumericKey, string> &
   Record<TimeKey, string> &
   Record<BooleanKey, boolean> & {
     commissionMode: CommissionMode;
+    competenceSource: CompetenceSource;
     portoWarningText: string;
     portoAlertPhone: string;
     tiers: Array<{ id: number; minServices: string; amount: string }>;
@@ -73,6 +76,8 @@ export function toForm(settings: OrganizationSettings): FormState {
     baseSalary: formatNumber(settings.baseSalary),
     vaAllowance: formatNumber(settings.vaAllowance),
     vrAllowance: formatNumber(settings.vrAllowance),
+    competenceSource: settings.competenceSource,
+    settlePreviousMonthUntilDay: String(settings.settlePreviousMonthUntilDay),
     monthlyHours: formatNumber(settings.monthlyHours),
     overtimePercent: formatNumber(overtimePercentFromMultiplier(settings.overtimeMultiplier)),
     dailyBreakMinutes: String(settings.dailyBreakMinutes),
@@ -113,6 +118,8 @@ export function toPayload(form: FormState, group: SettingsGroup) {
         baseSalary: number('baseSalary'),
         vaAllowance: number('vaAllowance'),
         vrAllowance: number('vrAllowance'),
+        competenceSource: form.competenceSource,
+        settlePreviousMonthUntilDay: number('settlePreviousMonthUntilDay'),
         serviceAwardTiers: form.tiers.map((tier) => ({ minServices: parseNumber(tier.minServices), amount: parseNumber(tier.amount) })),
       };
     case 'hours':

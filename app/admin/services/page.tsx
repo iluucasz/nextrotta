@@ -31,6 +31,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { brasiliaDateKey, formatCurrency, formatDate, formatTime, normalizeText, parseMoney, resolveCompetenceMonth, yearFromCompetence } from '@/lib/formatters';
 import type { Service, ServiceFortnight, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
+import { useOrganizationSettings } from '@/hooks/use-organization-settings';
+import { Checkbox } from '@/components/ui/checkbox';
+import { countByCompetence, defaultCompetenceMonth, monthLabel } from '@/lib/pay-calendar';
 import { isTextSpreadsheet, readSpreadsheet } from '@/lib/spreadsheet-import';
 
 const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
@@ -340,6 +343,20 @@ export default function AdminServicesPage() {
   const [importFortnight, setImportFortnight] = useState<ServiceFortnight | ''>('');
   const [importCompetenceMonth, setImportCompetenceMonth] = useState('');
   const [importProgress, setImportProgress] = useState<{ stage: ImportStageKey; value: number; detail: string } | null>(null);
+  // By the service's date: the months left out of the import, the folhas already closed and whether to import into them anyway.
+  const [skippedImportMonths, setSkippedImportMonths] = useState<string[]>([]);
+  const [closedPayrollKeys, setClosedPayrollKeys] = useState<Set<string>>(new Set());
+  const [allowClosedPayroll, setAllowClosedPayroll] = useState(false);
+  const { settings: orgSettings, loaded: settingsLoaded } = useOrganizationSettings({ enabled: Boolean(user) });
+  const byServiceDate = orgSettings.competenceSource === 'service_date';
+
+  // Companies that settle the month after it ends open on the previous month until their settle day.
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    const target = defaultCompetenceMonth(brasiliaDateKey(), orgSettings.settlePreviousMonthUntilDay);
+    setCompetenceFilter((current) => (current === currentCompetenceMonth() ? target : current));
+    setBulkDeleteCompetenceMonth((current) => (current === currentCompetenceMonth() ? target : current));
+  }, [settingsLoaded, orgSettings.settlePreviousMonthUntilDay]);
 
   useEffect(() => {
     let mounted = true;
@@ -477,6 +494,43 @@ export default function AdminServicesPage() {
   const importIsTextFile = isTextSpreadsheet(importFileName);
   const validImportRows = useMemo(() => importRows.filter((row) => row.status === 'valid'), [importRows]);
 
+  // By the service's date, the preview shows how many OS fall in each month and which of them the admin takes.
+  const importMonths = useMemo(() => (byServiceDate ? countByCompetence(validImportRows.map((row) => row.values.date_performed)) : []), [byServiceDate, validImportRows]);
+  const importMonthsKey = importMonths.map((item) => item.month).join(',');
+  const rowsToImport = useMemo(
+    () => (byServiceDate ? validImportRows.filter((row) => !skippedImportMonths.includes(row.values.date_performed.slice(0, 7))) : validImportRows),
+    [byServiceDate, skippedImportMonths, validImportRows],
+  );
+  const closedRowsByMonth = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const row of rowsToImport) {
+      const month = row.values.date_performed.slice(0, 7);
+      if (closedPayrollKeys.has(`${row.values.technician_id}|${month}`)) counts.set(month, (counts.get(month) ?? 0) + 1);
+    }
+    return counts;
+  }, [closedPayrollKeys, rowsToImport]);
+  const closedRowsTotal = [...closedRowsByMonth.values()].reduce((total, count) => total + count, 0);
+
+  // Which technicians already have the folha of those months closed: an OS added there would be listed but never paid.
+  useEffect(() => {
+    if (!importMonthsKey) {
+      setClosedPayrollKeys(new Set());
+      return;
+    }
+    let mounted = true;
+    Promise.all(
+      importMonthsKey.split(',').map(async (month) => {
+        const response = await fetch(`/api/payroll?competenceMonth=${month}`, { cache: 'no-store' }).catch(() => null);
+        const data = response?.ok ? await response.json().catch(() => null) : null;
+        const payrolls: Array<{ technician_id?: string; status?: string }> = Array.isArray(data?.payrolls) ? data.payrolls : [];
+        return payrolls.filter((item) => item.status === 'closed').map((item) => `${item.technician_id}|${month}`);
+      }),
+    ).then((keys) => mounted && setClosedPayrollKeys(new Set(keys.flat())));
+    return () => {
+      mounted = false;
+    };
+  }, [importMonthsKey]);
+
   const bulkDeletePreviewServices = useMemo(() => {
     return servicesWithDetails.filter((service) => {
       const competence = getServiceCompetenceMonth(service);
@@ -510,6 +564,8 @@ export default function AdminServicesPage() {
     setImportFortnight('');
     setImportCompetenceMonth('');
     setImportProgress(null);
+    setSkippedImportMonths([]);
+    setAllowClosedPayroll(false);
   }
 
   function handleImportDialogChange(open: boolean) {
@@ -548,6 +604,8 @@ export default function AdminServicesPage() {
 
     setImportError('');
     setImportResult('');
+    setSkippedImportMonths([]);
+    setAllowClosedPayroll(false);
     setImportFileName(file.name);
 
     try {
@@ -587,12 +645,12 @@ export default function AdminServicesPage() {
   }
 
   async function handleImportSubmit() {
-    if (!validImportRows.length) return;
-    if (!importFortnight) {
+    if (!rowsToImport.length) return;
+    if (!byServiceDate && !importFortnight) {
       setImportError('Selecione Q1 ou Q2 antes de importar o lote.');
       return;
     }
-    if (!importCompetenceMonth) {
+    if (!byServiceDate && !importCompetenceMonth) {
       setImportError('Defina a competência do lote antes de importar.');
       return;
     }
@@ -600,17 +658,19 @@ export default function AdminServicesPage() {
     setIsImporting(true);
     setImportError('');
     setImportResult('');
-    setImportProgress(createImportProgress('prepare', `Conferindo ${validImportRows.length} OS antes do envio.`));
+    setImportProgress(createImportProgress('prepare', `Conferindo ${rowsToImport.length} OS antes do envio.`));
 
     try {
-      setImportProgress(createImportProgress('upload', `Enviando ${validImportRows.length} OS para processamento. Aguarde.`));
+      setImportProgress(createImportProgress('upload', `Enviando ${rowsToImport.length} OS para processamento. Aguarde.`));
+      // By the service's date the server works out each OS's month (and fortnight) from its own date.
       const response = await fetch('/api/services/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          services: validImportRows.map((row) => row.values),
-          fortnight_period: importFortnight,
-          competence_month: importCompetenceMonth,
+          services: rowsToImport.map((row) => row.values),
+          ...(byServiceDate
+            ? { allow_closed_payroll: allowClosedPayroll }
+            : { fortnight_period: importFortnight, competence_month: importCompetenceMonth }),
         }),
       });
       setImportProgress(createImportProgress('process', 'Recebendo o retorno da importação e validando o resultado.'));
@@ -1170,12 +1230,59 @@ export default function AdminServicesPage() {
                     {importSheetName ? <span className="ml-2 text-foreground">Aba: {importSheetName}</span> : null}
                   </div>
 
+                  {byServiceDate ? (
+                    <div className="mt-5 rounded-xl border border-border bg-background p-4">
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Mês das OS</p>
+                        <div className="flex items-center gap-2">
+                          <h4 className="text-sm font-semibold text-foreground">Cada OS vai para o mês da sua data</h4>
+                          <HelpTip text="Escolha quais meses importar. Folhas já fechadas não mudam: as OS de um técnico com a folha fechada ficam de fora, a menos que você autorize." />
+                        </div>
+                      </div>
+
+                      {importMonths.length ? (
+                        <ul className="mt-4 space-y-2">
+                          {importMonths.map(({ month, count }) => {
+                            const skipped = skippedImportMonths.includes(month);
+                            const closedCount = skipped ? 0 : closedRowsByMonth.get(month) ?? 0;
+                            return (
+                              <li key={month} className="flex flex-wrap items-center gap-3 rounded-lg border border-border px-3 py-2 text-sm">
+                                <Checkbox
+                                  id={`import-month-${month}`}
+                                  checked={!skipped}
+                                  onCheckedChange={(checked) =>
+                                    setSkippedImportMonths((current) => (checked ? current.filter((item) => item !== month) : [...current, month]))
+                                  }
+                                />
+                                <label htmlFor={`import-month-${month}`} className="font-medium text-foreground">
+                                  {monthLabel(month)}
+                                </label>
+                                <span className="text-muted-foreground">{count} OS</span>
+                                {closedCount ? <StatusBadge tone="warning">{closedCount} com folha fechada</StatusBadge> : null}
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="mt-3 text-xs text-muted-foreground">Carregue a planilha para ver as OS de cada mês.</p>
+                      )}
+
+                      {closedRowsTotal ? (
+                        <label className="mt-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                          <Checkbox checked={allowClosedPayroll} onCheckedChange={(checked) => setAllowClosedPayroll(checked === true)} className="mt-0.5" />
+                          <span>
+                            Importar também as {closedRowsTotal} OS de folha fechada. A folha não é recalculada: a OS aparece na lista, mas só entra no pagamento se você reabrir e fechar a folha de novo.
+                          </span>
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : (
                   <div className="mt-5 rounded-xl border border-border bg-background p-4">
                     <div className="space-y-1">
                       <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Quinzena</p>
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-semibold text-foreground">Defina o fechamento do lote</h4>
-                        <HelpTip text="A Q1 fecha no dia 13 e a Q2 fecha no dia 28. A quinzena e a competência definidas aqui serão aplicadas a todas as OS importadas neste arquivo." />
+                        <HelpTip text="A quinzena e a competência definidas aqui serão aplicadas a todas as OS importadas neste arquivo." />
                       </div>
                     </div>
 
@@ -1217,6 +1324,7 @@ export default function AdminServicesPage() {
                         : 'Selecione a quinzena e a competência antes de confirmar a importação.'}
                     </p>
                   </div>
+                  )}
                 </section>
 
                 <section className="rounded-2xl border border-border/70 bg-card/70 p-5 shadow-sm sm:p-6">
@@ -1311,8 +1419,8 @@ export default function AdminServicesPage() {
               <Button type="button" variant="outline" onClick={() => handleImportDialogChange(false)} disabled={isImporting}>
                 {isImporting ? 'Aguarde...' : 'Fechar'}
               </Button>
-              <Button type="button" onClick={handleImportSubmit} disabled={!validImportRows.length || !importFortnight || !importCompetenceMonth || isImporting} className="min-w-40">
-                {isImporting ? 'Importando...' : `Importar ${validImportRows.length} OS`}
+              <Button type="button" onClick={handleImportSubmit} disabled={!rowsToImport.length || (!byServiceDate && (!importFortnight || !importCompetenceMonth)) || isImporting} className="min-w-40">
+                {isImporting ? 'Importando...' : `Importar ${rowsToImport.length} OS`}
               </Button>
             </DialogFooter>
           </div>

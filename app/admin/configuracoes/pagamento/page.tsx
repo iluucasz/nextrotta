@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { newTier, useSettingsForm } from '@/components/settings/form';
 import { Choice, NumberField, SettingsPage } from '@/components/settings/kit';
 import type { CommissionMode } from '@/lib/organization-settings';
+import type { CompetenceSource } from '@/lib/pay-calendar';
 
 const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: string }> = [
   { value: 'excess', title: 'Sobre o excedente', text: 'Paga o que passa do fixo' },
@@ -18,6 +19,14 @@ const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: st
 
 const COMMISSION_HELP =
   'Sobre o excedente: a comissão é o que a produção passa do fixo (% das OS − salário − vales). Abaixo disso, não há comissão.\nPercentual da produção: a comissão é o % do valor das OS, somada ao salário. Os vales não são abatidos.\nValor fixo por OS: cada serviço do mês vale um valor, não importa o preço da OS (42 OS × R$ 30 = R$ 1.260).\nValor por hora: as horas trabalhadas no mês (escala e Porto) vezes o valor da hora.\nDiária: os dias com horas trabalhadas no mês vezes o valor do dia.\nSem comissão: o técnico recebe só salário, horas extras e prêmio.';
+
+const COMPETENCE_OPTIONS: Array<{ value: CompetenceSource; title: string; text: string }> = [
+  { value: 'batch', title: 'Mês do lote', text: 'Você escolhe o mês ao importar' },
+  { value: 'service_date', title: 'Data do serviço', text: 'Cada OS vai para o mês da sua data' },
+];
+
+const COMPETENCE_HELP =
+  'Mês do lote: ao importar a planilha, você escolhe um mês e todas as OS do arquivo entram nele.\nData do serviço: cada OS entra no mês da própria data. Uma planilha com serviços de setembro, outubro e novembro preenche cada mês sozinha, e você escolhe quais meses importar na prévia.\nFolhas já fechadas não mudam: o sistema avisa antes de importar OS para elas.';
 
 /** The amount that goes with each way of paying: a percentage, or R$ per service, hour or day. */
 const RATE_FIELD: Record<Exclude<CommissionMode, 'none'>, { label: string; unit: string; position: 'start' | 'end'; help: string }> = {
@@ -70,6 +79,20 @@ export default function PagamentoPage() {
             />
           </div>
         ) : null}
+      </Panel>
+
+      <Panel title="Mês das OS" help={COMPETENCE_HELP}>
+        <Choice label="Quem define o mês de cada OS importada" value={form.competenceSource} options={COMPETENCE_OPTIONS} onChange={(value) => update('competenceSource', value)} />
+        <div className="st-fields one st-divider">
+          <NumberField
+            id="settle-day"
+            label="Acerto do mês anterior até o dia"
+            unit="dia"
+            help="Até este dia do mês, Serviços e Folha abrem no mês anterior (quem acerta outubro até 5 de novembro usa 5). Deixe 0 para abrir sempre no mês atual."
+            value={form.settlePreviousMonthUntilDay}
+            onChange={(value) => update('settlePreviousMonthUntilDay', value)}
+          />
+        </div>
       </Panel>
 
       <div className="st-grid-two">

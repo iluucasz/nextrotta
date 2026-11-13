@@ -2,6 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
+import { getOrganizationSettings } from '@/lib/organization-settings-store';
+import { fortnightForDay } from '@/lib/organization-settings';
+import { competenceForImportRow, isDateKey, isMonthKey, monthLabel } from '@/lib/pay-calendar';
 
 interface ServiceImportPayload {
   order_code?: unknown;
@@ -23,14 +26,6 @@ function getText(value: unknown) {
   return String(value ?? '').trim();
 }
 
-function isDateKey(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
-}
-
-function isMonthKey(value: string) {
-  return /^\d{4}-\d{2}$/.test(value);
-}
-
 function isTimeKey(value: string) {
   return /^\d{2}:\d{2}(?::\d{2})?$/.test(value);
 }
@@ -50,8 +45,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const incomingRows = Array.isArray(body?.services) ? (body.services as ServiceImportPayload[]) : [];
+    const settings = await getOrganizationSettings(auth.organizationId);
+    // By the service's own date each OS goes to its own month (and its fortnight follows its day);
+    // by batch the whole file goes to the month and fortnight the admin chose.
+    const byServiceDate = settings.competenceSource === 'service_date';
     const fortnightPeriod = getText(body?.fortnight_period).toUpperCase();
     const competenceMonth = getText(body?.competence_month);
+    const allowClosedPayroll = body?.allow_closed_payroll === true;
 
     if (!incomingRows.length) {
       return NextResponse.json(
@@ -60,14 +60,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isFortnightPeriod(fortnightPeriod)) {
+    if (!byServiceDate && !isFortnightPeriod(fortnightPeriod)) {
       return NextResponse.json(
         { error: 'Selecione Q1 ou Q2 para importar este lote.' },
         { status: 400 }
       );
     }
 
-    if (!isMonthKey(competenceMonth)) {
+    if (!byServiceDate && !isMonthKey(competenceMonth)) {
       return NextResponse.json(
         { error: 'Defina uma competência válida para importar este lote.' },
         { status: 400 }
@@ -112,6 +112,8 @@ export async function POST(request: NextRequest) {
       datePerformed: string;
       timePerformed: string;
       description: string;
+      competenceMonth: string;
+      fortnightPeriod: string;
     }> = [];
 
     for (const row of incomingRows) {
@@ -130,7 +132,9 @@ export async function POST(request: NextRequest) {
       if (!Number.isFinite(value) || value <= 0 || value > 99_999_999) errors.push('Valor inválido');
       if (!isDateKey(datePerformed)) errors.push('Data de atendimento inválida');
       if (!isTimeKey(timePerformed)) errors.push('Hora de atendimento inválida');
-      if (!isMonthKey(competenceMonth)) errors.push('Competência inválida');
+      // The month is always worked out here: what the screen shows is only a preview.
+      const rowCompetence = competenceForImportRow(settings.competenceSource, datePerformed, competenceMonth);
+      if (!isMonthKey(rowCompetence)) errors.push('Competência inválida');
 
       if (!errors.length) {
         const key = rowKey(orderCode, technicianId, datePerformed, value);
@@ -143,7 +147,35 @@ export async function POST(request: NextRequest) {
         continue;
       }
 
-      accepted.push({ orderCode, technicianId, serviceType, value, datePerformed, timePerformed, description });
+      accepted.push({
+        orderCode,
+        technicianId,
+        serviceType,
+        value,
+        datePerformed,
+        timePerformed,
+        description,
+        competenceMonth: rowCompetence,
+        fortnightPeriod: byServiceDate ? fortnightForDay(Number(datePerformed.slice(8, 10)), settings.fortnightSplitDay) : fortnightPeriod,
+      });
+    }
+
+    // A closed folha keeps the values it was closed with, so an OS of that month would be on the list
+    // but never paid. By the service's date the admin is warned and has to confirm the import.
+    if (byServiceDate && !allowClosedPayroll && accepted.length) {
+      const closedRows = await sql.query(
+        `SELECT technician_id::text AS technician_id, competence_month FROM payroll
+         WHERE organization_id = $1 AND status = 'closed' AND deleted_at IS NULL
+           AND technician_id = ANY($2::uuid[]) AND competence_month = ANY($3::text[])`,
+        [auth.organizationId, accepted.map((row) => row.technicianId), accepted.map((row) => row.competenceMonth)],
+      );
+      const closedKeys = new Set(closedRows.map((row) => `${row.technician_id}|${row.competence_month}`));
+      for (let index = accepted.length - 1; index >= 0; index -= 1) {
+        const row = accepted[index];
+        if (!closedKeys.has(`${row.technicianId}|${row.competenceMonth}`)) continue;
+        rejected.push({ order_code: row.orderCode, errors: [`A folha de ${monthLabel(row.competenceMonth)} deste técnico já está fechada`] });
+        accepted.splice(index, 1);
+      }
     }
 
     // One statement for the whole batch: it is all saved or nothing is, so a failure halfway can't
@@ -155,9 +187,9 @@ export async function POST(request: NextRequest) {
              date_performed, time_performed, competence_month, fortnight_period, description
            )
            SELECT $1::uuid, r.order_code, r.technician_id, r.service_type, r.value,
-                  r.date_performed, r.time_performed, $9::text, $10::text, r.description
-           FROM unnest($2::text[], $3::uuid[], $4::text[], $5::numeric[], $6::date[], $7::time[], $8::text[])
-             AS r(order_code, technician_id, service_type, value, date_performed, time_performed, description)
+                  r.date_performed, r.time_performed, r.competence_month, r.fortnight_period, r.description
+           FROM unnest($2::text[], $3::uuid[], $4::text[], $5::numeric[], $6::date[], $7::time[], $8::text[], $9::text[], $10::text[])
+             AS r(order_code, technician_id, service_type, value, date_performed, time_performed, description, competence_month, fortnight_period)
            RETURNING id, order_code, technician_id, service_type, value,
                      date_performed, time_performed, competence_month, fortnight_period, description, created_at`,
           [
@@ -169,8 +201,8 @@ export async function POST(request: NextRequest) {
             accepted.map((row) => row.datePerformed),
             accepted.map((row) => row.timePerformed),
             accepted.map((row) => row.description || null),
-            competenceMonth,
-            fortnightPeriod,
+            accepted.map((row) => row.competenceMonth),
+            accepted.map((row) => row.fortnightPeriod),
           ],
         )
       : [];
