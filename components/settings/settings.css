@@ -126,7 +126,7 @@
   gap: 10px;
   margin-bottom: 18px;
 }
-.mg-dashboard .st-choice button {
+.mg-dashboard .st-choice-item > button {
   display: grid;
   gap: 2px;
   padding: 12px 14px;
@@ -135,15 +135,31 @@
   border-radius: 12px;
   background: var(--card);
 }
-.mg-dashboard .st-choice button strong {
+.mg-dashboard .st-choice-item > button strong {
   font-size: 16px;
 }
-.mg-dashboard .st-choice button small {
+.mg-dashboard .st-choice-item > button small {
   font-size: 14px;
   line-height: 1.35;
   color: var(--muted-foreground);
 }
-.mg-dashboard .st-choice button.selected {
+.mg-dashboard .st-choice-item {
+  position: relative;
+  display: grid;
+}
+.mg-dashboard .st-choice-item > button {
+  height: 100%;
+}
+.mg-dashboard .st-choice-item.has-help > button strong {
+  padding-right: 26px;
+}
+.mg-dashboard .st-choice-help {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  display: inline-flex;
+}
+.mg-dashboard .st-choice-item > button.selected {
   border-color: var(--primary);
   background: #f6f4ff;
 }
@@ -370,7 +386,7 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
-.mg-dashboard .st-choice button {
+.mg-dashboard .st-choice-item > button {
   align-content: start;
   min-height: 78px;
 }

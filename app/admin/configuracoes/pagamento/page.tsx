@@ -6,48 +6,272 @@ import { Button } from '@/components/ui/button';
 import { newTier, useSettingsForm } from '@/components/settings/form';
 import type { PeriodMode } from '@/components/settings/form';
 import { Choice, NumberField, SettingsPage, TextField, Toggle } from '@/components/settings/kit';
+import type { OptionHelp } from '@/components/settings/option-help';
 import type { BenefitPayment, CommissionMode } from '@/lib/organization-settings';
 import type { CompetenceSource } from '@/lib/pay-calendar';
 
-const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: string }> = [
-  { value: 'excess', title: 'Sobre o excedente', text: 'Paga o que passa do fixo' },
-  { value: 'percentage', title: 'Percentual da produção', text: '% do valor das OS' },
-  { value: 'per_service', title: 'Valor fixo por OS', text: 'R$ por serviço feito' },
-  { value: 'per_hour', title: 'Valor por hora', text: 'R$ por hora trabalhada' },
-  { value: 'per_day', title: 'Diária', text: 'R$ por dia trabalhado' },
-  { value: 'none', title: 'Sem comissão', text: 'Só salário e extras' },
+const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: string; help: OptionHelp }> = [
+  {
+    value: 'excess',
+    title: 'Sobre o excedente',
+    text: 'Paga o que passa do fixo',
+    help: {
+      what: 'O percentual é aplicado sobre o total das OS do técnico. A comissão é só o que sobra depois de descontar o fixo dele: o salário base mais os vales que abatem. Abaixo do fixo não há comissão, e o técnico recebe o salário base.',
+      examples: [
+        {
+          title: 'Produção acima do fixo',
+          rows: [
+            ['Total das OS', 'R$ 10.000'],
+            ['30% das OS', 'R$ 3.000'],
+            ['Salário base', '− R$ 2.000'],
+            ['VR (abate)', '− R$ 500'],
+          ],
+          result: ['Comissão', 'R$ 500'],
+        },
+        {
+          title: 'Produção abaixo do fixo',
+          rows: [
+            ['Total das OS', 'R$ 5.000'],
+            ['30% das OS', 'R$ 1.500'],
+            ['Fixo (salário + VR)', 'R$ 2.500'],
+          ],
+          result: ['Comissão', 'R$ 0 (recebe o salário)'],
+        },
+      ],
+      note: 'Cada vale abate ou não da comissão: isso se escolhe nos painéis de VR e VA, logo abaixo.',
+    },
+  },
+  {
+    value: 'percentage',
+    title: 'Percentual da produção',
+    text: '% do valor das OS',
+    help: {
+      what: 'A comissão é o percentual aplicado sobre o total das OS do técnico no mês, somada ao salário base. Nada é abatido: salário e vales não entram na conta da comissão.',
+      examples: [
+        {
+          rows: [
+            ['Total das OS', 'R$ 10.000'],
+            ['Comissão (30%)', 'R$ 3.000'],
+            ['Salário base', 'R$ 2.000'],
+          ],
+          result: ['Salário + comissão', 'R$ 5.000'],
+        },
+      ],
+      note: 'Cada técnico pode ter o seu percentual no cadastro. Sem percentual próprio, vale o padrão daqui.',
+    },
+  },
+  {
+    value: 'per_service',
+    title: 'Valor fixo por OS',
+    text: 'R$ por serviço feito',
+    help: {
+      what: 'Cada OS do mês vale um valor fixo, não importa o preço do serviço. A comissão é esse valor vezes a quantidade de OS, somada ao salário base.',
+      examples: [
+        {
+          rows: [
+            ['OS no mês', '42'],
+            ['Valor por OS', 'R$ 30'],
+          ],
+          result: ['Comissão', 'R$ 1.260'],
+        },
+      ],
+      note: 'Cada técnico pode ter o seu valor no cadastro. Sem valor próprio, vale o padrão daqui.',
+    },
+  },
+  {
+    value: 'per_hour',
+    title: 'Valor por hora',
+    text: 'R$ por hora trabalhada',
+    help: {
+      what: 'A comissão é o valor da hora vezes as horas trabalhadas no mês, que vêm do apontamento da escala e do Porto. É somada ao salário base.',
+      examples: [
+        {
+          rows: [
+            ['Horas no mês', '200 h'],
+            ['Valor da hora', 'R$ 12'],
+          ],
+          result: ['Comissão', 'R$ 2.400'],
+        },
+      ],
+      note: 'Cada técnico pode ter o seu valor no cadastro. Sem valor próprio, vale o padrão daqui.',
+    },
+  },
+  {
+    value: 'per_day',
+    title: 'Diária',
+    text: 'R$ por dia trabalhado',
+    help: {
+      what: 'A comissão é o valor do dia vezes os dias em que o técnico teve horas apontadas no mês. É somada ao salário base.',
+      examples: [
+        {
+          rows: [
+            ['Dias trabalhados', '22'],
+            ['Valor do dia', 'R$ 100'],
+          ],
+          result: ['Comissão', 'R$ 2.200'],
+        },
+      ],
+      note: 'Um dia só conta se tiver horas apontadas. Cada técnico pode ter o seu valor no cadastro.',
+    },
+  },
+  {
+    value: 'none',
+    title: 'Sem comissão',
+    text: 'Só salário e extras',
+    help: {
+      what: 'Nenhuma comissão é calculada. O técnico recebe o salário base, as horas extras e o prêmio por produção, se a empresa tiver faixas de prêmio.',
+      examples: [
+        {
+          rows: [
+            ['Salário base', 'R$ 2.000'],
+            ['Horas extras', 'R$ 150'],
+            ['Prêmio por produção', 'R$ 100'],
+          ],
+          result: ['Em conta', 'R$ 2.250'],
+        },
+      ],
+      note: 'Os campos de percentual, mínimo garantido e teto não aparecem neste modo.',
+    },
+  },
 ];
 
-const COMMISSION_HELP =
-  'Sobre o excedente: a comissão é o que a produção passa do fixo (% das OS − salário − vales que abatem). Abaixo disso, não há comissão.\nPercentual da produção: a comissão é o % do valor das OS, somada ao salário. Os vales não são abatidos.\nValor fixo por OS: cada serviço do mês vale um valor, não importa o preço da OS (42 OS × R$ 30 = R$ 1.260).\nValor por hora: as horas trabalhadas no mês (escala e Porto) vezes o valor da hora.\nDiária: os dias com horas trabalhadas no mês vezes o valor do dia.\nSem comissão: o técnico recebe só salário, horas extras e prêmio.';
-
-const BENEFIT_PAYMENT_OPTIONS: Array<{ value: BenefitPayment; title: string; text: string }> = [
-  { value: 'card', title: 'No cartão', text: 'Fora do valor em conta' },
-  { value: 'cash', title: 'Em dinheiro', text: 'À parte, fora do valor em conta' },
-];
-
-const BENEFIT_PAYMENT_HELP =
-  'Como o vale chega ao técnico. Só muda o texto da folha, do PDF e da tela do técnico: o custo total da folha é o mesmo.';
+function benefitPaymentOptions(voucher: 'VR' | 'VA'): Array<{ value: BenefitPayment; title: string; text: string; help: OptionHelp }> {
+  return [
+    {
+      value: 'card',
+      title: 'No cartão',
+      text: 'Fora do valor em conta',
+      help: {
+        what: `O ${voucher} vai para o cartão do técnico, fora do valor pago em conta. Na folha, no PDF e na tela do técnico ele aparece como pago no cartão.`,
+        examples: [
+          {
+            rows: [
+              ['Salário + comissão', 'R$ 2.500 em conta'],
+              [voucher, 'R$ 500 no cartão'],
+            ],
+          },
+        ],
+        note: 'Só muda onde o texto diz que o vale é pago: o custo total da folha é o mesmo. Se o vale abate da comissão ou não é a opção logo abaixo.',
+      },
+    },
+    {
+      value: 'cash',
+      title: 'Em dinheiro',
+      text: 'À parte, fora do valor em conta',
+      help: {
+        what: `O ${voucher} é entregue em dinheiro, à parte do valor pago em conta. A folha, o PDF e a tela do técnico dizem que ele é pago em dinheiro.`,
+        examples: [
+          {
+            rows: [
+              ['Salário + comissão', 'R$ 2.500 em conta'],
+              [voucher, 'R$ 500 em dinheiro'],
+            ],
+          },
+        ],
+        note: 'Só muda onde o texto diz que o vale é pago: o custo total da folha é o mesmo. Se o vale abate da comissão ou não é a opção logo abaixo.',
+      },
+    },
+  ];
+}
 
 const BENEFIT_DEDUCT_HELP =
-  'Só vale no modo "Sobre o excedente". Ligado: o vale conta como fixo e a comissão só começa depois dele (produção − salário − vales). Desligado: o vale não entra na conta da comissão.';
+  'Só vale no modo "Sobre o excedente".\nLigado: o vale conta como parte do fixo e a comissão só começa depois dele. Ex.: 30% de R$ 10.000 = R$ 3.000; menos salário de R$ 2.000 e vale de R$ 500, a comissão é R$ 500.\nDesligado: o vale fica fora da conta. Ex.: R$ 3.000 menos o salário de R$ 2.000, a comissão é R$ 1.000, e o vale de R$ 500 é pago além disso.';
 
-const PERIOD_OPTIONS: Array<{ value: PeriodMode; title: string; text: string }> = [
-  { value: 'monthly', title: 'Mensal', text: 'Um pagamento por mês' },
-  { value: 'fortnightly', title: 'Quinzenal', text: 'Dois períodos: Q1 e Q2' },
-  { value: 'custom', title: 'Dias específicos', text: 'Você escolhe os dias de corte' },
+const PERIOD_OPTIONS: Array<{ value: PeriodMode; title: string; text: string; help: OptionHelp }> = [
+  {
+    value: 'monthly',
+    title: 'Mensal',
+    text: 'Um pagamento por mês',
+    help: {
+      what: 'O mês não é dividido: a empresa paga uma vez por mês. Q1 e Q2 não aparecem em Serviços, na importação, na Folha nem no painel do técnico.',
+      examples: [
+        {
+          rows: [
+            ['OS de 03/11', 'Folha de novembro'],
+            ['OS de 25/11', 'Folha de novembro'],
+          ],
+        },
+      ],
+    },
+  },
+  {
+    value: 'fortnightly',
+    title: 'Quinzenal',
+    text: 'Dois períodos: Q1 e Q2',
+    help: {
+      what: 'O mês tem dois períodos: a Q1 vai do dia 1 até o dia de corte e a Q2, do dia seguinte até o fim do mês. A folha continua calculada pelo mês inteiro; os períodos servem para separar e conferir as OS.',
+      examples: [
+        {
+          title: 'Exemplo (corte no dia 15)',
+          rows: [
+            ['OS de 10/11', 'Q1'],
+            ['OS de 15/11', 'Q1'],
+            ['OS de 23/11', 'Q2'],
+          ],
+        },
+      ],
+      note: 'O dia de corte aparece logo abaixo e pode ser mudado.',
+    },
+  },
+  {
+    value: 'custom',
+    title: 'Dias específicos',
+    text: 'Você escolhe os dias de corte',
+    help: {
+      what: 'Você informa os dias em que cada período termina, até 4 dias. Cada dia vira um corte e o mês passa a ter um período a mais que o número de cortes.',
+      examples: [
+        {
+          title: 'Exemplo (cortes 10 e 20)',
+          rows: [
+            ['Período 1', 'dias 1 a 10'],
+            ['Período 2', 'dias 11 a 20'],
+            ['Período 3', 'dia 21 em diante'],
+          ],
+        },
+      ],
+      note: 'OS já importadas guardam o período em que entraram: mudar os cortes não reclassifica as antigas.',
+    },
+  },
 ];
 
-const PERIOD_HELP =
-  'Mensal: o mês não é dividido. Q1 e Q2 somem das telas, da importação e do painel do técnico.\nQuinzenal: o mês tem dois períodos, Q1 até o dia de corte e Q2 do dia seguinte em diante.\nDias específicos: liste os dias em que um período termina (por exemplo 10, 20 gera três períodos, até 4 dias). A folha continua sendo calculada pelo mês; o período serve para separar e conferir as OS.\nOS já importadas guardam o período em que foram lançadas.';
-
-const COMPETENCE_OPTIONS: Array<{ value: CompetenceSource; title: string; text: string }> = [
-  { value: 'batch', title: 'Mês do lote', text: 'Você escolhe o mês ao importar' },
-  { value: 'service_date', title: 'Data do serviço', text: 'Cada OS vai para o mês da sua data' },
+const COMPETENCE_OPTIONS: Array<{ value: CompetenceSource; title: string; text: string; help: OptionHelp }> = [
+  {
+    value: 'batch',
+    title: 'Mês do lote',
+    text: 'Você escolhe o mês ao importar',
+    help: {
+      what: 'Ao importar a planilha, você escolhe o mês e todas as OS do arquivo entram nele, seja qual for a data de cada uma.',
+      examples: [
+        {
+          rows: [
+            ['Mês escolhido na importação', 'Outubro'],
+            ['OS de 28/09', 'Outubro'],
+            ['OS de 05/10', 'Outubro'],
+          ],
+        },
+      ],
+      note: 'Serve para quem recebe um arquivo por mês, já com as OS certas.',
+    },
+  },
+  {
+    value: 'service_date',
+    title: 'Data do serviço',
+    text: 'Cada OS vai para o mês da sua data',
+    help: {
+      what: 'Cada OS entra no mês da própria data de serviço. Uma planilha com meses misturados preenche cada mês sozinha, sem você escolher o mês.',
+      examples: [
+        {
+          rows: [
+            ['OS de 28/09', 'Setembro'],
+            ['OS de 05/10', 'Outubro'],
+            ['OS de 03/11', 'Novembro'],
+          ],
+        },
+      ],
+      note: 'A janela de importação mostra quantas OS vão para cada mês e deixa escolher quais importar. Se a folha do técnico naquele mês já estiver fechada, o sistema avisa antes.',
+    },
+  },
 ];
-
-const COMPETENCE_HELP =
-  'Mês do lote: ao importar a planilha, você escolhe um mês e todas as OS do arquivo entram nele.\nData do serviço: cada OS entra no mês da própria data. Uma planilha com serviços de setembro, outubro e novembro preenche cada mês sozinha, e você escolhe quais meses importar na prévia.\nFolhas já fechadas não mudam: o sistema avisa antes de importar OS para elas.';
 
 /** The amount that goes with each way of paying: a percentage, or R$ per service, hour or day. */
 const RATE_FIELD: Record<Exclude<CommissionMode, 'none'>, { label: string; unit: string; position: 'start' | 'end'; help: string }> = {
@@ -67,7 +291,7 @@ export default function PagamentoPage() {
 
   return (
     <SettingsPage api={api} title="Pagamento" description="Como a comissão e o prêmio dos técnicos são calculados.">
-      <Panel title="Comissão" help={COMMISSION_HELP}>
+      <Panel title="Comissão">
         <Choice label="Como a comissão é paga" value={mode} options={COMMISSION_OPTIONS} onChange={(value) => update('commissionMode', value)} />
         {rateField ? (
           <div className="st-fields three st-divider">
@@ -103,16 +327,16 @@ export default function PagamentoPage() {
       </Panel>
 
       <div className="st-grid-two">
-        <Panel title="Vale-refeição (VR)" help={BENEFIT_PAYMENT_HELP}>
-          <Choice label="Como o VR é pago" value={form.vrPayment} options={BENEFIT_PAYMENT_OPTIONS} onChange={(value) => update('vrPayment', value)} />
+        <Panel title="Vale-refeição (VR)">
+          <Choice label="Como o VR é pago" value={form.vrPayment} options={benefitPaymentOptions('VR')} onChange={(value) => update('vrPayment', value)} />
           {mode === 'excess' ? (
             <div className="st-toggles st-divider">
               <Toggle title="Abate da comissão" help={BENEFIT_DEDUCT_HELP} checked={form.vrDeductsFromCommission} onChange={(value) => update('vrDeductsFromCommission', value)} />
             </div>
           ) : null}
         </Panel>
-        <Panel title="Vale-alimentação (VA)" help={BENEFIT_PAYMENT_HELP}>
-          <Choice label="Como o VA é pago" value={form.vaPayment} options={BENEFIT_PAYMENT_OPTIONS} onChange={(value) => update('vaPayment', value)} />
+        <Panel title="Vale-alimentação (VA)">
+          <Choice label="Como o VA é pago" value={form.vaPayment} options={benefitPaymentOptions('VA')} onChange={(value) => update('vaPayment', value)} />
           {mode === 'excess' ? (
             <div className="st-toggles st-divider">
               <Toggle title="Abate da comissão" help={BENEFIT_DEDUCT_HELP} checked={form.vaDeductsFromCommission} onChange={(value) => update('vaDeductsFromCommission', value)} />
@@ -121,7 +345,7 @@ export default function PagamentoPage() {
         </Panel>
       </div>
 
-      <Panel title="Períodos de pagamento" help={PERIOD_HELP}>
+      <Panel title="Períodos de pagamento">
         <Choice label="Como o mês é dividido" value={form.periodMode} options={PERIOD_OPTIONS} onChange={(value) => update('periodMode', value)} />
         {form.periodMode === 'fortnightly' ? (
           <div className="st-fields one st-divider">
@@ -135,7 +359,7 @@ export default function PagamentoPage() {
         ) : null}
       </Panel>
 
-      <Panel title="Mês de pagamento" help={COMPETENCE_HELP}>
+      <Panel title="Mês de pagamento">
         <Choice label="Quem define o mês de cada OS importada" value={form.competenceSource} options={COMPETENCE_OPTIONS} onChange={(value) => update('competenceSource', value)} />
         <div className="st-fields one st-divider">
           <NumberField

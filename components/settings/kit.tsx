@@ -10,6 +10,7 @@ import { HelpDot } from '@/components/modal-kit';
 import { LoadingShell } from '@/components/page-skeleton';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import { OptionHelpDot, type OptionHelp } from './option-help';
 import { cn } from '@/lib/utils';
 import type { useSettingsForm } from './form';
 import '../../app/admin/dashboard-gerencial/management-dashboard.css';
@@ -198,15 +199,35 @@ export function Toggle({ title, help, checked, disabled, onChange }: { title: st
   );
 }
 
-/** A few named choices side by side; the one picked is highlighted. */
-export function Choice<T extends string>({ label, value, options, onChange }: { label: string; value: T; options: Array<{ value: T; title: string; text: string }>; onChange: (value: T) => void }) {
+/**
+ * A few named choices side by side; the one picked is highlighted. An option with `help` gets its own "?"
+ * (what it does, an example with numbers) so each way of doing it is explained where it is chosen.
+ */
+export function Choice<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: Array<{ value: T; title: string; text: string; help?: OptionHelp }>;
+  onChange: (value: T) => void;
+}) {
   return (
     <div role="radiogroup" aria-label={label} className="st-choice">
       {options.map((option) => (
-        <button key={option.value} type="button" role="radio" aria-checked={value === option.value} onClick={() => onChange(option.value)} className={cn(value === option.value && 'selected')}>
-          <strong>{option.title}</strong>
-          <small>{option.text}</small>
-        </button>
+        <div key={option.value} className={cn('st-choice-item', option.help && 'has-help')}>
+          <button type="button" role="radio" aria-checked={value === option.value} onClick={() => onChange(option.value)} className={cn(value === option.value && 'selected')}>
+            <strong>{option.title}</strong>
+            <small>{option.text}</small>
+          </button>
+          {option.help ? (
+            <span className="st-choice-help">
+              <OptionHelpDot title={option.title} help={option.help} />
+            </span>
+          ) : null}
+        </div>
       ))}
     </div>
   );
