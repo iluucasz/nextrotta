@@ -49,8 +49,14 @@ const STEP_CHOICES: Array<{ kind: StepKind; title: string; text: string }> = [
   { kind: 'divide', title: 'Dividir', text: 'Ex.: o salário pelas horas do mês' },
 ];
 
-const SELECT_CLASS = 'h-9 min-w-0 rounded-md border border-border bg-background px-2 text-sm text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring';
-const INPUT_CLASS = 'h-9 w-full min-w-0 rounded-md border border-border bg-background px-2.5 text-sm tabular-nums text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring';
+// Fields are 44px tall on a phone (a finger) and 36px from the small breakpoint up; text is 16px on a phone so the
+// browser does not zoom in when a field gets focus.
+const SELECT_CLASS =
+  'h-11 w-full min-w-0 truncate rounded-md border border-border bg-background px-3 text-base text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:px-2 sm:text-sm';
+const INPUT_CLASS =
+  'h-11 w-full min-w-0 rounded-md border border-border bg-background px-3 text-base tabular-nums text-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring sm:h-9 sm:px-2.5 sm:text-sm';
+const ICON_BUTTON_CLASS = 'inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-muted-foreground transition hover:bg-secondary disabled:pointer-events-none disabled:opacity-30 sm:h-8 sm:w-8';
+const CARD_BUTTON_CLASS = 'rounded-lg border border-border bg-card px-3.5 py-3 text-left transition hover:border-primary hover:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring';
 
 const parseNumber = (text: string): number | null => {
   const trimmed = text.trim().replace(/\s/g, '');
@@ -67,7 +73,7 @@ function NumInput({ value, onChange, unit, label, className }: { value: number; 
   }, [value]);
 
   return (
-    <span className={cn('relative inline-flex min-w-0 items-center', className)}>
+    <span className={cn('relative block min-w-0', className)}>
       <input
         inputMode="decimal"
         aria-label={label}
@@ -78,14 +84,17 @@ function NumInput({ value, onChange, unit, label, className }: { value: number; 
           if (parsed !== null) onChange(parsed);
         }}
         onBlur={() => setText(String(value).replace('.', ','))}
-        className={cn(INPUT_CLASS, unit ? 'pr-9' : '')}
+        className={cn(INPUT_CLASS, unit ? 'pr-10' : '')}
       />
-      {unit ? <span className="pointer-events-none absolute right-2.5 text-xs text-muted-foreground">{unit}</span> : null}
+      {unit ? <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center text-xs text-muted-foreground sm:right-2.5">{unit}</span> : null}
     </span>
   );
 }
 
-/** Where a value in a step comes from: the month, the technician, an earlier step, or a number typed here. */
+/**
+ * Where a value in a step comes from: the month, the technician, an earlier step, or a number typed here. The list
+ * and the number sit side by side and never grow past the card: the list shrinks (and ellipsizes) before anything overflows.
+ */
 function OperandField({
   label,
   value,
@@ -106,7 +115,7 @@ function OperandField({
   const technician = sources.filter((source) => SOURCE_INFO[source].group === 'technician');
 
   return (
-    <span className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+    <div className={cn('grid gap-2', value.kind === 'number' ? 'grid-cols-[minmax(0,1fr)_minmax(0,7.5rem)]' : 'grid-cols-1')}>
       <select
         aria-label={label}
         value={current}
@@ -116,7 +125,7 @@ function OperandField({
           else if (next.startsWith('src:')) onChange({ kind: 'source', source: next.slice(4) as FormulaSource });
           else onChange({ kind: 'step', step: next.slice(5) });
         }}
-        className={cn(SELECT_CLASS, 'min-w-[11rem] flex-1')}
+        className={SELECT_CLASS}
       >
         {month.length ? (
           <optgroup label="Dados do mês">
@@ -145,19 +154,19 @@ function OperandField({
             ))}
           </optgroup>
         ) : null}
-        <option value="num">Um número que eu digito</option>
+        <option value="num">Número fixo</option>
       </select>
-      {value.kind === 'number' ? <NumInput label={`${label}: número`} value={value.value} unit={numberUnit} onChange={(next) => onChange({ kind: 'number', value: next })} className="w-28" /> : null}
-    </span>
+      {value.kind === 'number' ? <NumInput label={`${label}: número`} value={value.value} unit={numberUnit} onChange={(next) => onChange({ kind: 'number', value: next })} /> : null}
+    </div>
   );
 }
 
-/** A question and the field that answers it, on one line (wrapping on a phone). */
+/** A question and the field that answers it: stacked on a phone, label beside the field from the small breakpoint up. */
 function Question({ text, children }: { text: string; children: ReactNode }) {
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
-      <span className="w-full shrink-0 text-[13px] text-muted-foreground sm:w-40">{text}</span>
-      {children}
+    <div className="grid gap-1.5 sm:grid-cols-[9.5rem_minmax(0,1fr)] sm:gap-3">
+      <span className="text-sm font-medium text-foreground sm:pt-2 sm:font-normal sm:text-muted-foreground">{text}</span>
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }
@@ -169,10 +178,13 @@ const TIER_STYLES: Array<{ style: 'reached' | 'progressive'; pays: 'amount' | 'p
   { style: 'progressive', pays: 'percent', title: 'Cada parte paga uma %', text: 'Cada parte paga a % da sua faixa' },
 ];
 
+/** What one unit of the measure is called, for "R$ por OS". */
+const perUnitWord = (unit: ReturnType<typeof operandUnitAt>) => (unit === 'count' ? 'OS' : unit === 'hours' ? 'hora' : unit === 'days' ? 'dia' : 'unidade');
+
 function TiersEditor({ step, onChange, measureUnit }: { step: Extract<FormulaStep, { kind: 'tiers' }>; onChange: (step: FormulaStep) => void; measureUnit: ReturnType<typeof operandUnitAt> }) {
-  const measureWord = unitWord(measureUnit) || 'un.';
+  const measureWord = unitWord(measureUnit);
   const setTier = (index: number, patch: Partial<Tier>) => onChange({ ...step, tiers: step.tiers.map((tier, i) => (i === index ? { ...tier, ...patch } : tier)) });
-  const valueUnit = step.pays === 'percent' ? '%' : step.style === 'progressive' ? `R$/${measureWord === 'R$' ? 'R$' : measureWord}` : 'R$';
+  const payLabel = step.pays === 'percent' ? 'Paga (%)' : step.style === 'progressive' ? `Paga (R$ por ${perUnitWord(measureUnit)})` : 'Paga (R$ fixo)';
 
   return (
     <div className="space-y-3">
@@ -186,10 +198,10 @@ function TiersEditor({ step, onChange, measureUnit }: { step: Extract<FormulaSte
               role="radio"
               aria-checked={selected}
               onClick={() => onChange({ ...step, style: option.style, pays: option.pays })}
-              className={cn('rounded-lg border px-3 py-2 text-left transition', selected ? 'border-primary bg-primary/5' : 'border-border bg-card hover:border-primary/50')}
+              className={cn(CARD_BUTTON_CLASS, selected && 'border-primary bg-primary/5')}
             >
               <span className="block text-sm font-semibold">{option.title}</span>
-              <span className="block text-[13px] text-muted-foreground">{option.text}</span>
+              <span className="block text-[13px] leading-snug text-muted-foreground">{option.text}</span>
             </button>
           );
         })}
@@ -198,24 +210,30 @@ function TiersEditor({ step, onChange, measureUnit }: { step: Extract<FormulaSte
         {step.tiers.map((tier, index) => {
           const next = step.tiers[index + 1];
           return (
-            <div key={index} className="flex flex-wrap items-center gap-x-3 gap-y-1.5 rounded-lg bg-secondary/40 px-3 py-2">
-              <span className="w-full text-[13px] text-muted-foreground sm:w-auto sm:min-w-[7rem]">Faixa {index + 1}</span>
-              <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                {step.style === 'reached' ? 'a partir de' : 'acima de'}
-                <NumInput label={`Faixa ${index + 1}: ponto de partida`} value={tier.from} unit={measureWord} onChange={(value) => setTier(index, { from: value })} className="w-28" />
-              </label>
-              <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
-                paga
-                <NumInput label={`Faixa ${index + 1}: valor`} value={tier.value} unit={valueUnit} onChange={(value) => setTier(index, { value })} className="w-32" />
-              </label>
-              {step.style === 'progressive' ? (
-                <span className="text-[12px] text-muted-foreground">{next ? `até ${formatFormulaValue(next.from, measureUnit ?? 'number')}` : 'e tudo que passar'}</span>
-              ) : null}
-              {step.tiers.length > 1 ? (
-                <button type="button" aria-label={`Remover a faixa ${index + 1}`} onClick={() => onChange({ ...step, tiers: step.tiers.filter((_, i) => i !== index) })} className="ml-auto rounded p-1 text-muted-foreground hover:bg-background hover:text-rose-600">
-                  <Trash2 className="h-4 w-4" />
-                </button>
-              ) : null}
+            <div key={index} className="space-y-2 rounded-lg border border-border bg-secondary/30 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-semibold">
+                  Faixa {index + 1}
+                  {step.style === 'progressive' ? (
+                    <span className="ml-2 text-[13px] font-normal text-muted-foreground">{next ? `vai até ${formatFormulaValue(next.from, measureUnit ?? 'number')}` : 'e tudo que passar'}</span>
+                  ) : null}
+                </span>
+                {step.tiers.length > 1 ? (
+                  <button type="button" aria-label={`Remover a faixa ${index + 1}`} onClick={() => onChange({ ...step, tiers: step.tiers.filter((_, i) => i !== index) })} className={cn(ICON_BUTTON_CLASS, '-my-1 hover:text-rose-600')}>
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                ) : null}
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block space-y-1 text-[13px] text-muted-foreground">
+                  {step.style === 'reached' ? 'A partir de' : 'Acima de'}
+                  <NumInput label={`Faixa ${index + 1}: ponto de partida`} value={tier.from} unit={measureWord} onChange={(value) => setTier(index, { from: value })} />
+                </label>
+                <label className="block space-y-1 text-[13px] text-muted-foreground">
+                  {payLabel}
+                  <NumInput label={`Faixa ${index + 1}: valor`} value={tier.value} unit={step.pays === 'percent' ? '%' : 'R$'} onChange={(value) => setTier(index, { value })} />
+                </label>
+              </div>
             </div>
           );
         })}
@@ -223,7 +241,7 @@ function TiersEditor({ step, onChange, measureUnit }: { step: Extract<FormulaSte
           <Button
             type="button"
             variant="outline"
-            size="sm"
+            className="h-11 sm:h-9"
             onClick={() => {
               const last = step.tiers[step.tiers.length - 1];
               onChange({ ...step, tiers: [...step.tiers, { from: last ? last.from + (last.from > 0 ? last.from : 10) : 0, value: last ? last.value : 0 }] });
@@ -241,18 +259,20 @@ function TiersEditor({ step, onChange, measureUnit }: { step: Extract<FormulaSte
 /** The list of things added or taken off: each one picked like any other value, with a button for one more. */
 function ItemsEditor({ step, onChange, earlier, unit }: { step: Extract<FormulaStep, { kind: 'add' | 'subtract' }>; onChange: (step: FormulaStep) => void; earlier: Array<{ id: string; name: string }>; unit: string }) {
   return (
-    <div className="min-w-0 flex-1 space-y-2">
+    <div className="space-y-2">
       {step.items.map((item, index) => (
-        <div key={index} className="flex items-center gap-2">
-          <OperandField label={`${step.kind === 'add' ? 'Somar' : 'Tirar'} ${index + 1}`} value={item} earlier={earlier} numberUnit={unit} onChange={(value) => onChange({ ...step, items: step.items.map((current, i) => (i === index ? value : current)) })} />
+        <div key={index} className="flex items-start gap-1">
+          <div className="min-w-0 flex-1">
+            <OperandField label={`${step.kind === 'add' ? 'Somar' : 'Tirar'} ${index + 1}`} value={item} earlier={earlier} numberUnit={unit} onChange={(value) => onChange({ ...step, items: step.items.map((current, i) => (i === index ? value : current)) })} />
+          </div>
           {step.items.length > 1 ? (
-            <button type="button" aria-label="Remover este valor" onClick={() => onChange({ ...step, items: step.items.filter((_, i) => i !== index) })} className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-rose-600">
+            <button type="button" aria-label="Remover este valor" onClick={() => onChange({ ...step, items: step.items.filter((_, i) => i !== index) })} className={cn(ICON_BUTTON_CLASS, 'hover:text-rose-600')}>
               <Trash2 className="h-4 w-4" />
             </button>
           ) : null}
         </div>
       ))}
-      <Button type="button" variant="ghost" size="sm" onClick={() => onChange({ ...step, items: [...step.items, { kind: 'source', source: 'salary' }] })}>
+      <Button type="button" variant="ghost" className="-ml-2 h-11 sm:h-9" onClick={() => onChange({ ...step, items: [...step.items, { kind: 'source', source: 'salary' }] })}>
         <Plus className="h-4 w-4" />
         Mais um valor
       </Button>
@@ -365,17 +385,19 @@ function StepEditor({
       body = (
         <>
           <Question text="Se">
-            <OperandField label="Comparar" value={step.left} earlier={earlier} numberUnit="R$" onChange={(value) => onChange({ ...step, left: value })} />
+            <OperandField label="Se" value={step.left} earlier={earlier} numberUnit="R$" onChange={(value) => onChange({ ...step, left: value })} />
           </Question>
-          <Question text="Estiver">
-            <select aria-label="Comparação" value={step.op} onChange={(event) => onChange({ ...step, op: event.target.value as CompareOp })} className={cn(SELECT_CLASS, 'min-w-[11rem]')}>
+          <Question text="Quando">
+            <select aria-label="Quando" value={step.op} onChange={(event) => onChange({ ...step, op: event.target.value as CompareOp })} className={SELECT_CLASS}>
               {COMPARE_OPS.map((op) => (
                 <option key={op} value={op}>
-                  {COMPARE_LABEL[op].replace(/^for /, '')}
+                  {COMPARE_LABEL[op]}
                 </option>
               ))}
             </select>
-            <OperandField label="Comparado com" value={step.right} earlier={earlier} numberUnit={beside(step.left)} onChange={(value) => onChange({ ...step, right: value })} />
+          </Question>
+          <Question text="Este valor">
+            <OperandField label="Este valor" value={step.right} earlier={earlier} numberUnit={beside(step.left)} onChange={(value) => onChange({ ...step, right: value })} />
           </Question>
           <Question text="Então vale">
             <OperandField label="Então vale" value={step.then} earlier={earlier} numberUnit="R$" onChange={(value) => onChange({ ...step, then: value })} />
@@ -389,32 +411,34 @@ function StepEditor({
   }
 
   return (
-    <li className="rounded-xl border border-border bg-card">
-      <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{index + 1}</span>
+    <li className={cn('rounded-xl border bg-card', isLast && formula.steps.length > 1 ? 'border-primary/40' : 'border-border')}>
+      <div className="flex items-center gap-1 border-b border-border px-3 py-1.5 sm:px-4 sm:py-2.5">
+        <span className="mr-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{index + 1}</span>
         <input
           aria-label={`Nome da etapa ${index + 1}`}
           value={step.label}
           maxLength={60}
           placeholder={title}
           onChange={(event) => onChange({ ...step, label: event.target.value })}
-          className="h-8 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 text-sm font-semibold outline-none placeholder:font-medium placeholder:text-muted-foreground hover:border-border focus-visible:border-border focus-visible:ring-2 focus-visible:ring-ring"
+          className="h-10 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-2 text-base font-semibold outline-none sm:h-8 sm:text-sm placeholder:font-medium placeholder:text-muted-foreground hover:border-border focus-visible:border-border focus-visible:ring-2 focus-visible:ring-ring"
         />
-        {isLast ? <span className="hidden shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 sm:inline">Resultado final</span> : null}
-        <button type="button" aria-label="Subir a etapa" disabled={index === 0} onClick={() => onMove(-1)} className="rounded p-1 text-muted-foreground hover:bg-secondary disabled:opacity-30">
+        <button type="button" aria-label="Subir a etapa" disabled={index === 0} onClick={() => onMove(-1)} className={ICON_BUTTON_CLASS}>
           <ArrowUp className="h-4 w-4" />
         </button>
-        <button type="button" aria-label="Descer a etapa" disabled={isLast} onClick={() => onMove(1)} className="rounded p-1 text-muted-foreground hover:bg-secondary disabled:opacity-30">
+        <button type="button" aria-label="Descer a etapa" disabled={isLast} onClick={() => onMove(1)} className={ICON_BUTTON_CLASS}>
           <ArrowDown className="h-4 w-4" />
         </button>
-        <button type="button" aria-label="Remover a etapa" onClick={onRemove} className="rounded p-1 text-muted-foreground hover:bg-secondary hover:text-rose-600">
+        <button type="button" aria-label="Remover a etapa" onClick={onRemove} className={cn(ICON_BUTTON_CLASS, 'hover:text-rose-600')}>
           <Trash2 className="h-4 w-4" />
         </button>
       </div>
-      <div className="space-y-3 px-4 py-3.5">{body}</div>
-      <div className="flex items-baseline justify-between gap-3 rounded-b-xl bg-secondary/40 px-4 py-2 text-[13px]">
-        <span className="min-w-0 text-muted-foreground">{result?.text ?? describeFormulaStep(formula, index)}</span>
-        <span className="shrink-0 font-semibold tabular-nums">= {formatFormulaValue(result?.value ?? 0, 'money')}</span>
+      <div className="space-y-4 px-3 py-4 sm:space-y-3 sm:px-4 sm:py-3.5">{body}</div>
+      <div className="space-y-1 rounded-b-xl bg-secondary/50 px-3 py-2.5 text-[13px] leading-snug sm:px-4">
+        {isLast ? <span className="inline-block rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">Resultado final: é a comissão do mês</span> : null}
+        <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+          <span className="min-w-0 flex-1 basis-48 text-muted-foreground">{result?.text ?? describeFormulaStep(formula, index)}</span>
+          <span className="shrink-0 text-sm font-semibold tabular-nums">= {formatFormulaValue(result?.value ?? 0, 'money')}</span>
+        </div>
       </div>
     </li>
   );
@@ -492,7 +516,7 @@ export function FormulaBuilderDialog({ formula: initial, defaults, onApply, onCl
   const chooser = (
     <div className="grid gap-2 sm:grid-cols-2">
       {STEP_CHOICES.map((choice) => (
-        <button key={choice.kind} type="button" onClick={() => addStep(choice.kind)} className="rounded-lg border border-border bg-card px-3.5 py-2.5 text-left transition hover:border-primary hover:bg-primary/5">
+        <button key={choice.kind} type="button" onClick={() => addStep(choice.kind)} className={CARD_BUTTON_CLASS}>
           <span className="block text-sm font-semibold">{choice.title}</span>
           <span className="block text-[13px] text-muted-foreground">{choice.text}</span>
         </button>
@@ -503,18 +527,18 @@ export function FormulaBuilderDialog({ formula: initial, defaults, onApply, onCl
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[calc(100dvh-1rem)] flex-col gap-0 overflow-hidden p-0 sm:max-w-5xl">
-        <DialogHeader className={MODAL_HEADER_CLASS}>
+        <DialogHeader className={cn(MODAL_HEADER_CLASS, 'px-4 py-4 pr-12 text-left sm:px-8 sm:py-5')}>
           <DialogTitle className={cn(MODAL_TITLE_CLASS, 'flex items-center gap-2')}>
             Monte o seu cálculo
             <HelpDot
               label="Monte o seu cálculo"
-              text={'Cada etapa responde a uma pergunta e dá um resultado. A etapa seguinte pode usar o resultado das anteriores, e a última etapa é a comissão do mês (se der negativo, vale R$ 0,00).\nAo lado, o exemplo mostra o que cada etapa dá. Troque os números do exemplo para testar.\nO mínimo garantido e o teto de Configurações continuam valendo depois do seu cálculo.'}
+              text={'Cada etapa responde a uma pergunta e dá um resultado. A etapa seguinte pode usar o resultado das anteriores, e a última etapa é a comissão do mês (se der negativo, vale R$ 0,00).\nO exemplo mostra o que cada etapa dá. Troque os números do exemplo para testar.\nO mínimo garantido e o teto de Configurações continuam valendo depois do seu cálculo.'}
             />
           </DialogTitle>
-          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Responda etapa por etapa. O exemplo ao lado mostra o que cada uma dá.</DialogDescription>
+          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>Responda etapa por etapa. O exemplo mostra o que cada uma dá.</DialogDescription>
         </DialogHeader>
 
-        <div className={cn(MODAL_BODY_CLASS, 'grid content-start gap-8 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]')}>
+        <div className={cn(MODAL_BODY_CLASS, 'grid content-start gap-6 px-4 py-4 sm:px-8 sm:py-6 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)] lg:gap-8')}>
           <div className="min-w-0 space-y-5">
             {empty ? (
               <>
@@ -522,7 +546,7 @@ export function FormulaBuilderDialog({ formula: initial, defaults, onApply, onCl
                   <h3 className="text-base font-semibold">Comece de um modelo</h3>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {FORMULA_TEMPLATES.map((template) => (
-                      <button key={template.id} type="button" onClick={() => setFormula(template.build())} className="rounded-lg border border-border bg-card px-3.5 py-2.5 text-left transition hover:border-primary hover:bg-primary/5">
+                      <button key={template.id} type="button" onClick={() => setFormula(template.build())} className={CARD_BUTTON_CLASS}>
                         <span className="block text-sm font-semibold">{template.title}</span>
                         <span className="block text-[13px] text-muted-foreground">{template.text}</span>
                       </button>
@@ -536,7 +560,7 @@ export function FormulaBuilderDialog({ formula: initial, defaults, onApply, onCl
               </>
             ) : (
               <>
-                <ol className="space-y-3">
+                <ol className="space-y-4">
                   {formula.steps.map((step, index) => (
                     <StepEditor
                       key={step.id}
@@ -558,12 +582,12 @@ export function FormulaBuilderDialog({ formula: initial, defaults, onApply, onCl
                 ) : null}
                 <div className="flex flex-wrap gap-2">
                   {formula.steps.length < MAX_FORMULA_STEPS ? (
-                    <Button type="button" variant="outline" onClick={() => setChoosing((current) => !current)}>
+                    <Button type="button" variant="outline" className="h-11 sm:h-9" onClick={() => setChoosing((current) => !current)}>
                       <Plus className="h-4 w-4" />
                       {choosing ? 'Fechar' : 'Adicionar etapa'}
                     </Button>
                   ) : null}
-                  <Button type="button" variant="ghost" onClick={() => setFormula({ steps: [] })}>
+                  <Button type="button" variant="ghost" className="h-11 sm:h-9" onClick={() => setFormula({ steps: [] })}>
                     <RotateCcw className="h-4 w-4" />
                     Recomeçar
                   </Button>
@@ -572,15 +596,15 @@ export function FormulaBuilderDialog({ formula: initial, defaults, onApply, onCl
             )}
           </div>
 
-          <aside className="min-w-0 space-y-5 lg:sticky lg:top-0 lg:self-start">
+          <aside className={cn('min-w-0 space-y-4 lg:sticky lg:top-0 lg:block lg:self-start lg:space-y-5', empty && 'hidden')}>
             <section className="space-y-3 rounded-xl border border-border bg-card p-4">
               <h3 className="flex items-center gap-2 text-base font-semibold">
                 Exemplo de um mês
                 <HelpDot label="Exemplo de um mês" text="Números de mentira, só para você ver o cálculo funcionando. Mude à vontade: nada daqui é salvo." />
               </h3>
-              <div className="grid grid-cols-2 gap-x-3 gap-y-2.5">
+              <div className="grid grid-cols-2 gap-x-3 gap-y-3">
                 {shownInputs.map((source) => (
-                  <label key={source} className="min-w-0 space-y-1 text-[13px] text-muted-foreground">
+                  <label key={source} className="block min-w-0 space-y-1 text-[13px] leading-tight text-muted-foreground">
                     {INPUT_LABELS[source].label}
                     <NumInput label={`Exemplo: ${INPUT_LABELS[source].label}`} value={inputs[source]} unit={INPUT_LABELS[source].unit} onChange={(value) => setInputs((current) => ({ ...current, [source]: value }))} className="block w-full" />
                   </label>
@@ -632,13 +656,22 @@ export function FormulaBuilderDialog({ formula: initial, defaults, onApply, onCl
           </aside>
         </div>
 
-        <DialogFooter className={cn(MODAL_FOOTER_CLASS, 'flex-col items-stretch sm:flex-row sm:items-center sm:justify-between')}>
-          <div className="min-w-0 flex-1">{!empty && errors.length ? <ModalNotice tone="warning">{errors[0]}</ModalNotice> : null}</div>
-          <div className="flex flex-col-reverse gap-2 sm:flex-row">
-            <Button type="button" variant="outline" onClick={onClose}>
+        <DialogFooter className={cn(MODAL_FOOTER_CLASS, 'flex-col items-stretch gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-8 sm:py-4')}>
+          <div className="min-w-0 flex-1 space-y-2">
+            {!empty && errors.length ? <ModalNotice tone="warning">{errors[0]}</ModalNotice> : null}
+            {/* on a phone the example sits below the steps: the result stays in view here while the steps are edited */}
+            {!empty ? (
+              <div className="flex items-baseline justify-between gap-3 lg:hidden" aria-live="polite">
+                <span className="text-sm text-muted-foreground">Comissão do exemplo</span>
+                <span className="text-lg font-semibold tabular-nums text-primary">{formatFormulaValue(result.value, 'money')}</span>
+              </div>
+            ) : null}
+          </div>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Button type="button" variant="outline" className="h-11 sm:h-9" onClick={onClose}>
               Cancelar
             </Button>
-            <Button type="button" disabled={empty || errors.length > 0} onClick={() => onApply(formula)}>
+            <Button type="button" className="h-11 sm:h-9" disabled={empty || errors.length > 0} onClick={() => onApply(formula)}>
               Usar este cálculo
             </Button>
           </div>
