@@ -19,6 +19,7 @@ export function resolveClosedHourBankBalance(
   competenceMonth: string | null | undefined,
   monthlyHoursTarget: number,
   fallbackBalance: number | string | null | undefined = 0,
+  closingDay = 0,
 ) {
   const targetCompetence = normalizeCompetenceMonth(competenceMonth);
 
@@ -31,7 +32,7 @@ export function resolveClosedHourBankBalance(
   workHours.forEach((item) => {
     if (item.technician_id !== technicianId) return;
 
-    const month = monthKeyFromDate(item.date);
+    const month = monthKeyFromDate(item.date, closingDay);
     if (!month) return;
 
     monthlyHours.set(month, hourValue((monthlyHours.get(month) ?? 0) + hourValue(item.hours_worked)));
@@ -75,4 +76,4 @@ export function resolveClosedHourBankBalance(
   }
 
   return hourValue(fallbackBalance);
-}
+}

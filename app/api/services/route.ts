@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { getOrganizationSettings } from '@/lib/organization-settings-store';
-import { isPeriodKey, periodKeys } from '@/lib/pay-calendar';
+import { competenceForDate, isPeriodKey, periodKeys } from '@/lib/pay-calendar';
 
 async function isActiveTechnician(organizationId: string, technicianId: string) {
   const technicians = await sql`
@@ -139,7 +139,8 @@ export async function POST(request: NextRequest) {
 
     const invalid = validateServiceInput({ order_code, technician_id, service_type, value, date_performed, time_performed, competence_month, fortnight_period });
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-    const stored = periodToStore(fortnight_period, periodKeys((await getOrganizationSettings(auth.organizationId)).periodCutDays));
+    const orgSettings = await getOrganizationSettings(auth.organizationId);
+    const stored = periodToStore(fortnight_period, periodKeys(orgSettings.periodCutDays));
     if (stored.error) return NextResponse.json({ error: stored.error }, { status: 400 });
 
     if (!(await isActiveTechnician(auth.organizationId, technician_id))) {
@@ -153,7 +154,7 @@ export async function POST(request: NextRequest) {
       )
       VALUES (
         ${auth.organizationId}, ${order_code}, ${technician_id}, ${service_type}, ${value},
-        ${date_performed}, ${time_performed || null}, ${competence_month || String(date_performed ?? '').slice(0, 7)}, ${stored.period}, ${description || null}
+        ${date_performed}, ${time_performed || null}, ${competence_month || competenceForDate(String(date_performed ?? ''), orgSettings.monthClosingDay) || String(date_performed ?? '').slice(0, 7)}, ${stored.period}, ${description || null}
       )
       RETURNING *
     `;
@@ -200,7 +201,8 @@ export async function PUT(request: NextRequest) {
 
     const invalid = validateServiceInput({ order_code, technician_id, service_type, value, date_performed, time_performed, competence_month, fortnight_period });
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
-    const stored = periodToStore(fortnight_period, periodKeys((await getOrganizationSettings(auth.organizationId)).periodCutDays));
+    const orgSettings = await getOrganizationSettings(auth.organizationId);
+    const stored = periodToStore(fortnight_period, periodKeys(orgSettings.periodCutDays));
     if (stored.error) return NextResponse.json({ error: stored.error }, { status: 400 });
 
     const currentService = await sql`
@@ -231,7 +233,7 @@ export async function PUT(request: NextRequest) {
           value = ${value},
           date_performed = ${date_performed},
           time_performed = ${time_performed || null},
-          competence_month = ${competence_month || String(date_performed ?? '').slice(0, 7)},
+          competence_month = ${competence_month || competenceForDate(String(date_performed ?? ''), orgSettings.monthClosingDay) || String(date_performed ?? '').slice(0, 7)},
           fortnight_period = ${stored.period},
           description = ${description || null},
           updated_at = NOW()

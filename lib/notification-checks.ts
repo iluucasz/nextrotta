@@ -7,6 +7,7 @@ import { brasiliaDateKey } from './formatters';
 import { addDays } from './expenses';
 import { createNotification, ensureScheduleReminder, resolveNotifications } from './notifications';
 import { getOrganizationSettings } from './organization-settings-store';
+import { competenceForDate, cycleDay, shiftMonth } from './pay-calendar';
 import { getOrganizationSystemStatus } from './system-status';
 import { findPortoLoginProblem, portoLoginNotice } from './porto-login-errors';
 import { checkParts } from './parts/notices';
@@ -15,12 +16,6 @@ const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho',
 
 /** From this day of the month the previous month's folha is expected to be closed. */
 export const PAYROLL_REMINDER_DAY = 3;
-
-/** "2026-01" -> "2025-12". */
-function previousMonthOf(month: string) {
-  const [year, number] = month.split('-').map(Number);
-  return new Date(Date.UTC(year, number - 2, 1)).toISOString().slice(0, 7);
-}
 
 /** The Porto robot and the WhatsApp server answer from the VPS: when one does not, say what stops meanwhile. */
 export async function checkModules(organizationId: string) {
@@ -134,7 +129,9 @@ export async function findPendingPayroll(organizationId: string, month: string):
  */
 export async function checkPayroll(organizationId: string) {
   const today = brasiliaDateKey();
-  const month = previousMonthOf(today.slice(0, 7));
+  // The competence that just closed: the previous month, or the one before the cut when the company has a closing day.
+  const closingDay = (await getOrganizationSettings(organizationId)).monthClosingDay;
+  const month = shiftMonth(competenceForDate(today, closingDay), -1);
   const pending = await findPendingPayroll(organizationId, month);
 
   if (!pending.length) {
@@ -157,7 +154,7 @@ export async function checkPayroll(organizationId: string) {
     }
     return;
   }
-  if (Number(today.slice(8, 10)) < PAYROLL_REMINDER_DAY) return;
+  if (cycleDay(today, closingDay) < PAYROLL_REMINDER_DAY) return;
 
   const names = pending.slice(0, 3).map((technician) => technician.name);
   const more = pending.length - names.length;

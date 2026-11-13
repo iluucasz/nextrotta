@@ -33,7 +33,7 @@ import type { Service, ServiceFortnight, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { Checkbox } from '@/components/ui/checkbox';
-import { countByCompetence, defaultCompetenceMonth, monthLabel, periodKeys, periodLabel, type PeriodKey } from '@/lib/pay-calendar';
+import { competenceForDate, countByCompetence, defaultCompetenceMonth, monthLabel, periodKeys, periodLabel, type PeriodKey } from '@/lib/pay-calendar';
 import { isTextSpreadsheet, readSpreadsheet } from '@/lib/spreadsheet-import';
 
 const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
@@ -97,7 +97,7 @@ interface ParsedServiceImportRow {
   };
 }
 
-function createInitialFormData() {
+function createInitialFormData(closingDay = 0) {
   return {
     order_code: '',
     technician_id: '',
@@ -105,7 +105,7 @@ function createInitialFormData() {
     value: 0,
     date_performed: brasiliaDateKey(),
     time_performed: new Date().toTimeString().slice(0, 5),
-    competence_month: currentCompetenceMonth(),
+    competence_month: competenceForDate(brasiliaDateKey(), closingDay) || currentCompetenceMonth(),
     fortnight_period: '' as '' | ServiceFortnight,
     description: '',
   };
@@ -356,10 +356,12 @@ export default function AdminServicesPage() {
   // Companies that settle the month after it ends open on the previous month until their settle day.
   useEffect(() => {
     if (!settingsLoaded) return;
-    const target = defaultCompetenceMonth(brasiliaDateKey(), orgSettings.settlePreviousMonthUntilDay);
+    const target = defaultCompetenceMonth(brasiliaDateKey(), orgSettings.settlePreviousMonthUntilDay, orgSettings.monthClosingDay);
     setCompetenceFilter((current) => (current === currentCompetenceMonth() ? target : current));
     setBulkDeleteCompetenceMonth((current) => (current === currentCompetenceMonth() ? target : current));
-  }, [settingsLoaded, orgSettings.settlePreviousMonthUntilDay]);
+    const openCompetence = competenceForDate(brasiliaDateKey(), orgSettings.monthClosingDay);
+    if (openCompetence) setFormData((current) => (current.competence_month === currentCompetenceMonth() ? { ...current, competence_month: openCompetence } : current));
+  }, [settingsLoaded, orgSettings.settlePreviousMonthUntilDay, orgSettings.monthClosingDay]);
 
   useEffect(() => {
     let mounted = true;
@@ -498,20 +500,20 @@ export default function AdminServicesPage() {
   const validImportRows = useMemo(() => importRows.filter((row) => row.status === 'valid'), [importRows]);
 
   // By the service's date, the preview shows how many OS fall in each month and which of them the admin takes.
-  const importMonths = useMemo(() => (byServiceDate ? countByCompetence(validImportRows.map((row) => row.values.date_performed)) : []), [byServiceDate, validImportRows]);
+  const importMonths = useMemo(() => (byServiceDate ? countByCompetence(validImportRows.map((row) => row.values.date_performed), orgSettings.monthClosingDay) : []), [byServiceDate, orgSettings.monthClosingDay, validImportRows]);
   const importMonthsKey = importMonths.map((item) => item.month).join(',');
   const rowsToImport = useMemo(
-    () => (byServiceDate ? validImportRows.filter((row) => !skippedImportMonths.includes(row.values.date_performed.slice(0, 7))) : validImportRows),
-    [byServiceDate, skippedImportMonths, validImportRows],
+    () => (byServiceDate ? validImportRows.filter((row) => !skippedImportMonths.includes(competenceForDate(row.values.date_performed, orgSettings.monthClosingDay))) : validImportRows),
+    [byServiceDate, orgSettings.monthClosingDay, skippedImportMonths, validImportRows],
   );
   const closedRowsByMonth = useMemo(() => {
     const counts = new Map<string, number>();
     for (const row of rowsToImport) {
-      const month = row.values.date_performed.slice(0, 7);
+      const month = competenceForDate(row.values.date_performed, orgSettings.monthClosingDay);
       if (closedPayrollKeys.has(`${row.values.technician_id}|${month}`)) counts.set(month, (counts.get(month) ?? 0) + 1);
     }
     return counts;
-  }, [closedPayrollKeys, rowsToImport]);
+  }, [closedPayrollKeys, orgSettings.monthClosingDay, rowsToImport]);
   const closedRowsTotal = [...closedRowsByMonth.values()].reduce((total, count) => total + count, 0);
 
   // Which technicians already have the folha of those months closed: an OS added there would be listed but never paid.
@@ -545,7 +547,7 @@ export default function AdminServicesPage() {
   }, [bulkDeleteCompetenceMonth, bulkDeletePeriod, servicesWithDetails]);
 
   function resetForm() {
-    setFormData(createInitialFormData());
+    setFormData(createInitialFormData(orgSettings.monthClosingDay));
     setEditingServiceId(null);
     setFormError('');
   }

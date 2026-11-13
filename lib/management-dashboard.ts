@@ -1,5 +1,6 @@
 // Pure calculations shared by the dashboard and its regression tests.
 import { DEFAULT_ORGANIZATION_SETTINGS, netOfDailyBreak, type OrganizationSettings } from './organization-settings';
+import { competenceForDate } from './pay-calendar';
 
 export const MONTH_NAMES = [
   'Janeiro',
@@ -113,7 +114,7 @@ export type AttendanceSchedule = {
 export type AttendanceHours = { technicianId: string; date: string; hours: number };
 
 /** The Configurações rules the attendance aggregation follows (same as the admin hour bank). */
-export type AttendanceRules = Pick<OrganizationSettings, 'dailyBreakMinutes' | 'chargeCancelledServicePlanned'>;
+export type AttendanceRules = Pick<OrganizationSettings, 'dailyBreakMinutes' | 'chargeCancelledServicePlanned'> & Partial<Pick<OrganizationSettings, 'monthClosingDay'>>;
 
 function plannedHours(start: string | null | undefined, end: string | null | undefined, dailyBreakMinutes: number) {
   const minutes = (value: string | null | undefined) => {
@@ -155,7 +156,8 @@ export function aggregateOperations(
   }
   const rows = new Map<string, OperationRow>();
   for (const day of daily.values()) {
-    const month = day.date.slice(0, 7),
+    // The month of a day is the company's competence (its closing day moves the cut), like the production's.
+    const month = competenceForDate(day.date, rules.monthClosingDay ?? 0) || day.date.slice(0, 7),
       key = `${day.technicianId}:${month}`;
     const row = rows.get(key) ?? {
       month,

@@ -13,7 +13,7 @@ import { ProgressGauge } from '@/components/progress-gauge';
 import { StatusBadge } from '@/components/status-badge';
 import { brasiliaDateKey, formatCurrency, formatDate, formatHours, formatNumber, formatTime, formatTimeRange, monthKeyFromDate, resolveCompetenceMonth } from '@/lib/formatters';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
-import { hasPeriods, isPeriodKey, periodDescription, periodForDay, periodKeys, periodLabel, type PeriodKey } from '@/lib/pay-calendar';
+import { competenceForDate, hasPeriods, isPeriodKey, periodDescription, periodForDate, periodKeys, periodLabel, type PeriodKey } from '@/lib/pay-calendar';
 import type { Payroll, Schedule, Service, ServiceFortnight, WorkHours } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useTechnicianVisibility } from '@/hooks/use-technician-visibility';
@@ -63,23 +63,12 @@ function getServiceCompetence(service: Service) {
   return resolveCompetenceMonth(service.competence_month, service.date_performed);
 }
 
-function getDateDay(value: string | Date | null | undefined) {
-  if (!value) return 0;
-
-  if (typeof value === 'string' && /^\d{4}-\d{2}-\d{2}/.test(value)) {
-    return Number(value.slice(8, 10));
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isNaN(date.getTime()) ? 0 : date.getDate();
-}
-
 /** The service's own period, or the one its day falls in by the company's cut days (null when it pays by the month). */
-function getServicePeriod(service: Service, cutDays: number[]): PeriodKey | null {
+function getServicePeriod(service: Service, cutDays: number[], closingDay: number): PeriodKey | null {
   if (!hasPeriods(cutDays)) return null;
   if (isPeriodKey(service.fortnight_period)) return service.fortnight_period;
 
-  return periodForDay(getDateDay(service.date_performed), cutDays);
+  return periodForDate(getDateKey(service.date_performed), cutDays, closingDay);
 }
 
 function getDateKey(value: string | Date | null | undefined) {
@@ -108,9 +97,9 @@ function formatCompetence(value: string) {
   return `${monthNames[monthNumber - 1]}/${year}`;
 }
 
-function matchesPeriod(dateValue: string | Date | null | undefined, period: PeriodFilter, cutDays: number[]) {
+function matchesPeriod(dateValue: string | Date | null | undefined, period: PeriodFilter, cutDays: number[], closingDay: number) {
   if (period === 'monthly') return true;
-  return periodForDay(getDateDay(dateValue), cutDays) === period;
+  return periodForDate(getDateKey(dateValue), cutDays, closingDay) === period;
 }
 
 export default function TechnicianDashboard() {
@@ -134,7 +123,13 @@ export default function TechnicianDashboard() {
   const [schedule, setSchedule] = useState<Schedule[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  // The month the screen opens on is the company's competence: with a closing day it can be the next calendar month.
+  const closingDay = settings.monthClosingDay;
+  const currentCompetence = competenceForDate(brasiliaDateKey(), closingDay) || defaultCompetenceMonth;
   const [competenceMonth, setCompetenceMonth] = useState(defaultCompetenceMonth);
+  useEffect(() => {
+    setCompetenceMonth((current) => (current === defaultCompetenceMonth ? currentCompetence : current));
+  }, [currentCompetence]);
   const [periodFilter, setPeriodFilter] = useState<PeriodFilter>('monthly');
   const [typeFilter, setTypeFilter] = useState<string | null>(null);
   const [servicesPage, setServicesPage] = useState(1);
@@ -229,7 +224,7 @@ export default function TechnicianDashboard() {
   );
 
   const periodServices = useMemo(
-    () => monthlyServices.filter((service) => periodFilter === 'monthly' || getServicePeriod(service, cutDays) === periodFilter),
+    () => monthlyServices.filter((service) => periodFilter === 'monthly' || getServicePeriod(service, cutDays, closingDay) === periodFilter),
     [cutDays, monthlyServices, periodFilter],
   );
 
@@ -250,16 +245,16 @@ export default function TechnicianDashboard() {
   }, [periodServices, typeFilter]);
 
   const monthlyWorkHours = useMemo(
-    () => workHours.filter((item) => monthKeyFromDate(item.date) === competenceMonth),
-    [competenceMonth, workHours],
+    () => workHours.filter((item) => monthKeyFromDate(item.date, closingDay) === competenceMonth),
+    [closingDay, competenceMonth, workHours],
   );
 
   const periodWorkHours = useMemo(
-    () => monthlyWorkHours.filter((item) => matchesPeriod(item.date, periodFilter, cutDays)),
+    () => monthlyWorkHours.filter((item) => matchesPeriod(item.date, periodFilter, cutDays, closingDay)),
     [cutDays, monthlyWorkHours, periodFilter],
   );
 
-  const periodServicesCount = (key: PeriodKey) => monthlyServices.filter((service) => getServicePeriod(service, cutDays) === key).length;
+  const periodServicesCount = (key: PeriodKey) => monthlyServices.filter((service) => getServicePeriod(service, cutDays, closingDay) === key).length;
   const currentPayroll = payroll.find((item) => resolveCompetenceMonth(item.competence_month) === competenceMonth);
   const nextSchedule = useMemo(() => {
     const todayKey = brasiliaDateKey();
@@ -480,7 +475,7 @@ export default function TechnicianDashboard() {
                         <td className="px-4 py-3 text-muted-foreground">{service.service_type}</td>
                         {showPeriods ? (
                           <td className="px-4 py-3">
-                            <StatusBadge tone="info">{periodLabel(getServicePeriod(service, cutDays) ?? 'Q1', cutDays)}</StatusBadge>
+                            <StatusBadge tone="info">{periodLabel(getServicePeriod(service, cutDays, closingDay) ?? 'Q1', cutDays)}</StatusBadge>
                           </td>
                         ) : null}
                         <td className="px-4 py-3 text-muted-foreground">{formatDate(service.date_performed)}</td>

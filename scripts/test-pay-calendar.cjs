@@ -174,3 +174,105 @@ test('the monthly preset drops the fortnights and counts each OS in its own mont
     assert.ok(settings.parseOrganizationSettingsInput(presets.applyPayPreset(settings.DEFAULT_ORGANIZATION_SETTINGS, preset)).settings, preset);
   }
 });
+
+// ---- the closing day (month closing for payment)
+
+test('without a closing day the competence is the calendar month, as it always was', () => {
+  assert.equal(calendar.competenceForDate('2026-10-31', 0), '2026-10');
+  assert.equal(calendar.competenceForDate('2026-10-31'), '2026-10');
+  assert.deepEqual(calendar.competenceRange('2026-02', 0), { from: '2026-02-01', to: '2026-02-28' });
+  assert.deepEqual(calendar.competenceRange('2028-02'), { from: '2028-02-01', to: '2028-02-29' });
+  assert.equal(calendar.cycleDay('2026-10-17', 0), 17);
+});
+
+test('a closing day of 25: the competence of November runs from 26/10 to 25/11', () => {
+  assert.equal(calendar.competenceForDate('2026-10-25', 25), '2026-10');
+  assert.equal(calendar.competenceForDate('2026-10-26', 25), '2026-11');
+  assert.equal(calendar.competenceForDate('2026-11-25', 25), '2026-11');
+  assert.equal(calendar.competenceForDate('2026-11-26', 25), '2026-12');
+  assert.equal(calendar.competenceForDate('2026-12-31', 25), '2027-01', 'the year changes with the competence');
+  assert.equal(calendar.competenceForDate('2026-02-30', 25), '', 'not a real day');
+  assert.deepEqual(calendar.competenceRange('2026-11', 25), { from: '2026-10-26', to: '2026-11-25' });
+  assert.deepEqual(calendar.competenceRange('2027-01', 25), { from: '2026-12-26', to: '2027-01-25' });
+  assert.deepEqual(calendar.competenceRange('x', 25), { from: '', to: '' });
+});
+
+test('every competence starts the day after the previous one ends', () => {
+  const dayAfter = (key) => new Date(Date.parse(`${key}T00:00:00Z`) + 86400000).toISOString().slice(0, 10);
+  for (const closing of [0, 1, 5, 15, 25, 27]) {
+    for (const [first, second] of [['2026-01', '2026-02'], ['2026-02', '2026-03'], ['2026-12', '2027-01']]) {
+      const a = calendar.competenceRange(first, closing);
+      const b = calendar.competenceRange(second, closing);
+      assert.equal(b.from, dayAfter(a.to), `${closing}: ${first} -> ${second}`);
+      for (const date of [a.from, a.to]) assert.equal(calendar.competenceForDate(date, closing), first, `${closing}: ${date}`);
+    }
+  }
+});
+
+test('days since the last closing', () => {
+  assert.equal(calendar.cycleDay('2026-10-26', 25), 1);
+  assert.equal(calendar.cycleDay('2026-10-31', 25), 6);
+  assert.equal(calendar.cycleDay('2026-11-01', 25), 7);
+  assert.equal(calendar.cycleDay('2026-11-25', 25), 31, 'the competence of November has 31 days');
+  assert.equal(calendar.cycleDay('2026-12-01', 25), 6);
+  assert.equal(calendar.cycleDay('2026-03-02', 25), 5, 'February has 28 days: 26/02 is day 1');
+  assert.equal(calendar.cycleDay('2026-11-03', 0), 3);
+});
+
+test('the screens open on the competence in progress, and on the one that just closed until the settle day', () => {
+  // closing 25, no settle day: 26/10 already opens November.
+  assert.equal(calendar.defaultCompetenceMonth('2026-10-25', 0, 25), '2026-10');
+  assert.equal(calendar.defaultCompetenceMonth('2026-10-26', 0, 25), '2026-11');
+  assert.equal(calendar.defaultCompetenceMonth('2026-11-10', 0, 25), '2026-11');
+  // closing 25 and 5 days to settle: until 30/10 the competence of October that closed on the 25th is still the one opened.
+  assert.equal(calendar.defaultCompetenceMonth('2026-10-26', 5, 25), '2026-10');
+  assert.equal(calendar.defaultCompetenceMonth('2026-10-30', 5, 25), '2026-10');
+  assert.equal(calendar.defaultCompetenceMonth('2026-10-31', 5, 25), '2026-11');
+  assert.equal(calendar.defaultCompetenceMonth('2026-11-20', 5, 25), '2026-11');
+  // The old rule is the same call with the closing day 0.
+  assert.equal(calendar.defaultCompetenceMonth('2026-11-05', 5, 0), '2026-10');
+  assert.equal(calendar.defaultCompetenceMonth('2026-11-06', 5, 0), '2026-11');
+  assert.equal(calendar.defaultCompetenceMonth('2026-11-05', 5), '2026-10');
+});
+
+test('the import follows the closing day only when the month comes from the service date', () => {
+  assert.equal(calendar.competenceForImportRow('service_date', '2026-10-26', '2026-10', 25), '2026-11');
+  assert.equal(calendar.competenceForImportRow('batch', '2026-10-26', '2026-10', 25), '2026-10');
+  assert.deepEqual(calendar.countByCompetence(['2026-10-25', '2026-10-26', '2026-11-25', '2026-11-26'], 25), [
+    { month: '2026-10', count: 1 },
+    { month: '2026-11', count: 2 },
+    { month: '2026-12', count: 1 },
+  ]);
+});
+
+test('with a closing day the cut days count from the start of the competence', () => {
+  // 26/10 is day 1 of the competence of November: with a cut at 15, Q1 goes to 9/11 and Q2 from 10/11.
+  assert.equal(calendar.periodForDate('2026-10-26', [15], 25), 'Q1');
+  assert.equal(calendar.periodForDate('2026-11-09', [15], 25), 'Q1');
+  assert.equal(calendar.periodForDate('2026-11-10', [15], 25), 'Q2');
+  assert.equal(calendar.periodForDate('2026-11-25', [15], 25), 'Q2');
+  assert.equal(calendar.periodForDate('2026-11-26', [15], 25), 'Q1', 'a new competence starts again');
+  assert.equal(calendar.periodForDate('2026-11-10', [], 25), null);
+  assert.equal(calendar.periodForDate('2026-11-16', [15], 0), 'Q2', 'closing 0 is the calendar day');
+});
+
+test('the closing day is a whole number from 0 to 27', () => {
+  assert.equal(calendar.normalizeClosingDay(0), 0);
+  assert.equal(calendar.normalizeClosingDay('25'), 25);
+  for (const bad of [-1, 28, 2.5, 'x', '', null, undefined]) assert.equal(calendar.normalizeClosingDay(bad), null, String(bad));
+  assert.equal(settings.DEFAULT_ORGANIZATION_SETTINGS.monthClosingDay, 0);
+  assert.equal(settings.normalizeOrganizationSettings({ commission_mode: 'excess' }).monthClosingDay, 0);
+  assert.equal(settings.normalizeOrganizationSettings({ month_closing_day: 25 }).monthClosingDay, 25);
+  const base = { ...settings.DEFAULT_ORGANIZATION_SETTINGS };
+  assert.equal(settings.parseOrganizationSettingsInput({ ...base, monthClosingDay: 25 }).settings.monthClosingDay, 25);
+  assert.match(settings.parseOrganizationSettingsInput({ ...base, monthClosingDay: 28 }).error, /fechamento do mês/);
+  assert.match(settings.parseOrganizationSettingsInput({ ...base, monthClosingDay: -1 }).error, /fechamento do mês/);
+  assert.equal(settings.pickTechnicianSettings({ ...base, monthClosingDay: 25 }).monthClosingDay, 25);
+});
+
+test('the competence of an hours row follows the closing day too', () => {
+  const formatters = require('../lib/formatters.ts');
+  assert.equal(formatters.monthKeyFromDate('2026-10-26T00:00:00.000Z'), '2026-10');
+  assert.equal(formatters.monthKeyFromDate('2026-10-26T00:00:00.000Z', 25), '2026-11');
+  assert.equal(formatters.monthKeyFromDate('2026-10-25T00:00:00.000Z', 25), '2026-10');
+});

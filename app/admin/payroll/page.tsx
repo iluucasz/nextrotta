@@ -418,9 +418,9 @@ export default function PayrollPage() {
   // Companies that settle the month after it ends open on the previous month until their settle day.
   useEffect(() => {
     if (!settingsLoaded) return;
-    const target = defaultCompetenceMonth(brasiliaDateKey(), organizationSettings.settlePreviousMonthUntilDay);
+    const target = defaultCompetenceMonth(brasiliaDateKey(), organizationSettings.settlePreviousMonthUntilDay, organizationSettings.monthClosingDay);
     setCompetenceMonth((current) => (current === brasiliaDateKey().slice(0, 7) ? target : current));
-  }, [settingsLoaded, organizationSettings.settlePreviousMonthUntilDay]);
+  }, [settingsLoaded, organizationSettings.settlePreviousMonthUntilDay, organizationSettings.monthClosingDay]);
   const [hasLoaded, setHasLoaded] = useState(false);
   const [dataError, setDataError] = useState('');
   const [selectedRow, setSelectedRow] = useState<PayrollRow | null>(null);

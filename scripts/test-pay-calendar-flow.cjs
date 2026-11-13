@@ -240,9 +240,73 @@ test("a manual OS must use one of the company's periods", async () => {
   assert.equal((await stored('p2')).fortnight_period, 'Q2');
 });
 
+// ---- a company that closes its month on the 25th
+
+const hoursRow = (technician, date, hours) => sql`
+  INSERT INTO work_hours (organization_id, technician_id, date, start_time, end_time, hours_worked, week_number, month, year, source)
+  VALUES (${org}, ${technician.id}, ${date}, '08:00', '17:00', ${hours}, 1, ${Number(date.slice(5, 7))}, ${Number(date.slice(0, 4))}, 'manual')
+`;
+
+test('closing day 25: each OS goes to the competence its date falls in, and the period counts from the cut', async () => {
+  // The folhas closed by the earlier tests would hold these OS back (that rule has its own tests above).
+  await sql`UPDATE payroll SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
+  await configure({ competenceSource: 'service_date', periodCutDays: [15], monthClosingDay: 25 });
+  const { status, data } = await post({
+    services: [row('k1', anna, '2026-10-25'), row('k2', anna, '2026-10-26'), row('k3', anna, '2026-11-09'), row('k4', anna, '2026-11-10'), row('k5', anna, '2026-11-26')],
+  });
+  assert.equal(status, 200);
+  assert.equal(data.imported, 5);
+  const seen = [];
+  for (const code of ['k1', 'k2', 'k3', 'k4', 'k5']) {
+    const saved = await stored(code);
+    seen.push([code, saved.competence_month, saved.fortnight_period]);
+  }
+  assert.deepEqual(seen, [['k1', '2026-10', 'Q2'], ['k2', '2026-11', 'Q1'], ['k3', '2026-11', 'Q1'], ['k4', '2026-11', 'Q2'], ['k5', '2026-12', 'Q1']]);
+});
+
+test('closing day 25: a batch import still takes the month chosen for the file', async () => {
+  await configure({ competenceSource: 'batch', periodCutDays: [15], monthClosingDay: 25 });
+  const { data } = await post({ services: [row('kb', anna, '2026-10-26')], competence_month: '2026-10', fortnight_period: 'Q1' });
+  assert.equal(data.imported, 1);
+  assert.equal((await stored('kb')).competence_month, '2026-10');
+});
+
+test('closing day 25: an OS typed by hand without a month goes to the competence of its date', async () => {
+  await configure({ competenceSource: 'batch', periodCutDays: [], monthClosingDay: 25 });
+  const manual = await postManual({ ...row('km', anna, '2026-11-27'), competence_month: '' });
+  assert.equal(manual.status, 201);
+  assert.equal((await stored('km')).competence_month, '2026-12');
+});
+
+test('closing day 25: the hours of the competence run from the 26th to the 25th (folha and hours API)', async () => {
+  await configure({ monthClosingDay: 25, periodCutDays: [15] });
+  await sql`UPDATE work_hours SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
+  for (const [date, hours] of [['2026-10-25', 8], ['2026-10-26', 8], ['2026-11-10', 8.5], ['2026-11-25', 7], ['2026-11-26', 6]]) await hoursRow(anna, date, hours);
+
+  const payrollUtils = require('../lib/payroll-utils.ts');
+  assert.equal(await payrollUtils.calculateTotalHours(org, anna.id, '2026-11', 25), 23.5, '26/10 + 10/11 + 25/11');
+  assert.equal(await payrollUtils.calculateDaysWorked(org, anna.id, '2026-11', 25), 3);
+  assert.equal(await payrollUtils.calculateTotalHours(org, anna.id, '2026-10', 25), 8, '26/09 to 25/10: only 25/10');
+  assert.equal(await payrollUtils.calculateTotalHours(org, anna.id, '2026-12', 25), 6, '26/11');
+  // Without a closing day the same rows are summed by calendar month, as before.
+  assert.equal(await payrollUtils.calculateTotalHours(org, anna.id, '2026-11'), 8.5 + 7 + 6);
+
+  const hoursRoute = require('../app/api/work-hours/route.ts');
+  const get = async (month) => {
+    const response = await hoursRoute.GET(new Request(`http://nextrotta.test/api/work-hours?month=${month}`, { headers: { cookie: `auth-token=${token}` } }));
+    return (await response.json()).workHours.map((item) => String(item.date).slice(0, 10)).sort();
+  };
+  assert.deepEqual(await get('2026-11'), ['2026-10-26', '2026-11-10', '2026-11-25']);
+  assert.deepEqual(await get('2026-12'), ['2026-11-26']);
+
+  await configure({ monthClosingDay: 0 });
+  assert.deepEqual(await get('2026-11'), ['2026-11-10', '2026-11-25', '2026-11-26'], 'back to the calendar month');
+});
+
 after(async () => {
   if (!org) return;
-  await setSource('batch').catch(() => {});
+  await configure({}).catch(() => {});
+  await sql`UPDATE work_hours SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
   await sql`UPDATE services SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
   await sql`UPDATE payroll SET deleted_at = NOW() WHERE organization_id = ${org} AND deleted_at IS NULL`;
   await sql`UPDATE organizations SET deleted_at = NOW() WHERE id = ${org}`;

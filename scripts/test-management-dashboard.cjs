@@ -230,3 +230,18 @@ test('recorte vazio mantém métricas finitas e não atribui despesas a técnico
   assert.equal(result.technicians.length, 0);
   for (const value of Object.values(result.current)) assert.equal(value, 0);
 });
+
+test('com dia de fechamento, as horas de cada dia vão para a competência da empresa', () => {
+  const hours = [
+    { technicianId: 't1', date: '2026-10-25', hours: 8 },
+    { technicianId: 't1', date: '2026-10-26', hours: 8 },
+    { technicianId: 't1', date: '2026-11-25', hours: 8 },
+    { technicianId: 't1', date: '2026-11-26', hours: 8 },
+  ];
+  const byMonth = (rows) => Object.fromEntries(rows.map((row) => [row.month, row.worked]));
+  assert.deepEqual(byMonth(aggregateOperations([], hours, '2026-12-31')), { '2026-10': 16, '2026-11': 16 });
+  assert.deepEqual(
+    byMonth(aggregateOperations([], hours, '2026-12-31', { dailyBreakMinutes: 60, chargeCancelledServicePlanned: false, monthClosingDay: 25 })),
+    { '2026-10': 8, '2026-11': 16, '2026-12': 8 },
+  );
+});

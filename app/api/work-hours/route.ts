@@ -1,6 +1,8 @@
 import { sql } from '@/lib/db';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
+import { getOrganizationSettings } from '@/lib/organization-settings-store';
+import { competenceRange, isMonthKey } from '@/lib/pay-calendar';
 import { isUuid } from '@/lib/platform/errors';
 import { notifyJustified } from '@/lib/whatsapp/notifications';
 import { applyWorkHourEntries, attendanceHasHours, getActiveTechnicianIds, getIsoWeekNumber, type AttendanceStatus, type WorkHourEntry } from '@/lib/work-hours-service';
@@ -70,8 +72,10 @@ export async function GET(request: NextRequest) {
     }
 
     if (month) {
-      conditions.push(`TO_CHAR(date::date, 'YYYY-MM') = $${params.length + 1}`);
-      params.push(month);
+      // The month is the company's competence: with a closing day of 25, "2026-11" is 26/10 to 25/11.
+      const { from, to } = competenceRange(month, isMonthKey(month) ? (await getOrganizationSettings(auth.organizationId)).monthClosingDay : 0);
+      conditions.push(`date::date BETWEEN $${params.length + 1}::date AND $${params.length + 2}::date`);
+      params.push(from || '1900-01-01', to || '1900-01-01');
     }
 
     query += ` WHERE ${conditions.join(' AND ')}`;

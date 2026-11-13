@@ -4,6 +4,7 @@ import { sql } from '../db';
 import { checkLimit } from '../billing/entitlements';
 import { endOfWorkDayMinutes, type OrganizationSettings } from '../organization-settings';
 import { getOrganizationSettings } from '../organization-settings-store';
+import { competenceForDate, competenceRange } from '../pay-calendar';
 import {
   addDaysToKey,
   brasiliaNow,
@@ -460,7 +461,8 @@ async function runDailyHours({ config, trigger, createdBy, now }: RunContext) {
   const settings = await getOrganizationSettings(config.organizationId);
   // `today` is the reported work day: yesterday when this runs before today's work is over.
   const today = dailyHoursDay(now, settings);
-  const monthKey = today.slice(0, 7);
+  // The month's hours run from the start of the company's competence (its closing day moves the cut).
+  const monthStart = competenceRange(competenceForDate(today, settings.monthClosingDay), settings.monthClosingDay).from || `${today.slice(0, 7)}-01`;
   const template = config.notifications.daily_hours.template;
 
   const [technicians, dayRows, monthRows] = await Promise.all([
@@ -480,7 +482,7 @@ async function runDailyHours({ config, trigger, createdBy, now }: RunContext) {
       SELECT technician_id::text AS technician_id, SUM(hours_worked)::float AS hours
       FROM work_hours
       WHERE organization_id = ${config.organizationId}
-        AND date >= ${`${monthKey}-01`} AND date <= ${today}
+        AND date >= ${monthStart} AND date <= ${today}
         AND deleted_at IS NULL
       GROUP BY technician_id
     `,

@@ -46,8 +46,6 @@ O período de cada OS é guardado ao lançá-la (importação por lote, por data
 
 **Ponto de partida na criação da empresa** (`lib/pay-presets.ts`, migração `0052`): o dono escolhe "Quinzenal" (`[15]`, mês do lote: o padrão de sempre) ou "Mensal" (`[]`, mês da OS pela data do serviço, acerto do mês anterior em 0) em `POST /api/platform/organizations` (`payPreset`). É aplicado uma única vez, na etapa "Criar configurações padrão" do provisionamento (repetir a etapa não sobrescreve o que o admin já mudou). Quem contrata pelo site começa quinzenal. Teste: `scripts/test-pay-preset-flow.cjs`.
 
-**Ainda não existe:** o "dia de fechamento do mês" (mês de 26 a 25). Horas, banco de horas e descontos são calculados pelo mês-calendário; mudar só o mês das OS deixaria a folha inconsistente. Precisa de um desenho que cubra horas e descontos.
-
 ## Vales (VA e VR) — abatem da comissão? como são pagos? (`vaDeductsFromCommission`, `vrDeductsFromCommission`, `vaPayment`, `vrPayment`, migração `0050`)
 
 Configurações → Pagamento, um painel para o VR e outro para o VA. Os padrões mantêm a regra de antes (abatem e vão no cartão).
@@ -60,7 +58,7 @@ Configurações → Pagamento, um painel para o VR e outro para o VA. Os padrõe
 
 ## Mês das OS (`competenceSource` e `settlePreviousMonthUntilDay`, migração `0049`)
 
-Configurações → Pagamento → "Mês das OS". É o começo do **calendário de pagamento** de cada empresa (regras puras em `lib/pay-calendar.ts`, teste `scripts/test-pay-calendar.cjs`; fluxo da importação em `scripts/test-pay-calendar-flow.cjs`). Os padrões mantêm o comportamento anterior.
+Configurações → Pagamento → "Mês de pagamento". É o começo do **calendário de pagamento** de cada empresa (regras puras em `lib/pay-calendar.ts`, teste `scripts/test-pay-calendar.cjs`; fluxo da importação em `scripts/test-pay-calendar-flow.cjs`). Os padrões mantêm o comportamento anterior.
 
 - **`competenceSource`** — quem define o mês de cada OS importada:
   - `batch` (padrão): o admin escolhe o mês e a quinzena (Q1/Q2) ao importar e o arquivo inteiro entra neles.
@@ -68,7 +66,19 @@ Configurações → Pagamento → "Mês das OS". É o começo do **calendário d
   - Nesse modo, a OS de um técnico cuja **folha do mês já está fechada** é recusada ("A folha de 10/2026 deste técnico já está fechada"), porque a folha fechada não é recalculada: a janela avisa antes e oferece "Importar também as OS de folha fechada" (`allow_closed_payroll`). No modo `batch` essa checagem não existe (comportamento de antes).
 - **`settlePreviousMonthUntilDay`** (0 a 28, padrão 0) — até esse dia do mês, Serviços e Folha abrem no mês anterior (quem acerta outubro até 5 de novembro usa 5). 0 = sempre o mês atual.
 
-Ainda **não** existe o dia de fechamento do mês diferente do último dia (ver "Períodos de pagamento").
+
+## Dia de fechamento do mês (`monthClosingDay`, migração `0053`)
+
+Configurações → Pagamento → "Mês de pagamento" → "Dia de fechamento do mês" (0 a 27, padrão 0 = o mês fecha no último dia, o que toda empresa tinha). Com **25**, a competência de novembro vai de **26/10 a 25/11** (a competência leva o nome do mês em que fecha). Uma regra só, em `lib/pay-calendar.ts` (`competenceForDate`, `competenceRange`, `cycleDay`), e tudo que é "o mês" de um pagamento a segue:
+
+- **OS** — pela data do serviço (`competenceSource = service_date`), na importação e no cadastro manual sem competência. No modo "mês do lote" a competência continua sendo a escolhida para o arquivo.
+- **Horas e dias trabalhados da Folha** (`calculateTotalHours`, `calculateDaysWorked`): somam do dia seguinte ao fechamento anterior até o dia de fechamento. Horas extras e banco de horas (que encadeia as folhas por competência) seguem junto.
+- **Telas:** `/api/work-hours?month=` e as telas do técnico (Minha visão, Banco de horas, Pagamento) agrupam pelas mesmas datas; Início, Serviços e Folha abrem na competência em andamento; o Dashboard Gerencial agrupa as horas e ausências por competência; o assistente de IA (`horas_trabalhadas`) e o aviso "folha ainda não fechada" também.
+- **Acerto (`settlePreviousMonthUntilDay`)** conta a partir do fechamento: com fechamento 25 e acerto 5, até 30/10 as telas ainda abrem outubro; no dia 31/10 abrem novembro. Com fechamento 0 é a regra de antes (até o dia N do mês seguinte).
+- **Dias de corte** (`periodCutDays`) passam a contar a partir do início da competência: com fechamento 25 e corte em 15, a Q1 vai de 26/10 a 9/11 e a Q2 de 10/11 a 25/11.
+- **Descontos e adiantamentos** já têm competência própria (escolhida ao lançar), então não mudam.
+
+**Continua pelo mês do calendário, de propósito:** a Escala (é planejamento) e o resumo mensal de escala por WhatsApp, Despesas e financeiro, os avisos de armazenamento, o robô do Porto (importa por dia) e o mês em que o Dashboard Gerencial abre. Mudar o dia de fechamento **não reclassifica** OS já gravadas (elas guardam a competência com que entraram); as horas, que são somadas na hora do cálculo, mudam de competência imediatamente: refaça (Recalcular) as folhas em rascunho depois de mexer e não mude com folha fechada no meio do ciclo. Testes: `scripts/test-pay-calendar.cjs` (regras) e `scripts/test-pay-calendar-flow.cjs` (importação, cadastro, horas da folha e API de horas), mais um caso em `test-management-dashboard.cjs`.
 
 ## Onde fica
 

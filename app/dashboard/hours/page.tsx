@@ -13,6 +13,7 @@ import { brasiliaDateKey, formatDate, formatHours, formatTime, formatTimeRange, 
 import type { Payroll, Schedule, WorkHours } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
+import { competenceForDate } from '@/lib/pay-calendar';
 import { useTechnicianVisibility } from '@/hooks/use-technician-visibility';
 import { resolveAllowedMonth } from '@/lib/technician-visibility';
 
@@ -61,7 +62,13 @@ export default function TechnicianHoursPage() {
   const [schedule, setSchedule] = useState<Schedule[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  // The month the screen opens on is the company's competence: with a closing day it can be the next calendar month.
+  const closingDay = settings.monthClosingDay;
+  const currentCompetence = competenceForDate(brasiliaDateKey(), closingDay) || defaultCompetenceMonth;
   const [competenceMonth, setCompetenceMonth] = useState(defaultCompetenceMonth);
+  useEffect(() => {
+    setCompetenceMonth((current) => (current === defaultCompetenceMonth ? currentCompetence : current));
+  }, [currentCompetence]);
   const [query, setQuery] = useState('');
 
   useEffect(() => {
@@ -121,10 +128,10 @@ export default function TechnicianHoursPage() {
   const competenceOptions = useMemo(() => {
     if (allowedMonth) return [allowedMonth];
 
-    const values = new Set<string>([defaultCompetenceMonth]);
+    const values = new Set<string>([currentCompetence]);
 
     workHours.forEach((item) => {
-      const competence = monthKeyFromDate(item.date);
+      const competence = monthKeyFromDate(item.date, closingDay);
       if (competence) values.add(competence);
     });
 
@@ -134,12 +141,12 @@ export default function TechnicianHoursPage() {
     });
 
     schedule.forEach((item) => {
-      const competence = monthKeyFromDate(item.date);
+      const competence = monthKeyFromDate(item.date, closingDay);
       if (competence) values.add(competence);
     });
 
     return Array.from(values).sort((left, right) => right.localeCompare(left, 'pt-BR'));
-  }, [allowedMonth, payroll, schedule, workHours]);
+  }, [allowedMonth, closingDay, currentCompetence, payroll, schedule, workHours]);
 
   useEffect(() => {
     if (!competenceOptions.length) return;
@@ -149,8 +156,8 @@ export default function TechnicianHoursPage() {
   }, [competenceMonth, competenceOptions]);
 
   const monthlyWorkHours = useMemo(
-    () => workHours.filter((item) => monthKeyFromDate(item.date) === competenceMonth),
-    [competenceMonth, workHours],
+    () => workHours.filter((item) => monthKeyFromDate(item.date, closingDay) === competenceMonth),
+    [closingDay, competenceMonth, workHours],
   );
 
   const visibleWorkHours = useMemo(() => {
@@ -164,13 +171,13 @@ export default function TechnicianHoursPage() {
   const payrollClosed = Boolean(currentPayroll);
   const monthlySchedule = useMemo(() => {
     return schedule
-      .filter((item) => item.status !== 'cancelled' && monthKeyFromDate(item.date) === competenceMonth)
+      .filter((item) => item.status !== 'cancelled' && monthKeyFromDate(item.date, closingDay) === competenceMonth)
       .sort((left, right) => {
         const dateComparison = String(left.date ?? '').localeCompare(String(right.date ?? ''));
         if (dateComparison !== 0) return dateComparison;
         return String(left.start_time ?? '').localeCompare(String(right.start_time ?? ''));
       });
-  }, [competenceMonth, schedule]);
+  }, [closingDay, competenceMonth, schedule]);
 
   if (loading || isDataLoading || visibilityLoading || blocked || !user) {
     return <LoadingShell role="technician" />;

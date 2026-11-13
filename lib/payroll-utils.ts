@@ -1,4 +1,5 @@
 import { sql } from './db';
+import { competenceRange } from './pay-calendar';
 import { calculateServiceAward, valueOrDefault, type OrganizationSettings } from './organization-settings';
 import { getOrganizationSettings } from './organization-settings-store';
 import { calculateCashNet, calculateCommissionValue, calculateOvertime, deductionOf, type PayrollDetails } from './payroll-rules';
@@ -187,15 +188,17 @@ function shouldUsePayrollReference(
 export async function calculateTotalHours(
   organizationId: string,
   technicianId: string,
-  competenceMonth: string
+  competenceMonth: string,
+  closingDay = 0,
 ): Promise<number> {
+  const { from, to } = competenceRange(competenceMonth, closingDay);
   const result = await sql`
     SELECT COALESCE(SUM(hours_worked), 0) as total
     FROM work_hours
     WHERE organization_id = ${organizationId}
     AND technician_id = ${technicianId}
     AND deleted_at IS NULL
-    AND TO_CHAR(date, 'YYYY-MM') = ${competenceMonth}
+    AND date::date BETWEEN ${from}::date AND ${to}::date
   `;
 
   return Number(result[0]?.total || 0);
@@ -205,8 +208,10 @@ export async function calculateTotalHours(
 export async function calculateDaysWorked(
   organizationId: string,
   technicianId: string,
-  competenceMonth: string
+  competenceMonth: string,
+  closingDay = 0,
 ): Promise<number> {
+  const { from, to } = competenceRange(competenceMonth, closingDay);
   const result = await sql`
     SELECT COUNT(DISTINCT date::date) as total
     FROM work_hours
@@ -214,7 +219,7 @@ export async function calculateDaysWorked(
     AND technician_id = ${technicianId}
     AND deleted_at IS NULL
     AND hours_worked > 0
-    AND TO_CHAR(date, 'YYYY-MM') = ${competenceMonth}
+    AND date::date BETWEEN ${from}::date AND ${to}::date
   `;
 
   return Number(result[0]?.total || 0);
@@ -348,8 +353,8 @@ export async function calculatePayroll(
     ? roundCurrency(payrollReference?.total_services_value)
     : roundCurrency(calculatedTotalServices);
   // Hours and days worked: the overtime needs them, and so does a commission paid per hour or per day.
-  const totalHours = await calculateTotalHours(organizationId, technicianId, competenceMonth);
-  const daysWorked = await calculateDaysWorked(organizationId, technicianId, competenceMonth);
+  const totalHours = await calculateTotalHours(organizationId, technicianId, competenceMonth, settings.monthClosingDay);
+  const daysWorked = await calculateDaysWorked(organizationId, technicianId, competenceMonth, settings.monthClosingDay);
   const commission = calculateCommissionValue({
     mode: settings.commissionMode,
     totalServices,

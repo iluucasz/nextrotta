@@ -131,7 +131,7 @@ export async function POST(request: NextRequest) {
       if (!isDateKey(datePerformed)) errors.push('Data de atendimento inválida');
       if (!isTimeKey(timePerformed)) errors.push('Hora de atendimento inválida');
       // The month is always worked out here: what the screen shows is only a preview.
-      const rowCompetence = competenceForImportRow(settings.competenceSource, datePerformed, competenceMonth);
+      const rowCompetence = competenceForImportRow(settings.competenceSource, datePerformed, competenceMonth, settings.monthClosingDay);
       if (!isMonthKey(rowCompetence)) errors.push('Competência inválida');
 
       if (!errors.length) {
@@ -154,7 +154,7 @@ export async function POST(request: NextRequest) {
         timePerformed,
         description,
         competenceMonth: rowCompetence,
-        fortnightPeriod: !periods.length ? null : byServiceDate ? periodForDate(datePerformed, cutDays) : fortnightPeriod,
+        fortnightPeriod: !periods.length ? null : byServiceDate ? periodForDate(datePerformed, cutDays, settings.monthClosingDay) : fortnightPeriod,
       });
     }
 

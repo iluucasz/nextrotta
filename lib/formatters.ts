@@ -1,3 +1,5 @@
+import { competenceForDate } from './pay-calendar';
+
 export function formatCurrency(value: number | string | null | undefined): string {
   const numericValue = Number(value ?? 0);
 
@@ -105,11 +107,12 @@ export function yearFromCompetence(competence: string | null | undefined): strin
   return match?.[0] ?? 'Sem ano';
 }
 
-export function monthKeyFromDate(value: string | Date | null | undefined): string {
+/** The competence of a date: its calendar month, or the one the company's closing day puts it in (see lib/pay-calendar.ts). */
+export function monthKeyFromDate(value: string | Date | null | undefined, closingDay = 0): string {
   if (!value) return '';
   const date = value instanceof Date ? value : new Date(value);
   if (Number.isNaN(date.getTime())) return '';
-  return date.toISOString().slice(0, 7);
+  return closingDay > 0 ? competenceForDate(date.toISOString().slice(0, 10), closingDay) : date.toISOString().slice(0, 7);
 }
 
 const competenceMonthAliases: Record<string, string> = {

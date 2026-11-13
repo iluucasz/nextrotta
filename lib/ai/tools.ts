@@ -1,6 +1,7 @@
 import { hasFeature, type Entitlements } from '../billing/entitlements';
 import { sql } from '../db';
 import { PORTO_WARNING_MARKER } from '../organization-settings';
+import { competenceRange } from '../pay-calendar';
 import { getOrganizationSettings } from '../organization-settings-store';
 import type { ToolDefinition } from './deepseek';
 
@@ -237,9 +238,11 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
     },
     run: async (args, { organizationId }) => {
       const competence = month(args.mes, 'mes');
-      const { from, to } = monthRange(competence);
+      // The competence follows the company's closing day (with 25, "2026-11" is 26/10 to 25/11).
+      const settings = await getOrganizationSettings(organizationId);
+      const { from, to } = competenceRange(competence, settings.monthClosingDay);
       const technician = technicianFilter(args.tecnico);
-      const [rows, notes, settings] = await Promise.all([
+      const [rows, notes] = await Promise.all([
         sql`
           SELECT t.name, COUNT(DISTINCT w.date)::int AS dias, SUM(w.hours_worked)::float AS horas,
                  COUNT(DISTINCT w.date) FILTER (WHERE w.source = 'porto')::int AS dias_importados_do_porto
@@ -256,7 +259,6 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
             AND (s.notes LIKE 'Apontamento manual:%' OR s.notes LIKE ${`%${PORTO_WARNING_MARKER}%`})
             AND (${technician}::text IS NULL OR t.name ILIKE ${technician})
         `,
-        getOrganizationSettings(organizationId),
       ]);
 
       const situations = new Map<string, Record<string, number>>();

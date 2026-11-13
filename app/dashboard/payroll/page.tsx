@@ -156,7 +156,7 @@ export default function TechnicianPayrollPage() {
   const historyValueClass = 'py-3 pr-4 text-right font-medium tabular-nums whitespace-nowrap';
   const competenceLabel = formatCompetence(currentPayroll?.competence_month);
   const workedHoursTotal = workHours
-    .filter((item) => monthKeyFromDate(item.date) === currentCompetenceMonth)
+    .filter((item) => monthKeyFromDate(item.date, orgSettings.monthClosingDay) === currentCompetenceMonth)
     .reduce((total, item) => total + moneyValue(item.hours_worked), 0);
   const servicesCount = services.filter(
     (service) => resolveCompetenceMonth(service.competence_month, service.date_performed) === currentCompetenceMonth,

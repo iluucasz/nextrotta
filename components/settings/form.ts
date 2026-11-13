@@ -28,6 +28,7 @@ type NumericKey =
   | 'vaAllowance'
   | 'vrAllowance'
   | 'settlePreviousMonthUntilDay'
+  | 'monthClosingDay'
   | 'monthlyHours'
   | 'overtimePercent'
   | 'dailyBreakMinutes'
@@ -91,6 +92,7 @@ export function toForm(settings: OrganizationSettings): FormState {
     vrPayment: settings.vrPayment,
     competenceSource: settings.competenceSource,
     settlePreviousMonthUntilDay: String(settings.settlePreviousMonthUntilDay),
+    monthClosingDay: String(settings.monthClosingDay),
     monthlyHours: formatNumber(settings.monthlyHours),
     overtimePercent: formatNumber(overtimePercentFromMultiplier(settings.overtimeMultiplier)),
     dailyBreakMinutes: String(settings.dailyBreakMinutes),
@@ -140,6 +142,7 @@ export function toPayload(form: FormState, group: SettingsGroup) {
         periodCutDays: periodCutDaysOf(form),
         competenceSource: form.competenceSource,
         settlePreviousMonthUntilDay: number('settlePreviousMonthUntilDay'),
+        monthClosingDay: number('monthClosingDay'),
         serviceAwardTiers: form.tiers.map((tier) => ({ minServices: parseNumber(tier.minServices), amount: parseNumber(tier.amount) })),
       };
     case 'hours':

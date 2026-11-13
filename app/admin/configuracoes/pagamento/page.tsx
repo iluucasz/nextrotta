@@ -135,9 +135,17 @@ export default function PagamentoPage() {
         ) : null}
       </Panel>
 
-      <Panel title="Mês das OS" help={COMPETENCE_HELP}>
+      <Panel title="Mês de pagamento" help={COMPETENCE_HELP}>
         <Choice label="Quem define o mês de cada OS importada" value={form.competenceSource} options={COMPETENCE_OPTIONS} onChange={(value) => update('competenceSource', value)} />
         <div className="st-fields one st-divider">
+          <NumberField
+            id="closing-day"
+            label="Dia de fechamento do mês"
+            unit="dia"
+            help="Deixe 0 para fechar no último dia do mês. Com 25, a competência de novembro vai de 26/10 a 25/11: as OS (pela data do serviço), as horas e os dias trabalhados seguem esse período. Escala, despesas e avisos continuam pelo mês do calendário. Quem usa dias de corte conta esses dias a partir do início da competência."
+            value={form.monthClosingDay}
+            onChange={(value) => update('monthClosingDay', value)}
+          />
           <NumberField
             id="settle-day"
             label="Acerto do mês anterior até o dia"

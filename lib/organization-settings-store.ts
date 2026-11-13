@@ -40,7 +40,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
     INSERT INTO organization_settings (
       organization_id, commission_mode, commission_percentage, commission_rate, commission_minimum, commission_maximum, base_salary, va_allowance, vr_allowance,
       va_deducts_from_commission, vr_deducts_from_commission, va_payment, vr_payment,
-      competence_source, settle_previous_month_until_day,
+      competence_source, settle_previous_month_until_day, month_closing_day,
       monthly_hours, overtime_multiplier, daily_break_minutes, default_shift_start, default_shift_end,
       monthly_hours_warning_floor, period_cut_days, charge_cancelled_service_planned, service_award_tiers,
       porto_hours_import_time, porto_schedule_import_time, porto_reprocess_days, porto_max_shift_hours,
@@ -51,7 +51,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
     VALUES (
       ${organizationId}, ${s.commissionMode}, ${s.commissionPercentage}, ${s.commissionRate}, ${s.commissionMinimum}, ${s.commissionMaximum}, ${s.baseSalary}, ${s.vaAllowance}, ${s.vrAllowance},
       ${s.vaDeductsFromCommission}, ${s.vrDeductsFromCommission}, ${s.vaPayment}, ${s.vrPayment},
-      ${s.competenceSource}, ${s.settlePreviousMonthUntilDay},
+      ${s.competenceSource}, ${s.settlePreviousMonthUntilDay}, ${s.monthClosingDay},
       ${s.monthlyHours}, ${s.overtimeMultiplier}, ${s.dailyBreakMinutes}, ${s.defaultShiftStart}, ${s.defaultShiftEnd},
       ${s.monthlyHoursWarningFloor}, ${JSON.stringify(s.periodCutDays)}::jsonb, ${s.chargeCancelledServicePlanned}, ${JSON.stringify(s.serviceAwardTiers)}::jsonb,
       ${s.portoHoursImportTime}, ${s.portoScheduleImportTime}, ${s.portoReprocessDays}, ${s.portoMaxShiftHours},
@@ -74,6 +74,7 @@ export async function saveOrganizationSettings(organizationId: string, settings:
         vr_payment = EXCLUDED.vr_payment,
         competence_source = EXCLUDED.competence_source,
         settle_previous_month_until_day = EXCLUDED.settle_previous_month_until_day,
+        month_closing_day = EXCLUDED.month_closing_day,
         monthly_hours = EXCLUDED.monthly_hours,
         overtime_multiplier = EXCLUDED.overtime_multiplier,
         daily_break_minutes = EXCLUDED.daily_break_minutes,

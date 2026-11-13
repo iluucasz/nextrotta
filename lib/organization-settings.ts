@@ -2,7 +2,7 @@
 // by the platform owner). Dependency-free on purpose: imported by client screens, API routes and the
 // VPS worker (worker/tsconfig.json) alike. Relative imports only. Storage: organization-settings-store.ts.
 
-import { COMPETENCE_SOURCES, MAX_PERIOD_CUTS, normalizeCutDays, type CompetenceSource } from './pay-calendar';
+import { COMPETENCE_SOURCES, MAX_PERIOD_CUTS, normalizeClosingDay, normalizeCutDays, type CompetenceSource } from './pay-calendar';
 
 export type ServiceAwardTier = {
   /** Number of OS (services) in the month that reaches this tier. */
@@ -43,6 +43,8 @@ export type OrganizationSettings = {
   competenceSource: CompetenceSource;
   /** Until this day of the month the screens still open on the previous month (0 = the current month always). */
   settlePreviousMonthUntilDay: number;
+  /** The day the month closes (0 = its last day). With 25, the competence of November covers 26/10 to 25/11: OS, hours and days worked follow it. */
+  monthClosingDay: number;
 
   /**
    * The days that cut the month into payment periods: [] = one payment a month (no Q1/Q2 on the screens), [15] = two
@@ -147,6 +149,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   vrPayment: 'card',
   competenceSource: 'batch',
   settlePreviousMonthUntilDay: 0,
+  monthClosingDay: 0,
   periodCutDays: [15],
 
   monthlyHours: 220,
@@ -197,7 +200,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
 /** What a technician's own screens may read — salaries and commission never leave the admin side. */
 export type TechnicianOrganizationSettings = Pick<
   OrganizationSettings,
-  'monthlyHours' | 'dailyBreakMinutes' | 'serviceAwardTiers' | 'monthlyHoursWarningFloor' | 'periodCutDays' | 'vaPayment' | 'vrPayment'
+  'monthlyHours' | 'dailyBreakMinutes' | 'serviceAwardTiers' | 'monthlyHoursWarningFloor' | 'periodCutDays' | 'monthClosingDay' | 'vaPayment' | 'vrPayment'
 >;
 
 export function pickTechnicianSettings(settings: OrganizationSettings): TechnicianOrganizationSettings {
@@ -207,6 +210,7 @@ export function pickTechnicianSettings(settings: OrganizationSettings): Technici
     serviceAwardTiers: settings.serviceAwardTiers,
     monthlyHoursWarningFloor: settings.monthlyHoursWarningFloor,
     periodCutDays: settings.periodCutDays,
+    monthClosingDay: settings.monthClosingDay,
     vaPayment: settings.vaPayment,
     vrPayment: settings.vrPayment,
   };
@@ -317,6 +321,7 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
     vrPayment: BENEFIT_PAYMENTS.includes(text('vrPayment') as BenefitPayment) ? (text('vrPayment') as BenefitPayment) : null,
     competenceSource: COMPETENCE_SOURCES.includes(text('competenceSource') as CompetenceSource) ? (text('competenceSource') as CompetenceSource) : null,
     settlePreviousMonthUntilDay: number('settlePreviousMonthUntilDay'),
+    monthClosingDay: number('monthClosingDay'),
     monthlyHours: number('monthlyHours'),
     overtimeMultiplier: number('overtimeMultiplier'),
     dailyBreakMinutes: number('dailyBreakMinutes'),
@@ -370,6 +375,8 @@ function validateField(key: keyof OrganizationSettings, value: unknown, all: Org
       return BENEFIT_PAYMENTS.includes(value as BenefitPayment) ? null : 'Escolha como o vale é pago: no cartão ou em dinheiro.';
     case 'competenceSource':
       return COMPETENCE_SOURCES.includes(value as CompetenceSource) ? null : 'Escolha quem define o mês de cada OS importada.';
+    case 'monthClosingDay':
+      return normalizeClosingDay(n) !== null ? null : 'O dia de fechamento do mês deve ser um número inteiro entre 0 (último dia) e 27.';
     case 'settlePreviousMonthUntilDay':
       return isInteger(n) && n >= 0 && n <= 28 ? null : 'O dia do acerto do mês anterior deve ser um número inteiro entre 0 e 28.';
     case 'monthlyHours':
@@ -467,6 +474,7 @@ const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
   vaPayment: 'Escolha como o vale é pago: no cartão ou em dinheiro.',
   vrPayment: 'Escolha como o vale é pago: no cartão ou em dinheiro.',
   competenceSource: 'Escolha quem define o mês de cada OS importada.',
+  monthClosingDay: 'O dia de fechamento do mês deve ser um número inteiro entre 0 (último dia) e 27.',
   settlePreviousMonthUntilDay: 'O dia do acerto do mês anterior deve ser um número inteiro entre 0 e 28.',
   monthlyHours: 'A jornada mensal deve ser maior que zero (até 744 horas).',
   overtimeMultiplier: 'O adicional de hora extra deve ficar entre 1 (sem adicional) e 5.',

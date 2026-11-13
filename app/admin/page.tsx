@@ -26,6 +26,8 @@ import {
 } from '@/lib/formatters';
 import type { Payroll, Service, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
+import { useOrganizationSettings } from '@/hooks/use-organization-settings';
+import { defaultCompetenceMonth } from '@/lib/pay-calendar';
 import './overview.css';
 
 const monthNames = [
@@ -159,9 +161,16 @@ export default function AdminDashboard() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [services, setServices] = useState<Service[]>([]);
   const [payroll, setPayroll] = useState<Payroll[]>([]);
+  const { settings: organizationSettings, loaded: settingsLoaded } = useOrganizationSettings();
   const [competenceMonth, setCompetenceMonth] = useState(() =>
     brasiliaDateKey().slice(0, 7),
   );
+  // The month it opens on is the company's: the settle days and the closing day move it (Configurações → Pagamento).
+  useEffect(() => {
+    if (!settingsLoaded) return;
+    const target = defaultCompetenceMonth(brasiliaDateKey(), organizationSettings.settlePreviousMonthUntilDay, organizationSettings.monthClosingDay);
+    setCompetenceMonth((current) => (current === brasiliaDateKey().slice(0, 7) ? target : current));
+  }, [settingsLoaded, organizationSettings.settlePreviousMonthUntilDay, organizationSettings.monthClosingDay]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
 
