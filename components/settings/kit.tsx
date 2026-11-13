@@ -86,8 +86,7 @@ export function SettingsPage({ api, title, description, actions, children }: { a
         </div>
       ) : (
         <>
-          <div className="st-stack">{children}</div>
-
+          {/* On top, pinned under the header: at the bottom the assistant's bubble covers the Salvar button. */}
           {dirty || saving || justSaved || saveError ? (
             <div className={cn('st-savebar', saveError && 'bad', justSaved && !dirty && 'ok')} role="status">
               <span className="st-savebar-text">
@@ -117,6 +116,8 @@ export function SettingsPage({ api, title, description, actions, children }: { a
               ) : null}
             </div>
           ) : null}
+
+          <div className="st-stack">{children}</div>
         </>
       )}
     </Frame>

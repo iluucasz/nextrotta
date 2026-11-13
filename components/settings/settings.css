@@ -213,22 +213,27 @@
   color: var(--foreground);
 }
 
-/* the bar that shows up when something changed */
+/* the bar that shows up when something changed: pinned at the top, under the header, so nothing floating covers it */
 .mg-dashboard .st-savebar {
   position: sticky;
-  bottom: 16px;
-  z-index: 30;
+  top: 12px;
+  z-index: 15;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
-  margin-top: 18px;
+  margin-bottom: 18px;
   padding: 12px 16px 12px 20px;
-  border: 1px solid var(--border);
+  border: 2px solid var(--primary);
   border-radius: 16px;
-  background: var(--card);
-  box-shadow: 0 12px 34px #1b1a2e24;
+  background: color-mix(in srgb, var(--primary) 9%, var(--card));
+  box-shadow: 0 10px 30px color-mix(in srgb, var(--primary) 28%, transparent);
+}
+@media (max-width: 1023px) {
+  .mg-dashboard .st-savebar {
+    top: calc(3rem + 8px);
+  }
 }
 .mg-dashboard .st-savebar-text {
   display: inline-flex;
@@ -242,12 +247,12 @@
   gap: 8px;
 }
 .mg-dashboard .st-savebar.ok {
-  border-color: #b7e3cc;
+  border-color: #7ccaa1;
   background: #f3fbf7;
   color: #166a45;
 }
 .mg-dashboard .st-savebar.bad {
-  border-color: #f2c4c0;
+  border-color: #e5877f;
   background: #fff6f5;
   color: #b42318;
 }
