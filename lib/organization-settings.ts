@@ -15,6 +15,10 @@ export type ServiceAwardTier = {
 export type CommissionMode = 'excess' | 'percentage' | 'per_service' | 'per_hour' | 'per_day' | 'none';
 export const COMMISSION_MODES: CommissionMode[] = ['excess', 'percentage', 'per_service', 'per_hour', 'per_day', 'none'];
 
+/** How a meal/food voucher reaches the technician: loaded on a card, or paid in cash apart from the account payment. */
+export type BenefitPayment = 'card' | 'cash';
+export const BENEFIT_PAYMENTS: BenefitPayment[] = ['card', 'cash'];
+
 export type OrganizationSettings = {
   /** What the commission is: the excess over the fixed costs, a percentage on top of the salary, a fixed amount per service, hour or day, or none. */
   commissionMode: CommissionMode;
@@ -29,6 +33,12 @@ export type OrganizationSettings = {
   baseSalary: number;
   vaAllowance: number;
   vrAllowance: number;
+  /** Whether the VA / VR is taken off the commission's base (the "excess" mode: commission = production − salary − the vouchers that deduct). */
+  vaDeductsFromCommission: boolean;
+  vrDeductsFromCommission: boolean;
+  /** How each voucher is paid: it only changes where the folha and the technician's screen say it is paid, never the total cost. */
+  vaPayment: BenefitPayment;
+  vrPayment: BenefitPayment;
   /** Who decides the month of an imported OS: the batch (one month for the whole file) or each OS's own date. */
   competenceSource: CompetenceSource;
   /** Until this day of the month the screens still open on the previous month (0 = the current month always). */
@@ -127,6 +137,10 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   baseSalary: 0,
   vaAllowance: 0,
   vrAllowance: 0,
+  vaDeductsFromCommission: true,
+  vrDeductsFromCommission: true,
+  vaPayment: 'card',
+  vrPayment: 'card',
   competenceSource: 'batch',
   settlePreviousMonthUntilDay: 0,
 
@@ -179,7 +193,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
 /** What a technician's own screens may read — salaries and commission never leave the admin side. */
 export type TechnicianOrganizationSettings = Pick<
   OrganizationSettings,
-  'monthlyHours' | 'dailyBreakMinutes' | 'serviceAwardTiers' | 'monthlyHoursWarningFloor' | 'fortnightSplitDay'
+  'monthlyHours' | 'dailyBreakMinutes' | 'serviceAwardTiers' | 'monthlyHoursWarningFloor' | 'fortnightSplitDay' | 'vaPayment' | 'vrPayment'
 >;
 
 export function pickTechnicianSettings(settings: OrganizationSettings): TechnicianOrganizationSettings {
@@ -189,6 +203,8 @@ export function pickTechnicianSettings(settings: OrganizationSettings): Technici
     serviceAwardTiers: settings.serviceAwardTiers,
     monthlyHoursWarningFloor: settings.monthlyHoursWarningFloor,
     fortnightSplitDay: settings.fortnightSplitDay,
+    vaPayment: settings.vaPayment,
+    vrPayment: settings.vrPayment,
   };
 }
 
@@ -291,6 +307,10 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
     baseSalary: number('baseSalary'),
     vaAllowance: number('vaAllowance'),
     vrAllowance: number('vrAllowance'),
+    vaDeductsFromCommission: bool('vaDeductsFromCommission'),
+    vrDeductsFromCommission: bool('vrDeductsFromCommission'),
+    vaPayment: BENEFIT_PAYMENTS.includes(text('vaPayment') as BenefitPayment) ? (text('vaPayment') as BenefitPayment) : null,
+    vrPayment: BENEFIT_PAYMENTS.includes(text('vrPayment') as BenefitPayment) ? (text('vrPayment') as BenefitPayment) : null,
     competenceSource: COMPETENCE_SOURCES.includes(text('competenceSource') as CompetenceSource) ? (text('competenceSource') as CompetenceSource) : null,
     settlePreviousMonthUntilDay: number('settlePreviousMonthUntilDay'),
     monthlyHours: number('monthlyHours'),
@@ -341,6 +361,9 @@ function validateField(key: keyof OrganizationSettings, value: unknown, all: Org
     case 'vaAllowance':
     case 'vrAllowance':
       return n >= 0 ? null : 'Salário, VA e VR não podem ser negativos.';
+    case 'vaPayment':
+    case 'vrPayment':
+      return BENEFIT_PAYMENTS.includes(value as BenefitPayment) ? null : 'Escolha como o vale é pago: no cartão ou em dinheiro.';
     case 'competenceSource':
       return COMPETENCE_SOURCES.includes(value as CompetenceSource) ? null : 'Escolha quem define o mês de cada OS importada.';
     case 'settlePreviousMonthUntilDay':
@@ -435,6 +458,10 @@ const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
   baseSalary: 'Salário, VA e VR não podem ser negativos.',
   vaAllowance: 'Salário, VA e VR não podem ser negativos.',
   vrAllowance: 'Salário, VA e VR não podem ser negativos.',
+  vaDeductsFromCommission: 'Escolha se o VA abate da comissão.',
+  vrDeductsFromCommission: 'Escolha se o VR abate da comissão.',
+  vaPayment: 'Escolha como o vale é pago: no cartão ou em dinheiro.',
+  vrPayment: 'Escolha como o vale é pago: no cartão ou em dinheiro.',
   competenceSource: 'Escolha quem define o mês de cada OS importada.',
   settlePreviousMonthUntilDay: 'O dia do acerto do mês anterior deve ser um número inteiro entre 0 e 28.',
   monthlyHours: 'A jornada mensal deve ser maior que zero (até 744 horas).',

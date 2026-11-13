@@ -34,6 +34,16 @@ O valor por OS, hora ou dia é `commissionRate` (padrão da empresa) e `technici
 Na Folha, a janela do técnico explica a conta ("42 OS × R$ 30,00", "168,5 h × R$ 18,00") e avisa quando o mínimo ou o teto agiu.
 Teste: `scripts/test-payroll-rules.cjs`.
 
+## Vales (VA e VR) — abatem da comissão? como são pagos? (`vaDeductsFromCommission`, `vrDeductsFromCommission`, `vaPayment`, `vrPayment`, migração `0050`)
+
+Configurações → Pagamento, um painel para o VR e outro para o VA. Os padrões mantêm a regra de antes (abatem e vão no cartão).
+
+- **Abate da comissão** (só aparece no modo "Sobre o excedente", o único que abate vales): ligado, o vale conta como fixo e a comissão só começa depois dele (`produção × % − salário − vales que abatem`). Desligado, ele sai da conta da comissão. Cada vale tem a sua chave (VR pode não abater e VA abater). Regra pura em `fixedCosts(..., { vrDeducts, vaDeducts })` e `calculateCommissionValue` (`lib/payroll-rules.ts`); o servidor (`lib/payroll-utils.ts`) e a Folha da tela usam a mesma.
+- **Como é pago** — `card` (no cartão) ou `cash` (em dinheiro, à parte): só muda o texto (título "Cartões" / "Dinheiro à parte" / "Vales (cartão e dinheiro)", PDF e tela do técnico, que recebe só estas duas chaves); o valor em conta e o custo total da folha são os mesmos. Textos em `benefitsTitle`, `benefitsExplanation` e `benefitPaidPhrase`.
+- Quando a produção fica abaixo do salário não há comissão e o técnico recebe o salário menos os adiantamentos (2.047 − 1.500 = 547): é o comportamento do modo "Sobre o excedente", não uma opção.
+- Folha **já aberta ou fechada** guarda os valores calculados: depois de mudar a regra, "Recalcular" refaz um rascunho; folha fechada não muda.
+- Testes: `scripts/test-payroll-rules.cjs` (regras puras) e `scripts/test-benefit-rules-flow.cjs` (a folha que o servidor calcula, empresa `zz-teste-vales`).
+
 ## Mês das OS (`competenceSource` e `settlePreviousMonthUntilDay`, migração `0049`)
 
 Configurações → Pagamento → "Mês das OS". É o começo do **calendário de pagamento** de cada empresa (regras puras em `lib/pay-calendar.ts`, teste `scripts/test-pay-calendar.cjs`; fluxo da importação em `scripts/test-pay-calendar-flow.cjs`). Os padrões mantêm o comportamento anterior.
@@ -44,7 +54,7 @@ Configurações → Pagamento → "Mês das OS". É o começo do **calendário d
   - Nesse modo, a OS de um técnico cuja **folha do mês já está fechada** é recusada ("A folha de 10/2026 deste técnico já está fechada"), porque a folha fechada não é recalculada: a janela avisa antes e oferece "Importar também as OS de folha fechada" (`allow_closed_payroll`). No modo `batch` essa checagem não existe (comportamento de antes).
 - **`settlePreviousMonthUntilDay`** (0 a 28, padrão 0) — até esse dia do mês, Serviços e Folha abrem no mês anterior (quem acerta outubro até 5 de novembro usa 5). 0 = sempre o mês atual.
 
-Ainda **não** existe: dias de corte livres (mensal, `[10, 20]`, semanal), dia de fechamento do mês diferente do último dia, esconder Q1/Q2 nas telas de quem paga por mês e o VA/VR pago em dinheiro à parte. Estão planejados como as próximas fases do calendário.
+Ainda **não** existe: dias de corte livres (mensal, `[10, 20]`, semanal), dia de fechamento do mês diferente do último dia e esconder Q1/Q2 nas telas de quem paga por mês. Estão planejados como as próximas fases do calendário.
 
 ## Onde fica
 
@@ -72,6 +82,7 @@ Ainda **não** existe: dias de corte livres (mensal, `[10, 20]`, semanal), dia d
 | Campo | Padrão de organização nova | Onde é usado |
 |---|---|---|
 | Comissão (percentual ou valor por OS/hora/dia), mínimo e teto, salário base, VA, VR | 25%, R$ 0 (valor), R$ 0, R$ 0, R$ 0, R$ 0 | Folha (servidor e tela), Faturamento, cadastro de técnico (valor inicial e campo vazio). Vale o do técnico quando > 0 (`valueOrDefault`). |
+| Vale abate da comissão / como é pago (VA e VR) | Abate, no cartão | Cálculo da comissão no modo "Sobre o excedente" e textos da folha, do PDF e do técnico — ver "Vales". |
 | Quem define o mês da OS importada | Mês do lote | Importação de OS (`/api/services/import`) — ver "Mês das OS". |
 | Acerto do mês anterior até o dia | 0 (desligado) | Mês com que Serviços e Folha abrem. |
 | Jornada mensal | 220 h | Hora extra da folha, banco de horas, painel do técnico, `{meta_mes}` do WhatsApp. |

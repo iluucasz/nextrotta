@@ -4,8 +4,8 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Panel } from '@/components/management-ui';
 import { Button } from '@/components/ui/button';
 import { newTier, useSettingsForm } from '@/components/settings/form';
-import { Choice, NumberField, SettingsPage } from '@/components/settings/kit';
-import type { CommissionMode } from '@/lib/organization-settings';
+import { Choice, NumberField, SettingsPage, Toggle } from '@/components/settings/kit';
+import type { BenefitPayment, CommissionMode } from '@/lib/organization-settings';
 import type { CompetenceSource } from '@/lib/pay-calendar';
 
 const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: string }> = [
@@ -18,7 +18,18 @@ const COMMISSION_OPTIONS: Array<{ value: CommissionMode; title: string; text: st
 ];
 
 const COMMISSION_HELP =
-  'Sobre o excedente: a comissão é o que a produção passa do fixo (% das OS − salário − vales). Abaixo disso, não há comissão.\nPercentual da produção: a comissão é o % do valor das OS, somada ao salário. Os vales não são abatidos.\nValor fixo por OS: cada serviço do mês vale um valor, não importa o preço da OS (42 OS × R$ 30 = R$ 1.260).\nValor por hora: as horas trabalhadas no mês (escala e Porto) vezes o valor da hora.\nDiária: os dias com horas trabalhadas no mês vezes o valor do dia.\nSem comissão: o técnico recebe só salário, horas extras e prêmio.';
+  'Sobre o excedente: a comissão é o que a produção passa do fixo (% das OS − salário − vales que abatem). Abaixo disso, não há comissão.\nPercentual da produção: a comissão é o % do valor das OS, somada ao salário. Os vales não são abatidos.\nValor fixo por OS: cada serviço do mês vale um valor, não importa o preço da OS (42 OS × R$ 30 = R$ 1.260).\nValor por hora: as horas trabalhadas no mês (escala e Porto) vezes o valor da hora.\nDiária: os dias com horas trabalhadas no mês vezes o valor do dia.\nSem comissão: o técnico recebe só salário, horas extras e prêmio.';
+
+const BENEFIT_PAYMENT_OPTIONS: Array<{ value: BenefitPayment; title: string; text: string }> = [
+  { value: 'card', title: 'No cartão', text: 'Fora do valor em conta' },
+  { value: 'cash', title: 'Em dinheiro', text: 'À parte, fora do valor em conta' },
+];
+
+const BENEFIT_PAYMENT_HELP =
+  'Como o vale chega ao técnico. Só muda o texto da folha, do PDF e da tela do técnico: o custo total da folha é o mesmo.';
+
+const BENEFIT_DEDUCT_HELP =
+  'Só vale no modo "Sobre o excedente". Ligado: o vale conta como fixo e a comissão só começa depois dele (produção − salário − vales). Desligado: o vale não entra na conta da comissão.';
 
 const COMPETENCE_OPTIONS: Array<{ value: CompetenceSource; title: string; text: string }> = [
   { value: 'batch', title: 'Mês do lote', text: 'Você escolhe o mês ao importar' },
@@ -80,6 +91,25 @@ export default function PagamentoPage() {
           </div>
         ) : null}
       </Panel>
+
+      <div className="st-grid-two">
+        <Panel title="Vale-refeição (VR)" help={BENEFIT_PAYMENT_HELP}>
+          <Choice label="Como o VR é pago" value={form.vrPayment} options={BENEFIT_PAYMENT_OPTIONS} onChange={(value) => update('vrPayment', value)} />
+          {mode === 'excess' ? (
+            <div className="st-toggles st-divider">
+              <Toggle title="Abate da comissão" help={BENEFIT_DEDUCT_HELP} checked={form.vrDeductsFromCommission} onChange={(value) => update('vrDeductsFromCommission', value)} />
+            </div>
+          ) : null}
+        </Panel>
+        <Panel title="Vale-alimentação (VA)" help={BENEFIT_PAYMENT_HELP}>
+          <Choice label="Como o VA é pago" value={form.vaPayment} options={BENEFIT_PAYMENT_OPTIONS} onChange={(value) => update('vaPayment', value)} />
+          {mode === 'excess' ? (
+            <div className="st-toggles st-divider">
+              <Toggle title="Abate da comissão" help={BENEFIT_DEDUCT_HELP} checked={form.vaDeductsFromCommission} onChange={(value) => update('vaDeductsFromCommission', value)} />
+            </div>
+          ) : null}
+        </Panel>
+      </div>
 
       <Panel title="Mês das OS" help={COMPETENCE_HELP}>
         <Choice label="Quem define o mês de cada OS importada" value={form.competenceSource} options={COMPETENCE_OPTIONS} onChange={(value) => update('competenceSource', value)} />

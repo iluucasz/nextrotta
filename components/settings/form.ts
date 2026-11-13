@@ -8,6 +8,7 @@ import {
   normalizeOrganizationSettings,
   overtimeMultiplierFromPercent,
   overtimePercentFromMultiplier,
+  type BenefitPayment,
   type CommissionMode,
   type OrganizationSettings,
 } from '@/lib/organization-settings';
@@ -38,13 +39,15 @@ type NumericKey =
   | 'financeDueSoonDays';
 
 type TimeKey = 'defaultShiftStart' | 'defaultShiftEnd' | 'portoHoursImportTime' | 'portoScheduleImportTime';
-type BooleanKey = 'chargeCancelledServicePlanned' | 'portoUseLaudoConclusion' | 'portoWarningEnabled' | 'portoRecordCancelledDays';
+type BooleanKey = 'vaDeductsFromCommission' | 'vrDeductsFromCommission' | 'chargeCancelledServicePlanned' | 'portoUseLaudoConclusion' | 'portoWarningEnabled' | 'portoRecordCancelledDays';
 
 export type FormState = Record<NumericKey, string> &
   Record<TimeKey, string> &
   Record<BooleanKey, boolean> & {
     commissionMode: CommissionMode;
     competenceSource: CompetenceSource;
+    vaPayment: BenefitPayment;
+    vrPayment: BenefitPayment;
     portoWarningText: string;
     portoAlertPhone: string;
     tiers: Array<{ id: number; minServices: string; amount: string }>;
@@ -76,6 +79,10 @@ export function toForm(settings: OrganizationSettings): FormState {
     baseSalary: formatNumber(settings.baseSalary),
     vaAllowance: formatNumber(settings.vaAllowance),
     vrAllowance: formatNumber(settings.vrAllowance),
+    vaDeductsFromCommission: settings.vaDeductsFromCommission,
+    vrDeductsFromCommission: settings.vrDeductsFromCommission,
+    vaPayment: settings.vaPayment,
+    vrPayment: settings.vrPayment,
     competenceSource: settings.competenceSource,
     settlePreviousMonthUntilDay: String(settings.settlePreviousMonthUntilDay),
     monthlyHours: formatNumber(settings.monthlyHours),
@@ -118,6 +125,10 @@ export function toPayload(form: FormState, group: SettingsGroup) {
         baseSalary: number('baseSalary'),
         vaAllowance: number('vaAllowance'),
         vrAllowance: number('vrAllowance'),
+        vaDeductsFromCommission: form.vaDeductsFromCommission,
+        vrDeductsFromCommission: form.vrDeductsFromCommission,
+        vaPayment: form.vaPayment,
+        vrPayment: form.vrPayment,
         competenceSource: form.competenceSource,
         settlePreviousMonthUntilDay: number('settlePreviousMonthUntilDay'),
         serviceAwardTiers: form.tiers.map((tier) => ({ minServices: parseNumber(tier.minServices), amount: parseNumber(tier.amount) })),

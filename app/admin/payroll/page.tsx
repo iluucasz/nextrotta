@@ -31,10 +31,13 @@ import type { CommissionMode } from '@/lib/organization-settings';
 import { calculateServiceAward, valueOrDefault } from '@/lib/organization-settings';
 import {
   awardProgress,
+  benefitsExplanation,
+  benefitsTitle,
   calculateCashNet as sumCashNet,
   calculateCommissionValue,
   commissionBase,
   type CommissionInput,
+  deductionOf,
   rateKindOf,
   fixedCosts,
   type PayrollDetails,
@@ -776,6 +779,8 @@ export default function PayrollPage() {
           { label: 'Vale-refeição (VR)', value: roundMoney(item.vr_deduction) },
           { label: 'Vale-alimentação (VA)', value: roundMoney(item.va_deduction) },
         ],
+        cardsTitle: benefitsTitle(organizationSettings) === 'Cartões' ? 'Cartões (pagos à parte)' : `${benefitsTitle(organizationSettings)} (fora da conta)`,
+        cardsTotalLabel: benefitsTitle(organizationSettings) === 'Cartões' ? 'Total nos cartões' : 'Total dos vales',
         production: {
           serviceCount: row.serviceCount,
           total: roundMoney(item.total_services_value),
@@ -808,6 +813,7 @@ export default function PayrollPage() {
     rate: details?.commissionRate ?? selectedRow?.commissionRate ?? organizationSettings.commissionRate,
     minimum: organizationSettings.commissionMinimum,
     maximum: organizationSettings.commissionMaximum,
+    ...deductionOf(organizationSettings),
   };
   const isClosed = draftStatus === 'closed';
 
@@ -973,7 +979,7 @@ export default function PayrollPage() {
   const draftPayrollNet = draft ? calculatePayrollNet(draft) : 0;
   const draftProfit = draft ? roundMoney(draft.total_services_value - draftPayrollNet) : 0;
   const draftBase = draft ? commissionBase(draft.total_services_value, currentCommissionPercentage) : 0;
-  const draftFixed = draft ? fixedCosts(draft.base_salary, draft.vr_deduction, draft.va_deduction) : 0;
+  const draftFixed = draft ? fixedCosts(draft.base_salary, draft.vr_deduction, draft.va_deduction, deductionOf(organizationSettings)) : 0;
   const earningsTotal = draft ? roundMoney(draft.base_salary + draft.commission_value + draft.extra_hours_value + draft.extraordinary_award_value) : 0;
   const deductionsTotal = draft ? roundMoney(draft.discounts_total + draft.advances_total) : 0;
   const cardsTotal = draft ? calculateBenefitTotal(draft) : 0;
@@ -1028,7 +1034,7 @@ export default function PayrollPage() {
   // for this technician, or when the admin asked to add it.
   const showVr = Boolean(draft?.vr_deduction) || (selectedRow?.vrAllowance ?? 0) > 0 || unlocked.has('vr_deduction');
   const showVa = Boolean(draft?.va_deduction) || (selectedRow?.vaAllowance ?? 0) > 0 || unlocked.has('va_deduction');
-  const cardsLabel = draft?.vr_deduction && draft?.va_deduction ? 'Cartões (VR e VA)' : draft?.vr_deduction ? 'Vale-refeição (VR)' : 'Vale-alimentação (VA)';
+  const cardsLabel = draft?.vr_deduction && draft?.va_deduction ? `${benefitsTitle(organizationSettings)} (VR e VA)` : draft?.vr_deduction ? 'Vale-refeição (VR)' : 'Vale-alimentação (VA)';
   const awardTiers = organizationSettings.serviceAwardTiers;
   const showCommission = commissionMode !== 'none' || Boolean(draft?.commission_value);
   const showAward = awardTiers.length > 0 || Boolean(draft?.extraordinary_award_value);
@@ -1049,7 +1055,11 @@ export default function PayrollPage() {
       const days = commissionContext.daysWorked ?? 0;
       commissionHint = `${days} ${days === 1 ? 'dia' : 'dias'} × ${money(rate)}${rate > 0 ? '' : '\nSem valor por dia: defina em Configurações ou no cadastro do técnico.'}`;
     } else {
-      const fixedParts = [draft.base_salary > 0 && 'salário', draft.vr_deduction > 0 && 'VR', draft.va_deduction > 0 && 'VA'].filter(Boolean);
+      const fixedParts = [
+        draft.base_salary > 0 && 'salário',
+        draft.vr_deduction > 0 && organizationSettings.vrDeductsFromCommission && 'VR',
+        draft.va_deduction > 0 && organizationSettings.vaDeductsFromCommission && 'VA',
+      ].filter(Boolean);
       commissionHint = `${currentCommissionPercentage}% de ${money(draft.total_services_value)} = ${money(draftBase)}
 ${fixedParts.length ? `menos o fixo de ${money(draftFixed)} (${fixedParts.join(' + ')})` : 'sem salário nem vales para abater'}`;
       if (draftFixed > 0 && draftBase <= draftFixed) commissionHint += `
@@ -1395,14 +1405,7 @@ Só informativo: não entra no valor em conta.`
                       </div>
                     </ModalSection>
 
-                    <ModalSection
-                      title="Cartões"
-                      help={
-                        commissionMode === 'excess'
-                          ? 'Pagos no cartão, fora do valor em conta. Contam como fixo: a comissão só começa depois deles.'
-                          : 'Pagos no cartão, fora do valor em conta.'
-                      }
-                    >
+                    <ModalSection title={benefitsTitle(organizationSettings)} help={benefitsExplanation(organizationSettings, commissionMode === 'excess')}>
                       {showVr || showVa ? (
                         <div className="divide-y divide-border">
                           {showVr ? <AmountRow label="Vale-refeição (VR)" {...lineProps('vr_deduction')} /> : null}

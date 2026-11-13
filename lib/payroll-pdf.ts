@@ -18,6 +18,9 @@ export type PayrollPdfData = {
   earnings: PayrollPdfLine[];
   deductions: PayrollPdfLine[];
   cards: PayrollPdfLine[];
+  /** Heading and total label of the vouchers block (cards by default; "Dinheiro à parte" when paid in cash). */
+  cardsTitle?: string;
+  cardsTotalLabel?: string;
   production: { serviceCount: number; total: number; fortnights: Array<{ label: string; count: number; value: number }> };
   hourBank: number;
 };
@@ -143,9 +146,9 @@ export async function downloadPayrollPdf(data: PayrollPdfData) {
   );
   if (cards.length) {
     section(
-      'Cartões (pagos à parte)',
+      data.cardsTitle ?? 'Cartões (pagos à parte)',
       cards.map((line) => ({ label: line.label, value: money(line.value) })),
-      cards.length > 1 ? { label: 'Total nos cartões', value: money(sum(data.cards)) } : undefined,
+      cards.length > 1 ? { label: data.cardsTotalLabel ?? 'Total nos cartões', value: money(sum(data.cards)) } : undefined,
     );
   }
 

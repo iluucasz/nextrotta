@@ -1,7 +1,7 @@
 // The folha's arithmetic, in one place: the server (preview, calculate) and the Folha screen use the same
 // functions, so what the admin sees while editing is what the system would have calculated.
 // Dependency-free on purpose (also read by the tests). Relative imports only.
-import type { CommissionMode, ServiceAwardTier } from './organization-settings';
+import type { BenefitPayment, CommissionMode, OrganizationSettings, ServiceAwardTier } from './organization-settings';
 
 export function roundCents(value: number | string | null | undefined): number {
   const numeric = Number(value ?? 0);
@@ -15,9 +15,52 @@ export function commissionBase(totalServices: number, percentage: number): numbe
   return roundCents(Math.max(0, totalServices) * (percentage / 100));
 }
 
-/** What the company must pay before commission starts to exist (salary + the two cards). */
-export function fixedCosts(baseSalary: number, vrAllowance: number, vaAllowance: number): number {
-  return roundCents(roundCents(baseSalary) + roundCents(vrAllowance) + roundCents(vaAllowance));
+/** Which vouchers are taken off the commission (both by default: the original rule). */
+export interface BenefitDeduction {
+  vrDeducts?: boolean;
+  vaDeducts?: boolean;
+}
+
+/**
+ * What the company must pay before commission starts to exist: the salary plus the vouchers that deduct.
+ * A voucher that does not deduct (paid apart, outside the production) is not part of it.
+ */
+export function fixedCosts(baseSalary: number, vrAllowance: number, vaAllowance: number, deduction: BenefitDeduction = {}): number {
+  const vr = deduction.vrDeducts === false ? 0 : roundCents(vrAllowance);
+  const va = deduction.vaDeducts === false ? 0 : roundCents(vaAllowance);
+  return roundCents(roundCents(baseSalary) + vr + va);
+}
+
+/** The settings that decide how the vouchers are treated (a subset, so a technician's screen can use it too). */
+export type BenefitRules = Pick<OrganizationSettings, 'vaDeductsFromCommission' | 'vrDeductsFromCommission' | 'vaPayment' | 'vrPayment'>;
+
+export function deductionOf(rules: Pick<BenefitRules, 'vaDeductsFromCommission' | 'vrDeductsFromCommission'>): Required<BenefitDeduction> {
+  return { vaDeducts: rules.vaDeductsFromCommission, vrDeducts: rules.vrDeductsFromCommission };
+}
+
+/** Where a voucher is paid, in the words the screens use: "no cartão" or "em dinheiro". */
+export function benefitPaidPhrase(payment: BenefitPayment): string {
+  return payment === 'cash' ? 'em dinheiro' : 'no cartão';
+}
+
+/**
+ * The heading of the vouchers block of the folha: "Cartões" when both are on a card, "Dinheiro à parte" when both are
+ * paid in cash, "Vales (cartão e dinheiro)" when each is paid its own way.
+ */
+export function benefitsTitle(rules: Pick<BenefitRules, 'vaPayment' | 'vrPayment'>): string {
+  if (rules.vaPayment === rules.vrPayment) return rules.vrPayment === 'cash' ? 'Dinheiro à parte' : 'Cartões';
+  return 'Vales (cartão e dinheiro)';
+}
+
+/** The sentence under that heading, saying how the vouchers relate to the account payment and to the commission. */
+export function benefitsExplanation(rules: Pick<BenefitRules, 'vaPayment' | 'vrPayment' | 'vaDeductsFromCommission' | 'vrDeductsFromCommission'>, excessMode: boolean): string {
+  const where = rules.vaPayment === rules.vrPayment ? (rules.vrPayment === 'cash' ? 'Pagos em dinheiro' : 'Pagos no cartão') : 'Pagos no cartão ou em dinheiro, cada um do seu jeito';
+  const base = `${where}, fora do valor em conta.`;
+  if (!excessMode) return base;
+  const deducting = [rules.vrDeductsFromCommission && 'VR', rules.vaDeductsFromCommission && 'VA'].filter(Boolean);
+  return deducting.length
+    ? `${base} ${deducting.join(' e ')} ${deducting.length > 1 ? 'contam' : 'conta'} como fixo: a comissão só começa depois ${deducting.length > 1 ? 'deles' : 'dele'}.`
+    : `${base} Não abatem a comissão.`;
 }
 
 /** What the amount stored next to a commission mode means: a percentage, or R$ per service, hour or day. */
@@ -47,7 +90,7 @@ export function boundCommission(value: number, minimum = 0, maximum = 0): number
   return roundCents(bounded);
 }
 
-export interface CommissionInput {
+export interface CommissionInput extends BenefitDeduction {
   mode: CommissionMode;
   /** Total value of the month's OS, in R$ (the percentage modes). */
   totalServices: number;
@@ -98,7 +141,7 @@ export function calculateCommissionValue(input: CommissionInput): number {
       value = roundCents(Math.max(0, input.daysWorked ?? 0) * rate);
       break;
     default:
-      value = roundCents(Math.max(0, commissionBase(input.totalServices, input.percentage) - fixedCosts(input.baseSalary, input.vrAllowance, input.vaAllowance)));
+      value = roundCents(Math.max(0, commissionBase(input.totalServices, input.percentage) - fixedCosts(input.baseSalary, input.vrAllowance, input.vaAllowance, input)));
   }
 
   return boundCommission(value, input.minimum, input.maximum);

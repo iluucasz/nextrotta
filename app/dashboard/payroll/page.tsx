@@ -11,6 +11,8 @@ import { PageHeader } from '@/components/page-header';
 import { formatCurrency, formatHours, monthKeyFromDate, normalizeCompetenceMonth, resolveCompetenceMonth } from '@/lib/formatters';
 import type { Payroll, Service, WorkHours } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
+import { useOrganizationSettings } from '@/hooks/use-organization-settings';
+import { benefitPaidPhrase } from '@/lib/payroll-rules';
 import { useTechnicianVisibility } from '@/hooks/use-technician-visibility';
 import { resolveAllowedMonth } from '@/lib/technician-visibility';
 
@@ -43,6 +45,8 @@ function getPayrollTotal(payroll: Payroll | null | undefined) {
 
 export default function TechnicianPayrollPage() {
   const { user, loading } = useAppSession();
+  // How the company pays the vouchers (card or cash): the technician's settings carry only that, never the amounts of the rules.
+  const { settings: orgSettings } = useOrganizationSettings({ enabled: Boolean(user) });
   const { visibility, loading: visibilityLoading, blocked } = useTechnicianVisibility({ page: 'payroll' });
   const allowedMonth = resolveAllowedMonth(visibility.payroll.month);
   const [payroll, setPayroll] = useState<Payroll[]>([]);
@@ -124,6 +128,10 @@ export default function TechnicianPayrollPage() {
   const benefitsTotal = getBenefitsTotal(currentPayroll);
   // Only the cards the company pays: VR, VA, both or none.
   const benefitsLabel = vaTotal > 0 && vrTotal > 0 ? 'VA/VR' : vrTotal > 0 ? 'VR' : 'VA';
+  const vaPaid = benefitPaidPhrase(orgSettings.vaPayment);
+  const vrPaid = benefitPaidPhrase(orgSettings.vrPayment);
+  // Where the vouchers shown are paid: one way when they agree (or only one is paid), "no cartão ou em dinheiro" otherwise.
+  const benefitsPaid = vaTotal > 0 && vrTotal > 0 && vaPaid !== vrPaid ? 'no cartão ou em dinheiro' : vrTotal > 0 ? vrPaid : vaPaid;
   const cashNetTotal = moneyValue(currentPayroll?.net_total);
   const payrollTotal = getPayrollTotal(currentPayroll);
 
@@ -172,8 +180,8 @@ export default function TechnicianPayrollPage() {
             <MetricCard title="Horas realizadas" value={formatHours(workedHoursTotal)} hint={`Banco de horas: ${formatHours(hourBankBalance)}`} icon={Clock3} tone={hourBankBalance < 0 ? 'danger' : 'warning'} />
             <MetricCard title="OS realizadas" value={servicesCount} hint="Quantidade de OS na competência" icon={WalletCards} />
             <MetricCard title="Salário base" value={formatCurrency(baseSalary)} hint={competenceLabel} icon={WalletCards} />
-            {vaTotal > 0 ? <MetricCard title="Vale alimentação" value={formatCurrency(vaTotal)} hint="Pago no cartão" icon={CreditCard} /> : null}
-            {vrTotal > 0 ? <MetricCard title="Vale refeição" value={formatCurrency(vrTotal)} hint="Pago no cartão" icon={CreditCard} /> : null}
+            {vaTotal > 0 ? <MetricCard title="Vale alimentação" value={formatCurrency(vaTotal)} hint={`Pago ${vaPaid}`} icon={CreditCard} /> : null}
+            {vrTotal > 0 ? <MetricCard title="Vale refeição" value={formatCurrency(vrTotal)} hint={`Pago ${vrPaid}`} icon={CreditCard} /> : null}
             {vaTotal > 0 && vrTotal > 0 ? <MetricCard title="Total VA/VR" value={formatCurrency(benefitsTotal)} hint="Soma dos benefícios" icon={CreditCard} /> : null}
           </div>
 
@@ -188,7 +196,7 @@ export default function TechnicianPayrollPage() {
                   </div>
                   {benefitsTotal > 0 ? (
                     <div className={summaryCardClass}>
-                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{benefitsLabel} no cartão</div>
+                      <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{benefitsLabel} {benefitsPaid}</div>
                       <div className="mt-1 text-2xl font-semibold tabular-nums text-foreground">{formatCurrency(benefitsTotal)}</div>
                       <div className="mt-1 text-xs text-muted-foreground">Benefícios pagos fora da conta</div>
                     </div>
@@ -228,7 +236,7 @@ export default function TechnicianPayrollPage() {
                       </div>
                       {benefitsTotal > 0 ? (
                         <div className={detailRowClass}>
-                          <span className="text-sm text-muted-foreground">{benefitsLabel} no cartão</span>
+                          <span className="text-sm text-muted-foreground">{benefitsLabel} {benefitsPaid}</span>
                           <span className={detailValueClass}>{formatCurrency(benefitsTotal)}</span>
                         </div>
                       ) : null}
@@ -238,7 +246,7 @@ export default function TechnicianPayrollPage() {
                       </div>
                     </div>
                     <p className="mt-4 text-xs leading-relaxed text-muted-foreground">
-                      VA e VR aparecem separados no topo e entram no total da folha, mas são pagos no cartão e não reduzem o valor em conta.
+                      VA e VR aparecem separados no topo e entram no total da folha, mas são pagos {benefitsPaid} e não reduzem o valor em conta.
                     </p>
                   </section>
                 </div>

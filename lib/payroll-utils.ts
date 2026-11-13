@@ -1,7 +1,7 @@
 import { sql } from './db';
 import { calculateServiceAward, valueOrDefault, type OrganizationSettings } from './organization-settings';
 import { getOrganizationSettings } from './organization-settings-store';
-import { calculateCashNet, calculateCommissionValue, calculateOvertime, type PayrollDetails } from './payroll-rules';
+import { calculateCashNet, calculateCommissionValue, calculateOvertime, deductionOf, type PayrollDetails } from './payroll-rules';
 
 export type { PayrollDetails };
 
@@ -357,6 +357,7 @@ export async function calculatePayroll(
     baseSalary: allowances.base_salary,
     vrAllowance: allowances.vr_allowance,
     vaAllowance: allowances.va_allowance,
+    ...deductionOf(settings),
     serviceCount,
     totalHours,
     daysWorked,

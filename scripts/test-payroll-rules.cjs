@@ -140,3 +140,56 @@ test('settings: the new modes and amounts are accepted, bad ones are refused wit
   assert.equal(settings.parseOrganizationSettingsInput({ ...settings.DEFAULT_ORGANIZATION_SETTINGS, commissionMode: 'bogus' }).error !== undefined, true);
   assert.equal(settings.normalizeOrganizationSettings({ commission_mode: 'per_hour', commission_rate: '18.00' }).commissionRate, 18);
 });
+
+// ---- vouchers (VA/VR) that do not deduct from the commission
+
+test('a voucher that does not deduct is left out of the fixed costs', () => {
+  assert.equal(rules.fixedCosts(2047, 500, 300), 2847);
+  assert.equal(rules.fixedCosts(2047, 500, 300, {}), 2847);
+  assert.equal(rules.fixedCosts(2047, 500, 300, { vrDeducts: false }), 2347);
+  assert.equal(rules.fixedCosts(2047, 500, 300, { vaDeducts: false }), 2547);
+  assert.equal(rules.fixedCosts(2047, 500, 300, { vrDeducts: false, vaDeducts: false }), 2047);
+});
+
+test('excess with VR paid apart: the commission is the production over the salary only', () => {
+  // A company paying 100% of the production: the technician takes the production, never less than the salary.
+  const emerson = { mode: 'excess', percentage: 100, baseSalary: 2047, vrAllowance: 500, vaAllowance: 0, vrDeducts: false };
+  assert.equal(rules.calculateCommissionValue({ ...emerson, totalServices: 3000 }), 953);
+  assert.equal(rules.calculateCommissionValue({ ...emerson, totalServices: 3000, vrDeducts: true }), 453, 'the same month with VR deducting');
+  assert.equal(rules.calculateCommissionValue({ ...emerson, totalServices: 1500 }), 0, 'below the salary: no commission, the salary stays');
+});
+
+test('the default keeps deducting both vouchers (the original rule)', () => {
+  assert.equal(rules.calculateCommissionValue({ ...base, mode: 'excess' }), 1281.47);
+  assert.equal(rules.calculateCommissionValue({ ...base, mode: 'excess', vrDeducts: false }), 1981.07);
+  assert.equal(rules.calculateCommissionValue({ ...base, mode: 'percentage', vrDeducts: false }), 5682.07, 'the other modes never deduct');
+});
+
+test('below the salary the technician still gets the salary minus the advances', () => {
+  const cash = rules.calculateCashNet({ baseSalary: 2047, commission: 0, extraHours: 0, award: 0, discounts: 0, advances: 1500 });
+  assert.equal(cash, 547);
+});
+
+test('the wording follows how each voucher is paid and what it deducts', () => {
+  assert.equal(rules.benefitPaidPhrase('card'), 'no cartão');
+  assert.equal(rules.benefitPaidPhrase('cash'), 'em dinheiro');
+  assert.equal(rules.benefitsTitle({ vaPayment: 'card', vrPayment: 'card' }), 'Cartões');
+  assert.equal(rules.benefitsTitle({ vaPayment: 'cash', vrPayment: 'cash' }), 'Dinheiro à parte');
+  assert.equal(rules.benefitsTitle({ vaPayment: 'card', vrPayment: 'cash' }), 'Vales (cartão e dinheiro)');
+  const all = { vaPayment: 'card', vrPayment: 'card', vaDeductsFromCommission: true, vrDeductsFromCommission: true };
+  assert.match(rules.benefitsExplanation(all, true), /Pagos no cartão.*VR e VA contam como fixo/);
+  assert.match(rules.benefitsExplanation({ ...all, vrPayment: 'cash', vrDeductsFromCommission: false }, true), /cada um do seu jeito.*VA conta como fixo/);
+  assert.match(rules.benefitsExplanation({ ...all, vrDeductsFromCommission: false, vaDeductsFromCommission: false }, true), /Não abatem a comissão/);
+  assert.equal(rules.benefitsExplanation(all, false), 'Pagos no cartão, fora do valor em conta.');
+});
+
+test('a new organization keeps the vouchers on a card and deducting', () => {
+  const d = settings.DEFAULT_ORGANIZATION_SETTINGS;
+  assert.deepEqual([d.vaDeductsFromCommission, d.vrDeductsFromCommission, d.vaPayment, d.vrPayment], [true, true, 'card', 'card']);
+  const legacy = settings.normalizeOrganizationSettings({ commission_mode: 'excess' });
+  assert.deepEqual([legacy.vrDeductsFromCommission, legacy.vrPayment], [true, 'card']);
+  const stored = settings.normalizeOrganizationSettings({ vr_deducts_from_commission: false, vr_payment: 'cash' });
+  assert.deepEqual([stored.vrDeductsFromCommission, stored.vrPayment, stored.vaPayment], [false, 'cash', 'card']);
+  assert.match(settings.parseOrganizationSettingsInput({ ...d, vrPayment: 'pix' }).error, /cartão ou em dinheiro/);
+  assert.equal(settings.pickTechnicianSettings({ ...d, vrPayment: 'cash' }).vrPayment, 'cash');
+});
