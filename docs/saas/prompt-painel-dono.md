@@ -98,7 +98,8 @@ Botão **Nova organização**.
 3. **Plano:** Essencial, Pro ou Sob medida; ciclo mensal ou anual; cupom/desconto opcional; cobrar implantação (sim/não, valor pré-preenchido pelo plano e editável). Mostra o resumo do valor da primeira cobrança.
 4. **Administrador:** nome e e-mail do admin da organização; opção de enviar convite por e-mail.
 5. **Recursos sob medida (opcional):** liberar recursos sob medida do catálogo.
-6. **Revisão:** resumo de tudo, com botão **Criar organização**.
+6. **Como a empresa paga os técnicos (opcional):** escolha entre **Quinzenal** (padrão) e **Mensal**, enviada como `payPreset` (`fortnightly` | `monthly`) em `POST /organizations`. É só o ponto de partida: o admin da empresa ajusta depois em Configurações → Pagamento. Sem explicação na tela; texto de apoio atrás de um "?".
+7. **Revisão:** resumo de tudo, com botão **Criar organização**.
 
 O assistente também pode ser aberto já preenchido a partir de um lead (seção 1.11).
 

@@ -10,7 +10,7 @@ Implementação: `lib/platform/organizations.ts` (regras), `lib/platform/route.t
 |---|---|---|
 | `GET /organizations` | `?status=active\|provisioning\|past_due\|suspended\|canceled&search=texto` | `{ organizations: [{ id, name, legalName, slug, status, email, city, state, createdAt, activatedAt, statusChangedAt, activeTechnicians, activeUsers, onboardingStatus, signupSource, admin: { name, email } }] }` |
 | `GET /organizations/slug?slug=x` | — | `{ slug, available, reason }` (verificação ao vivo do assistente) |
-| `POST /organizations` | `{ name, legalName?, document?, email?, phone?, city?, state?, slug, admin: { name, email } }` | `201 { organization }` com estado `provisioning` |
+| `POST /organizations` | `{ name, legalName?, document?, email?, phone?, city?, state?, slug, admin: { name, email }, payPreset? }` — `payPreset`: `"fortnightly"` (Q1/Q2, mês do lote; o padrão) ou `"monthly"` (sem quinzenas, mês da OS pela data do serviço). Só preenche as configurações de pagamento na etapa "Criar configurações padrão"; o admin da empresa muda depois. Outro valor dá 400 | `201 { organization }` com estado `provisioning` |
 | `GET /organizations/:id` | — | `{ organization, usage: { activeTechnicians, activeUsers, storageBytes, whatsappSentThisMonth, portoRunsThisMonth }, integrations: { porto, whatsapp }, settings, provisioning }` |
 | `PATCH /organizations/:id` | qualquer um de `name, legalName, document, email, phone, city, state` | `{ organization }` (o subdomínio nunca muda) |
 | `POST /organizations/:id/status` | `{ action: "suspend" \| "reactivate" \| "cancel", reason }` (motivo obrigatório para suspender/cancelar) | `{ organization }` |

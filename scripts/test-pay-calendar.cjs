@@ -149,3 +149,28 @@ test('a company keeps its cut day: new ones start at 15, a stored list is read a
   assert.match(settings.parseOrganizationSettingsInput({ ...base, periodCutDays: [10, 10] }).error, /dias de corte/);
   assert.deepEqual(settings.pickTechnicianSettings({ ...base, periodCutDays: [10, 20] }).periodCutDays, [10, 20]);
 });
+
+// ---- presets chosen when a company is created
+
+test('the monthly preset drops the fortnights and counts each OS in its own month; the fortnightly one is the old default', () => {
+  const presets = require('../lib/pay-presets.ts');
+  assert.deepEqual(presets.PAY_PRESETS, ['fortnightly', 'monthly']);
+  assert.equal(presets.isPayPreset('monthly'), true);
+  assert.equal(presets.isPayPreset('weekly'), false);
+  assert.equal(presets.isPayPreset(undefined), false);
+
+  const monthly = presets.applyPayPreset(settings.DEFAULT_ORGANIZATION_SETTINGS, 'monthly');
+  assert.deepEqual(monthly.periodCutDays, []);
+  assert.equal(monthly.competenceSource, 'service_date');
+  assert.equal(calendar.hasPeriods(monthly.periodCutDays), false);
+  assert.equal(monthly.commissionMode, settings.DEFAULT_ORGANIZATION_SETTINGS.commissionMode, 'the rest is untouched');
+
+  // Applying "fortnightly" to a fresh company changes nothing: it is what every company already gets.
+  const fortnightly = presets.applyPayPreset(settings.DEFAULT_ORGANIZATION_SETTINGS, 'fortnightly');
+  assert.deepEqual(fortnightly, settings.DEFAULT_ORGANIZATION_SETTINGS);
+
+  // Whatever a preset writes is valid for the settings screen too.
+  for (const preset of presets.PAY_PRESETS) {
+    assert.ok(settings.parseOrganizationSettingsInput(presets.applyPayPreset(settings.DEFAULT_ORGANIZATION_SETTINGS, preset)).settings, preset);
+  }
+});

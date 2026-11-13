@@ -7,7 +7,8 @@ import { cancelBilling } from '../billing/billing';
 import { checkLimit } from '../billing/entitlements';
 import { sql } from '../db';
 import { mercadoPagoMissingConfig } from '../mercadopago/config';
-import { getOrganizationSettings } from '../organization-settings-store';
+import { getOrganizationSettings, saveOrganizationSettings } from '../organization-settings-store';
+import { applyPayPreset, isPayPreset } from '../pay-presets';
 import { calculateSubscriptionValue, type BillingCycle } from '../plans';
 import { getAccessById } from '../organization-access';
 import { getRootDomain, isValidOrganizationSlug, resolveHost } from '../tenant-host';
@@ -263,6 +264,8 @@ export async function createOrganization(input: Record<string, unknown>, actor: 
   if (!name) throw new PlatformError('Informe o nome da empresa.');
   const subscription = input.subscription ? parseSubscriptionInput(input.subscription as Record<string, unknown>) : null;
   if (!adminName || !EMAIL_PATTERN.test(adminEmail)) throw new PlatformError('Informe nome e e-mail válidos do administrador.');
+  const payPreset = input.payPreset == null || input.payPreset === '' ? null : input.payPreset;
+  if (payPreset !== null && !isPayPreset(payPreset)) throw new PlatformError('Forma de pagamento inicial inválida. Use "fortnightly" ou "monthly".');
 
   const availability = await checkSlugAvailability(slug);
   if (!availability.available) throw new PlatformError(availability.reason ?? 'Subdomínio indisponível.', 409);
@@ -290,10 +293,10 @@ export async function createOrganization(input: Record<string, unknown>, actor: 
     const organization = created[0];
 
     await sql`
-      INSERT INTO organization_provisioning (organization_id, admin_name, admin_email, steps, subscription)
+      INSERT INTO organization_provisioning (organization_id, admin_name, admin_email, steps, subscription, pay_preset)
       VALUES (
         ${organization.id}, ${adminName}, ${adminEmail}, ${JSON.stringify(steps)}::jsonb,
-        ${subscription ? JSON.stringify(subscription) : null}::jsonb
+        ${subscription ? JSON.stringify(subscription) : null}::jsonb, ${payPreset}
       )
     `;
 
@@ -324,7 +327,20 @@ export async function getProvisioning(organizationId: string) {
   return (rows[0] as { steps: ProvisioningStep[]; startedAt: string; finishedAt: string | null } | undefined) ?? null;
 }
 
-type StepOutcome = { status: 'done' | 'skipped'; note?: string };
+/**
+ * Creates the organization's settings row with the defaults and then applies the pay preset chosen at
+ * creation. The preset is applied only when this call creates the row, so repeating the provisioning
+ * step after a later failure never overwrites what the admin has already changed. Returns the preset
+ * that was applied, or null.
+ */
+export async function createInitialSettings(organizationId: string, preset: unknown, updatedBy: string) {
+  const created = await sql`INSERT INTO organization_settings (organization_id) VALUES (${organizationId}) ON CONFLICT DO NOTHING RETURNING organization_id`;
+  if (!created[0] || !isPayPreset(preset)) return null;
+  await saveOrganizationSettings(organizationId, applyPayPreset(await getOrganizationSettings(organizationId), preset), updatedBy);
+  return preset;
+}
+
+type StepOutcome ={ status: 'done' | 'skipped'; note?: string };
 
 /**
  * Runs the pending steps in order, persisting each step's state as it goes so the progress screen
@@ -340,7 +356,7 @@ export async function runProvisioning(organizationId: string, actor: Actor) {
     SET updated_at = NOW()
     WHERE organization_id = ${organizationId}
       AND (NOT steps @> '[{"status": "running"}]'::jsonb OR updated_at < NOW() - INTERVAL '2 minutes')
-    RETURNING admin_name, admin_email, steps, subscription
+    RETURNING admin_name, admin_email, steps, subscription, pay_preset
   `;
   if (!claimed[0]) {
     const existing = await getProvisioning(organizationId);
@@ -369,8 +385,8 @@ export async function runProvisioning(organizationId: string, actor: Actor) {
       return { status: 'done' };
     },
     settings: async () => {
-      await sql`INSERT INTO organization_settings (organization_id) VALUES (${organizationId}) ON CONFLICT DO NOTHING`;
-      return { status: 'done' };
+      const preset = await createInitialSettings(organizationId, run.pay_preset, actor.id);
+      return { status: 'done', note: preset ? `Pagamento ${preset === 'monthly' ? 'mensal' : 'quinzenal'} aplicado.` : undefined };
     },
     admin: async () => {
       const email = String(run.admin_email);

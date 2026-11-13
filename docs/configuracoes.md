@@ -44,6 +44,8 @@ Configurações → Pagamento → "Períodos de pagamento". A empresa lista os d
 
 O período de cada OS é guardado ao lançá-la (importação por lote, por data ou cadastro manual), por isso **mudar os dias de corte não reclassifica OS antigas**: elas mantêm o período em que entraram. A folha continua sendo calculada pelo mês, o período serve para separar e conferir. A coluna antiga `fortnight_split_day` continua na tabela, mas não é mais lida nem gravada. Testes: `scripts/test-pay-calendar.cjs` (regras) e `scripts/test-pay-calendar-flow.cjs` (empresa mensal, quinzenal e com dias específicos, na importação e no cadastro).
 
+**Ponto de partida na criação da empresa** (`lib/pay-presets.ts`, migração `0052`): o dono escolhe "Quinzenal" (`[15]`, mês do lote: o padrão de sempre) ou "Mensal" (`[]`, mês da OS pela data do serviço, acerto do mês anterior em 0) em `POST /api/platform/organizations` (`payPreset`). É aplicado uma única vez, na etapa "Criar configurações padrão" do provisionamento (repetir a etapa não sobrescreve o que o admin já mudou). Quem contrata pelo site começa quinzenal. Teste: `scripts/test-pay-preset-flow.cjs`.
+
 **Ainda não existe:** o "dia de fechamento do mês" (mês de 26 a 25). Horas, banco de horas e descontos são calculados pelo mês-calendário; mudar só o mês das OS deixaria a folha inconsistente. Precisa de um desenho que cubra horas e descontos.
 
 ## Vales (VA e VR) — abatem da comissão? como são pagos? (`vaDeductsFromCommission`, `vrDeductsFromCommission`, `vaPayment`, `vrPayment`, migração `0050`)
