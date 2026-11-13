@@ -13,7 +13,7 @@ import { ProgressGauge } from '@/components/progress-gauge';
 import { StatusBadge } from '@/components/status-badge';
 import { brasiliaDateKey, formatCurrency, formatDate, formatHours, formatNumber, formatTime, formatTimeRange, monthKeyFromDate, resolveCompetenceMonth } from '@/lib/formatters';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
-import { fortnightForDay } from '@/lib/organization-settings';
+import { hasPeriods, isPeriodKey, periodDescription, periodForDay, periodKeys, periodLabel, type PeriodKey } from '@/lib/pay-calendar';
 import type { Payroll, Schedule, Service, ServiceFortnight, WorkHours } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useTechnicianVisibility } from '@/hooks/use-technician-visibility';
@@ -39,11 +39,16 @@ const monthNames = [
 
 type PeriodFilter = 'monthly' | ServiceFortnight;
 
-const periodOptions: Array<{ value: PeriodFilter; label: string; description: string }> = [
-  { value: 'monthly', label: 'Mensal', description: 'Todas as OS do mês' },
-  { value: 'Q1', label: 'Q1', description: 'Primeira quinzena' },
-  { value: 'Q2', label: 'Q2', description: 'Segunda quinzena' },
-];
+/** The month, then each payment period the company has (none when it pays by the month). */
+function periodOptionsFor(cutDays: number[]): Array<{ value: PeriodFilter; label: string; description: string }> {
+  return [
+    { value: 'monthly', label: 'Mensal', description: 'Todas as OS do mês' },
+    ...periodKeys(cutDays).map((key) => ({ value: key, label: periodLabel(key, cutDays), description: periodDescription(key, cutDays) })),
+  ];
+}
+
+/** Tailwind needs the whole class name: one column for the month plus one for each period. */
+const COLUMNS_BY_COUNT: Record<number, string> = { 1: 'sm:grid-cols-1', 2: 'sm:grid-cols-2', 3: 'sm:grid-cols-3', 4: 'sm:grid-cols-4', 5: 'sm:grid-cols-5', 6: 'sm:grid-cols-6' };
 
 function moneyValue(value: number | string | null | undefined) {
   const numericValue = Number(value ?? 0);
@@ -69,13 +74,12 @@ function getDateDay(value: string | Date | null | undefined) {
   return Number.isNaN(date.getTime()) ? 0 : date.getDate();
 }
 
-/** The service's own fortnight, or by day of month with Configurações → "Último dia da Q1". */
-function getServicePeriod(service: Service, fortnightSplitDay: number): ServiceFortnight {
-  if (service.fortnight_period === 'Q1' || service.fortnight_period === 'Q2') {
-    return service.fortnight_period;
-  }
+/** The service's own period, or the one its day falls in by the company's cut days (null when it pays by the month). */
+function getServicePeriod(service: Service, cutDays: number[]): PeriodKey | null {
+  if (!hasPeriods(cutDays)) return null;
+  if (isPeriodKey(service.fortnight_period)) return service.fortnight_period;
 
-  return fortnightForDay(getDateDay(service.date_performed), fortnightSplitDay);
+  return periodForDay(getDateDay(service.date_performed), cutDays);
 }
 
 function getDateKey(value: string | Date | null | undefined) {
@@ -89,8 +93,8 @@ function getDateKey(value: string | Date | null | undefined) {
   return Number.isNaN(date.getTime()) ? '' : date.toISOString().slice(0, 10);
 }
 
-function getPeriodLabel(period: PeriodFilter) {
-  return periodOptions.find((item) => item.value === period)?.label ?? 'Mensal';
+function getPeriodLabel(period: PeriodFilter, cutDays: number[]) {
+  return periodOptionsFor(cutDays).find((item) => item.value === period)?.label ?? 'Mensal';
 }
 
 function formatCompetence(value: string) {
@@ -104,16 +108,19 @@ function formatCompetence(value: string) {
   return `${monthNames[monthNumber - 1]}/${year}`;
 }
 
-function matchesPeriod(dateValue: string | Date | null | undefined, period: PeriodFilter, fortnightSplitDay: number) {
+function matchesPeriod(dateValue: string | Date | null | undefined, period: PeriodFilter, cutDays: number[]) {
   if (period === 'monthly') return true;
-  return fortnightForDay(getDateDay(dateValue), fortnightSplitDay) === period;
+  return periodForDay(getDateDay(dateValue), cutDays) === period;
 }
 
 export default function TechnicianDashboard() {
   const { user, loading } = useAppSession();
   const { visibility, loading: visibilityLoading } = useTechnicianVisibility();
   const { settings } = useOrganizationSettings();
-  const splitDay = settings.fortnightSplitDay;
+  // The company's payment periods: none when it pays by the month, and then no Q1/Q2 shows on this screen.
+  const cutDays = settings.periodCutDays;
+  const periodOptions = periodOptionsFor(cutDays);
+  const showPeriods = hasPeriods(cutDays);
   const monthlyHoursTarget = settings.monthlyHours;
   // Configurações → Prêmio por produção: the tiers' OS counts are the technician's goals.
   const serviceGoals = settings.serviceAwardTiers.map((tier) => tier.minServices);
@@ -222,8 +229,8 @@ export default function TechnicianDashboard() {
   );
 
   const periodServices = useMemo(
-    () => monthlyServices.filter((service) => periodFilter === 'monthly' || getServicePeriod(service, splitDay) === periodFilter),
-    [monthlyServices, periodFilter, splitDay],
+    () => monthlyServices.filter((service) => periodFilter === 'monthly' || getServicePeriod(service, cutDays) === periodFilter),
+    [cutDays, monthlyServices, periodFilter],
   );
 
   const servicesByType = useMemo(() => {
@@ -248,12 +255,11 @@ export default function TechnicianDashboard() {
   );
 
   const periodWorkHours = useMemo(
-    () => monthlyWorkHours.filter((item) => matchesPeriod(item.date, periodFilter, splitDay)),
-    [monthlyWorkHours, periodFilter, splitDay],
+    () => monthlyWorkHours.filter((item) => matchesPeriod(item.date, periodFilter, cutDays)),
+    [cutDays, monthlyWorkHours, periodFilter],
   );
 
-  const q1ServicesCount = monthlyServices.filter((service) => getServicePeriod(service, splitDay) === 'Q1').length;
-  const q2ServicesCount = monthlyServices.filter((service) => getServicePeriod(service, splitDay) === 'Q2').length;
+  const periodServicesCount = (key: PeriodKey) => monthlyServices.filter((service) => getServicePeriod(service, cutDays) === key).length;
   const currentPayroll = payroll.find((item) => resolveCompetenceMonth(item.competence_month) === competenceMonth);
   const nextSchedule = useMemo(() => {
     const todayKey = brasiliaDateKey();
@@ -297,7 +303,7 @@ export default function TechnicianDashboard() {
         ? `Fez ${formatHours(monthlyHoursTotal)} • ${formatHours(monthlyHoursExtra)} acima da meta de ${formatHours(monthlyHoursTarget)}`
         : `Fez ${formatHours(monthlyHoursTotal)} • Meta mensal de ${formatHours(monthlyHoursTarget)} concluída`
     : 'Horas lançadas no recorte';
-  const selectedPeriodLabel = getPeriodLabel(periodFilter);
+  const selectedPeriodLabel = getPeriodLabel(periodFilter, cutDays);
   const nextScheduleTime = nextSchedule?.start_time ? formatTime(nextSchedule.start_time) : 'Sem escala';
   const nextScheduleHint = nextSchedule
     ? `${formatDate(nextSchedule.date)}${nextSchedule.end_time ? ` • ${formatTimeRange(nextSchedule.start_time, nextSchedule.end_time)}` : ''}`
@@ -362,9 +368,10 @@ export default function TechnicianDashboard() {
               </span>
             </label>
 
+            {showPeriods ? (
             <div>
               <span className="text-xs font-medium uppercase text-muted-foreground">Período</span>
-              <div className="mt-2 grid gap-2 sm:grid-cols-3">
+              <div className={`mt-2 grid gap-2 ${COLUMNS_BY_COUNT[periodOptions.length] ?? 'sm:grid-cols-3'}`}>
                 {periodOptions.map((option) => (
                   <button
                     key={option.value}
@@ -382,6 +389,7 @@ export default function TechnicianDashboard() {
                 ))}
               </div>
             </div>
+            ) : null}
           </div>
         </DataPanel>
       </div>
@@ -390,9 +398,9 @@ export default function TechnicianDashboard() {
         {serviceGoals.length ? (
         <DataPanel
           title="Metas por competência"
-          description={`${serviceGoals.map((goal, index) => `Meta ${index + 1}: ${goal} OS.`).join(' ')} Clique em um card para mudar o período.`}
+          description={`${serviceGoals.map((goal, index) => `Meta ${index + 1}: ${goal} OS.`).join(' ')}${showPeriods ? ' Clique em um card para mudar o período.' : ''}`}
         >
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className={`grid gap-3 ${COLUMNS_BY_COUNT[periodOptions.length] ?? 'sm:grid-cols-3'}`}>
             <ProgressGauge
               title="Mensal"
               value={monthlyServices.length}
@@ -402,24 +410,18 @@ export default function TechnicianDashboard() {
               celebrationLevel={serviceGoals.length > 1 && monthlyServices.length >= lastGoal ? 'mega' : monthlyServices.length >= firstGoal ? 'goal' : undefined}
               onClick={() => setPeriodFilter('monthly')}
             />
-            <ProgressGauge
-              title="Q1"
-              value={q1ServicesCount}
-              goals={serviceGoals}
-              subtitle="OS no Q1"
-              active={periodFilter === 'Q1'}
-              celebrationLevel={q1ServicesCount >= firstGoal ? 'goal' : undefined}
-              onClick={() => setPeriodFilter('Q1')}
-            />
-            <ProgressGauge
-              title="Q2"
-              value={q2ServicesCount}
-              goals={serviceGoals}
-              subtitle="OS no Q2"
-              active={periodFilter === 'Q2'}
-              celebrationLevel={q2ServicesCount >= firstGoal ? 'goal' : undefined}
-              onClick={() => setPeriodFilter('Q2')}
-            />
+            {periodKeys(cutDays).map((key) => (
+              <ProgressGauge
+                key={key}
+                title={periodLabel(key, cutDays)}
+                value={periodServicesCount(key)}
+                goals={serviceGoals}
+                subtitle={`OS no ${periodLabel(key, cutDays)}`}
+                active={periodFilter === key}
+                celebrationLevel={periodServicesCount(key) >= firstGoal ? 'goal' : undefined}
+                onClick={() => setPeriodFilter(key)}
+              />
+            ))}
           </div>
         </DataPanel>
         ) : null}
@@ -466,7 +468,7 @@ export default function TechnicianDashboard() {
                     <tr>
                       <th className="px-4 py-3 text-left font-medium">OS</th>
                       <th className="px-4 py-3 text-left font-medium">Tipo</th>
-                      <th className="px-4 py-3 text-left font-medium">Período</th>
+                      {showPeriods ? <th className="px-4 py-3 text-left font-medium">Período</th> : null}
                       <th className="px-4 py-3 text-left font-medium">Data</th>
                       <th className="px-4 py-3 text-left font-medium">Hora</th>
                     </tr>
@@ -476,9 +478,11 @@ export default function TechnicianDashboard() {
                       <tr key={service.id} className="border-t border-border">
                         <td className="px-4 py-3 font-medium">{service.order_code}</td>
                         <td className="px-4 py-3 text-muted-foreground">{service.service_type}</td>
-                        <td className="px-4 py-3">
-                          <StatusBadge tone="info">{getServicePeriod(service, splitDay)}</StatusBadge>
-                        </td>
+                        {showPeriods ? (
+                          <td className="px-4 py-3">
+                            <StatusBadge tone="info">{periodLabel(getServicePeriod(service, cutDays) ?? 'Q1', cutDays)}</StatusBadge>
+                          </td>
+                        ) : null}
                         <td className="px-4 py-3 text-muted-foreground">{formatDate(service.date_performed)}</td>
                         <td className="px-4 py-3 text-muted-foreground">{service.time_performed ? formatTime(service.time_performed) : '-'}</td>
                       </tr>

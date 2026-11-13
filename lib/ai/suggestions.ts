@@ -52,7 +52,7 @@ export async function getStarterSuggestions(organizationId: string): Promise<str
     `Qual técnico mais produziu em ${current.name}?`,
     `Quem está abaixo da jornada de horas em ${current.name}?`,
     'Quem está escalado para amanhã?',
-    `Como está a produção da quinzena atual comparada com ${previous.name}?`,
+    `Como está a produção de ${current.name} comparada com ${previous.name}?`,
     `Qual o valor médio por OS em ${current.name}?`,
     'Algum técnico está sem horas apontadas nos últimos dias?',
   ];

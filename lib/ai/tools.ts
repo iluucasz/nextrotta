@@ -108,16 +108,16 @@ const definitions: Array<ToolDefinition & { feature?: string; run: (args: Args, 
     type: 'function',
     function: {
       name: 'producao_por_tecnico',
-      description: 'Ordens de serviço (OS) de uma competência agrupadas por técnico: quantidade e valor total. Opcionalmente só a quinzena Q1 ou Q2.',
+      description: 'Ordens de serviço (OS) de uma competência agrupadas por técnico: quantidade e valor total. Opcionalmente só um período de pagamento (Q1, Q2... conforme os dias de corte da empresa).',
       parameters: {
         type: 'object',
-        properties: { competencia: { type: 'string', description: 'AAAA-MM' }, quinzena: { type: 'string', enum: ['Q1', 'Q2'] } },
+        properties: { competencia: { type: 'string', description: 'AAAA-MM' }, quinzena: { type: 'string', enum: ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'] } },
         required: ['competencia'],
       },
     },
     run: async (args, { organizationId }) => {
       const competence = month(args.competencia);
-      const fortnight = args.quinzena === 'Q1' || args.quinzena === 'Q2' ? args.quinzena : null;
+      const fortnight = typeof args.quinzena === 'string' && /^Q[1-5]$/.test(args.quinzena) ? args.quinzena : null;
       const [byTechnician, byType] = await Promise.all([
         sql`
           SELECT COALESCE(t.name, 'Sem técnico') AS tecnico, COUNT(*)::int AS os, SUM(s.value)::float AS valor

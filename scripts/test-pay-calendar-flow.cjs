@@ -30,6 +30,7 @@ const auth = require('../lib/auth.ts');
 const { DEFAULT_ORGANIZATION_SETTINGS } = require('../lib/organization-settings.ts');
 const { saveOrganizationSettings } = require('../lib/organization-settings-store.ts');
 const importRoute = require('../app/api/services/import/route.ts');
+const servicesRoute = require('../app/api/services/route.ts');
 
 console.log('banco:', new URL(process.env.DATABASE_URL).hostname);
 
@@ -41,8 +42,8 @@ let anna;
 let bruno;
 let token;
 
-const setSource = (competenceSource) =>
-  saveOrganizationSettings(org, { ...DEFAULT_ORGANIZATION_SETTINGS, competenceSource }, admin.id);
+const configure = (changes) => saveOrganizationSettings(org, { ...DEFAULT_ORGANIZATION_SETTINGS, ...changes }, admin.id);
+const setSource = (competenceSource) => configure({ competenceSource });
 
 const row = (code, technician, date, value = 100) => ({
   order_code: `${code}-${stamp}`,
@@ -55,6 +56,16 @@ const row = (code, technician, date, value = 100) => ({
 
 const post = async (body) => {
   const response = await importRoute.POST(new Request('http://nextrotta.test/api/services/import', {
+    method: 'POST',
+    headers: { cookie: `auth-token=${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  }));
+  return { status: response.status, data: await response.json() };
+};
+
+// An OS typed by hand (the "Cadastrar OS" form).
+const postManual = async (body) => {
+  const response = await servicesRoute.POST(new Request('http://nextrotta.test/api/services', {
     method: 'POST',
     headers: { cookie: `auth-token=${token}`, 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -183,6 +194,50 @@ test('by batch: a file without month or fortnight is still refused', async () =>
 test('by batch: a closed folha does not block the import (nothing changes for companies on the old rule)', async () => {
   const { data } = await post({ services: [row('b-closed', anna, '2026-10-21')], competence_month: '2026-10', fortnight_period: 'Q2' });
   assert.equal(data.imported, 1);
+});
+
+// ---- companies that cut the month their own way
+
+test('pays by the month (no cut days): the OS are stored without a period, whatever the request says', async () => {
+  await configure({ competenceSource: 'service_date', periodCutDays: [] });
+  const byDate = await post({ services: [row('m1', anna, '2026-11-03'), row('m2', bruno, '2026-11-23')], fortnight_period: 'Q1' });
+  assert.equal(byDate.data.imported, 2);
+  assert.deepEqual([(await stored('m1')).fortnight_period, (await stored('m2')).fortnight_period], [null, null]);
+
+  await configure({ competenceSource: 'batch', periodCutDays: [] });
+  const batch = await post({ services: [row('m3', anna, '2026-11-05')], competence_month: '2026-11', fortnight_period: 'Q2' });
+  assert.equal(batch.status, 200, 'no period needed to import a batch');
+  const noPeriod = await stored('m3');
+  assert.deepEqual([noPeriod.competence_month, noPeriod.fortnight_period], ['2026-11', null]);
+
+  const manual = await postManual({ ...row('m4', anna, '2026-11-09'), fortnight_period: 'Q1' });
+  assert.equal(manual.status, 201);
+  assert.equal((await stored('m4')).fortnight_period, null, 'the manual form does not store a period either');
+});
+
+test('cuts at 10 and 20: three periods, by the service date and by the batch', async () => {
+  await configure({ competenceSource: 'service_date', periodCutDays: [10, 20] });
+  const { data } = await post({ services: [row('c1', anna, '2026-11-07'), row('c2', anna, '2026-11-10'), row('c3', anna, '2026-11-15'), row('c4', anna, '2026-11-23')] });
+  assert.equal(data.imported, 4);
+  assert.deepEqual(await Promise.all(['c1', 'c2', 'c3', 'c4'].map(async (code) => (await stored(code)).fortnight_period)), ['Q1', 'Q1', 'Q2', 'Q3']);
+
+  await configure({ competenceSource: 'batch', periodCutDays: [10, 20] });
+  const third = await post({ services: [row('c5', bruno, '2026-11-02')], competence_month: '2026-11', fortnight_period: 'Q3' });
+  assert.equal(third.status, 200);
+  assert.equal((await stored('c5')).fortnight_period, 'Q3');
+  const fourth = await post({ services: [row('c6', bruno, '2026-11-02')], competence_month: '2026-11', fortnight_period: 'Q4' });
+  assert.equal(fourth.status, 400);
+  assert.match(fourth.data.error, /Período 1 ou Período 2 ou Período 3/);
+});
+
+test("a manual OS must use one of the company's periods", async () => {
+  await configure({ periodCutDays: [15] });
+  const outside = await postManual({ ...row('p1', anna, '2026-11-09'), fortnight_period: 'Q3' });
+  assert.equal(outside.status, 400);
+  assert.match(outside.data.error, /período válido para esta empresa/);
+  const inside = await postManual({ ...row('p2', anna, '2026-11-20'), fortnight_period: 'Q2' });
+  assert.equal(inside.status, 201);
+  assert.equal((await stored('p2')).fortnight_period, 'Q2');
 });
 
 after(async () => {

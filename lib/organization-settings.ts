@@ -2,7 +2,7 @@
 // by the platform owner). Dependency-free on purpose: imported by client screens, API routes and the
 // VPS worker (worker/tsconfig.json) alike. Relative imports only. Storage: organization-settings-store.ts.
 
-import { COMPETENCE_SOURCES, type CompetenceSource } from './pay-calendar';
+import { COMPETENCE_SOURCES, MAX_PERIOD_CUTS, normalizeCutDays, type CompetenceSource } from './pay-calendar';
 
 export type ServiceAwardTier = {
   /** Number of OS (services) in the month that reaches this tier. */
@@ -44,6 +44,12 @@ export type OrganizationSettings = {
   /** Until this day of the month the screens still open on the previous month (0 = the current month always). */
   settlePreviousMonthUntilDay: number;
 
+  /**
+   * The days that cut the month into payment periods: [] = one payment a month (no Q1/Q2 on the screens), [15] = two
+   * fortnights, [10, 20] = three periods (see lib/pay-calendar.ts). Used for a service with no period set.
+   */
+  periodCutDays: number[];
+
   // Workday and hours
   /** Monthly hours target: hour-bank goal and divisor of the hourly rate. */
   monthlyHours: number;
@@ -56,8 +62,6 @@ export type OrganizationSettings = {
   defaultShiftEnd: string;
   /** Below this many hours in the month the technician's hours card turns red (warning between it and the target). */
   monthlyHoursWarningFloor: number;
-  /** Last day of Q1 when a service has no fortnight set (Q2 = the rest of the month). */
-  fortnightSplitDay: number;
   /** Whether a "Serviço cancelado" day charges its planned hours on the hour bank. */
   chargeCancelledServicePlanned: boolean;
 
@@ -143,6 +147,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   vrPayment: 'card',
   competenceSource: 'batch',
   settlePreviousMonthUntilDay: 0,
+  periodCutDays: [15],
 
   monthlyHours: 220,
   overtimeMultiplier: 1.5,
@@ -150,7 +155,6 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
   defaultShiftStart: '08:00',
   defaultShiftEnd: '18:00',
   monthlyHoursWarningFloor: 200,
-  fortnightSplitDay: 15,
   chargeCancelledServicePlanned: false,
 
   serviceAwardTiers: [],
@@ -193,7 +197,7 @@ export const DEFAULT_ORGANIZATION_SETTINGS: OrganizationSettings = {
 /** What a technician's own screens may read — salaries and commission never leave the admin side. */
 export type TechnicianOrganizationSettings = Pick<
   OrganizationSettings,
-  'monthlyHours' | 'dailyBreakMinutes' | 'serviceAwardTiers' | 'monthlyHoursWarningFloor' | 'fortnightSplitDay' | 'vaPayment' | 'vrPayment'
+  'monthlyHours' | 'dailyBreakMinutes' | 'serviceAwardTiers' | 'monthlyHoursWarningFloor' | 'periodCutDays' | 'vaPayment' | 'vrPayment'
 >;
 
 export function pickTechnicianSettings(settings: OrganizationSettings): TechnicianOrganizationSettings {
@@ -202,7 +206,7 @@ export function pickTechnicianSettings(settings: OrganizationSettings): Technici
     dailyBreakMinutes: settings.dailyBreakMinutes,
     serviceAwardTiers: settings.serviceAwardTiers,
     monthlyHoursWarningFloor: settings.monthlyHoursWarningFloor,
-    fortnightSplitDay: settings.fortnightSplitDay,
+    periodCutDays: settings.periodCutDays,
     vaPayment: settings.vaPayment,
     vrPayment: settings.vrPayment,
   };
@@ -319,7 +323,7 @@ function parseFields(source: Record<string, unknown>): ParsedFields {
     defaultShiftStart: time('defaultShiftStart'),
     defaultShiftEnd: time('defaultShiftEnd'),
     monthlyHoursWarningFloor: number('monthlyHoursWarningFloor'),
-    fortnightSplitDay: number('fortnightSplitDay'),
+    periodCutDays: normalizeCutDays(pick(source, 'periodCutDays')),
     chargeCancelledServicePlanned: bool('chargeCancelledServicePlanned'),
     serviceAwardTiers: normalizeTiers(pick(source, 'serviceAwardTiers')),
     portoHoursImportTime: time('portoHoursImportTime'),
@@ -379,8 +383,8 @@ function validateField(key: keyof OrganizationSettings, value: unknown, all: Org
       return typeof value === 'string' && TIME_PATTERN.test(value) ? null : 'O turno padrão precisa de início e fim no formato HH:MM.';
     case 'monthlyHoursWarningFloor':
       return n >= 0 && n <= all.monthlyHours ? null : 'O alerta de horas deve ficar entre 0 e a jornada mensal.';
-    case 'fortnightSplitDay':
-      return isInteger(n) && n >= 1 && n <= 27 ? null : 'O último dia da Q1 deve ser um dia entre 1 e 27.';
+    case 'periodCutDays':
+      return normalizeCutDays(value) ? null : `Os dias de corte devem ser dias de 1 a 27, em ordem crescente e sem repetir (no máximo ${MAX_PERIOD_CUTS}).`;
     case 'serviceAwardTiers': {
       const tiers = value as ServiceAwardTier[];
       if (tiers.some((tier) => !(tier.minServices > 0) || !(tier.amount > 0) || !isInteger(tier.minServices))) {
@@ -470,7 +474,7 @@ const MISSING_FIELD_MESSAGES: Record<keyof OrganizationSettings, string> = {
   defaultShiftStart: 'O turno padrão precisa de início e fim no formato HH:MM.',
   defaultShiftEnd: 'O turno padrão precisa de início e fim no formato HH:MM.',
   monthlyHoursWarningFloor: 'O alerta de horas deve ficar entre 0 e a jornada mensal.',
-  fortnightSplitDay: 'O último dia da Q1 deve ser um dia entre 1 e 27.',
+  periodCutDays: `Os dias de corte devem ser dias de 1 a 27, em ordem crescente e sem repetir (no máximo ${MAX_PERIOD_CUTS}).`,
   chargeCancelledServicePlanned: 'Escolha se o dia de serviço cancelado cobra as horas previstas.',
   serviceAwardTiers: 'Cada faixa de prêmio precisa de quantidade de OS e valor maiores que zero.',
   portoHoursImportTime: 'Os horários do robô do Porto precisam estar no formato HH:MM.',
@@ -515,11 +519,6 @@ export function calculateOvertimeValue(totalHours: number, baseSalary: number, s
   const extraHours = Math.max(0, totalHours - settings.monthlyHours);
   if (!extraHours || !(baseSalary > 0)) return 0;
   return Number((extraHours * (baseSalary / settings.monthlyHours) * settings.overtimeMultiplier).toFixed(2));
-}
-
-/** "Q1" or "Q2" for a day of the month, by the configured split day. */
-export function fortnightForDay(dayOfMonth: number, fortnightSplitDay: number): 'Q1' | 'Q2' {
-  return dayOfMonth <= fortnightSplitDay ? 'Q1' : 'Q2';
 }
 
 /** The full warning note sentence, with the fixed marker and the service code filled in. */

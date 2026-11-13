@@ -12,9 +12,11 @@ import {
   type CommissionMode,
   type OrganizationSettings,
 } from '@/lib/organization-settings';
-import type { CompetenceSource } from '@/lib/pay-calendar';
+import { parseCutDays, type CompetenceSource } from '@/lib/pay-calendar';
 
 /** The settings screens are split by subject; each one saves only the fields it shows (the API keeps the rest). */
+export type PeriodMode = 'monthly' | 'fortnightly' | 'custom';
+
 export type SettingsGroup = 'payment' | 'hours' | 'porto' | 'finance';
 
 type NumericKey =
@@ -30,7 +32,7 @@ type NumericKey =
   | 'overtimePercent'
   | 'dailyBreakMinutes'
   | 'monthlyHoursWarningFloor'
-  | 'fortnightSplitDay'
+  | 'periodCutDay'
   | 'portoReprocessDays'
   | 'portoMaxShiftHours'
   | 'portoNextMonthLookaheadDays'
@@ -46,6 +48,10 @@ export type FormState = Record<NumericKey, string> &
   Record<BooleanKey, boolean> & {
     commissionMode: CommissionMode;
     competenceSource: CompetenceSource;
+    /** How the month is cut into payment periods: not at all, in two fortnights (one cut day) or at a list of days. */
+    periodMode: PeriodMode;
+    /** The text of the custom list ("10, 20"). */
+    periodCutList: string;
     vaPayment: BenefitPayment;
     vrPayment: BenefitPayment;
     portoWarningText: string;
@@ -89,7 +95,9 @@ export function toForm(settings: OrganizationSettings): FormState {
     overtimePercent: formatNumber(overtimePercentFromMultiplier(settings.overtimeMultiplier)),
     dailyBreakMinutes: String(settings.dailyBreakMinutes),
     monthlyHoursWarningFloor: formatNumber(settings.monthlyHoursWarningFloor),
-    fortnightSplitDay: String(settings.fortnightSplitDay),
+    periodMode: settings.periodCutDays.length === 0 ? 'monthly' : settings.periodCutDays.length === 1 ? 'fortnightly' : 'custom',
+    periodCutDay: String(settings.periodCutDays[0] ?? 15),
+    periodCutList: settings.periodCutDays.join(', '),
     portoReprocessDays: String(settings.portoReprocessDays),
     portoMaxShiftHours: formatNumber(settings.portoMaxShiftHours),
     portoNextMonthLookaheadDays: String(settings.portoNextMonthLookaheadDays),
@@ -129,6 +137,7 @@ export function toPayload(form: FormState, group: SettingsGroup) {
         vrDeductsFromCommission: form.vrDeductsFromCommission,
         vaPayment: form.vaPayment,
         vrPayment: form.vrPayment,
+        periodCutDays: periodCutDaysOf(form),
         competenceSource: form.competenceSource,
         settlePreviousMonthUntilDay: number('settlePreviousMonthUntilDay'),
         serviceAwardTiers: form.tiers.map((tier) => ({ minServices: parseNumber(tier.minServices), amount: parseNumber(tier.amount) })),
@@ -141,7 +150,6 @@ export function toPayload(form: FormState, group: SettingsGroup) {
         monthlyHoursWarningFloor: number('monthlyHoursWarningFloor'),
         defaultShiftStart: form.defaultShiftStart,
         defaultShiftEnd: form.defaultShiftEnd,
-        fortnightSplitDay: number('fortnightSplitDay'),
         chargeCancelledServicePlanned: form.chargeCancelledServicePlanned,
       };
     case 'porto':
@@ -162,6 +170,13 @@ export function toPayload(form: FormState, group: SettingsGroup) {
     case 'finance':
       return { financeDueSoonDays: number('financeDueSoonDays'), financeCategories: form.financeCategories };
   }
+}
+
+/** The cut days the form describes; a list the API will refuse (and say why) when the text is not a valid one. */
+export function periodCutDaysOf(form: FormState): number[] {
+  if (form.periodMode === 'monthly') return [];
+  if (form.periodMode === 'fortnightly') return [parseNumber(form.periodCutDay)];
+  return parseCutDays(form.periodCutList) ?? [Number.NaN];
 }
 
 export const newTier = () => ({ id: nextTierId++, minServices: '', amount: '' });

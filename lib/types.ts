@@ -3,7 +3,7 @@ export type OrganizationStatus = 'provisioning' | 'active' | 'past_due' | 'suspe
 export type TechnicianStatus = 'active' | 'inactive'
 export type DiscountType = 'discount' | 'advance' | 'other'
 export type ScheduleStatus = 'scheduled' | 'completed' | 'cancelled'
-export type ServiceFortnight = 'Q1' | 'Q2'
+export type ServiceFortnight = 'Q1' | 'Q2' | 'Q3' | 'Q4' | 'Q5'
 export type FinancialEntryType = 'payable' | 'receivable'
 export type FinancialEntryStatus = 'pending' | 'paid'
 

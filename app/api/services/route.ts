@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
+import { getOrganizationSettings } from '@/lib/organization-settings-store';
+import { isPeriodKey, periodKeys } from '@/lib/pay-calendar';
 
 async function isActiveTechnician(organizationId: string, technicianId: string) {
   const technicians = await sql`
@@ -26,8 +28,15 @@ function isMonthKey(value: string) {
   return /^\d{4}-\d{2}$/.test(value);
 }
 
-function isFortnightPeriod(value: string) {
-  return value === 'Q1' || value === 'Q2';
+/**
+ * The period to store for an OS entered by hand: none when the company pays by the month, otherwise the one chosen
+ * (which must be one of the company's periods).
+ */
+function periodToStore(chosen: unknown, allowed: string[]): { period: string | null; error?: string } {
+  const value = String(chosen ?? '').trim();
+  if (!allowed.length) return { period: null };
+  if (!value) return { period: null };
+  return (allowed as string[]).includes(value) ? { period: value } : { period: null, error: 'Informe um período válido para esta empresa.' };
 }
 
 /** Required fields and formats of a manually entered OS; a message for the first problem, or null. */
@@ -41,7 +50,7 @@ function validateServiceInput(input: Record<string, unknown>): string | null {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text(input.date_performed))) return 'Informe uma data de atendimento válida.';
   if (text(input.time_performed) && !/^\d{2}:\d{2}(?::\d{2})?$/.test(text(input.time_performed))) return 'Informe uma hora de atendimento válida.';
   if (text(input.competence_month) && !isMonthKey(text(input.competence_month))) return 'Informe uma competência válida (AAAA-MM).';
-  if (text(input.fortnight_period) && !isFortnightPeriod(text(input.fortnight_period))) return 'A quinzena deve ser Q1 ou Q2.';
+  if (text(input.fortnight_period) && !isPeriodKey(text(input.fortnight_period))) return 'Informe um período válido.';
   return null;
 }
 
@@ -130,6 +139,8 @@ export async function POST(request: NextRequest) {
 
     const invalid = validateServiceInput({ order_code, technician_id, service_type, value, date_performed, time_performed, competence_month, fortnight_period });
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+    const stored = periodToStore(fortnight_period, periodKeys((await getOrganizationSettings(auth.organizationId)).periodCutDays));
+    if (stored.error) return NextResponse.json({ error: stored.error }, { status: 400 });
 
     if (!(await isActiveTechnician(auth.organizationId, technician_id))) {
       return inactiveTechnicianResponse();
@@ -142,7 +153,7 @@ export async function POST(request: NextRequest) {
       )
       VALUES (
         ${auth.organizationId}, ${order_code}, ${technician_id}, ${service_type}, ${value},
-        ${date_performed}, ${time_performed || null}, ${competence_month || String(date_performed ?? '').slice(0, 7)}, ${fortnight_period || null}, ${description || null}
+        ${date_performed}, ${time_performed || null}, ${competence_month || String(date_performed ?? '').slice(0, 7)}, ${stored.period}, ${description || null}
       )
       RETURNING *
     `;
@@ -189,6 +200,8 @@ export async function PUT(request: NextRequest) {
 
     const invalid = validateServiceInput({ order_code, technician_id, service_type, value, date_performed, time_performed, competence_month, fortnight_period });
     if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
+    const stored = periodToStore(fortnight_period, periodKeys((await getOrganizationSettings(auth.organizationId)).periodCutDays));
+    if (stored.error) return NextResponse.json({ error: stored.error }, { status: 400 });
 
     const currentService = await sql`
       SELECT technician_id
@@ -219,7 +232,7 @@ export async function PUT(request: NextRequest) {
           date_performed = ${date_performed},
           time_performed = ${time_performed || null},
           competence_month = ${competence_month || String(date_performed ?? '').slice(0, 7)},
-          fortnight_period = ${fortnight_period || null},
+          fortnight_period = ${stored.period},
           description = ${description || null},
           updated_at = NOW()
       WHERE id = ${id}
@@ -273,9 +286,9 @@ export async function DELETE(request: NextRequest) {
         );
       }
 
-      if (!isMonthly && !isFortnightPeriod(normalizedPeriod)) {
+      if (!isMonthly && !isPeriodKey(normalizedPeriod)) {
         return NextResponse.json(
-          { error: 'Selecione Mensal, Q1 ou Q2 para excluir as OS.' },
+          { error: 'Selecione Mensal ou um período para excluir as OS.' },
           { status: 400 }
         );
       }

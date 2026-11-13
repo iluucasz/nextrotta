@@ -20,11 +20,10 @@ export default function JornadaPage() {
           </div>
         </Panel>
 
-        <Panel title="Turno e quinzena" help="O turno padrão é usado em escalas novas, no apontamento e quando o Porto não informa o turno. A quinzena vale para serviço sem quinzena informada: até o último dia da Q1 é Q1, depois é Q2.">
+        <Panel title="Turno padrão" help="Usado em escalas novas, no apontamento e quando o Porto não informa o turno. Os períodos de pagamento (Q1, Q2...) ficam em Configurações → Pagamento.">
           <div className="st-fields">
             <TimeField id="shift-start" label="Início do turno" value={form.defaultShiftStart} onChange={(value) => update('defaultShiftStart', value)} />
             <TimeField id="shift-end" label="Fim do turno" value={form.defaultShiftEnd} onChange={(value) => update('defaultShiftEnd', value)} />
-            <NumberField id="fortnight" label="Último dia da Q1" unit="dia" value={form.fortnightSplitDay} onChange={(value) => update('fortnightSplitDay', value)} />
           </div>
         </Panel>
       </div>

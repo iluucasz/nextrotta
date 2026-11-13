@@ -3,8 +3,7 @@ import { verifyOrganizationAuth } from '@/lib/auth';
 import { sql } from '@/lib/db';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
 import { getOrganizationSettings } from '@/lib/organization-settings-store';
-import { fortnightForDay } from '@/lib/organization-settings';
-import { competenceForImportRow, isDateKey, isMonthKey, monthLabel } from '@/lib/pay-calendar';
+import { competenceForImportRow, isDateKey, isMonthKey, monthLabel, periodForDate, periodKeys, periodLabel } from '@/lib/pay-calendar';
 
 interface ServiceImportPayload {
   order_code?: unknown;
@@ -16,10 +15,6 @@ interface ServiceImportPayload {
   time_performed?: unknown;
   competence_month?: unknown;
   description?: unknown;
-}
-
-function isFortnightPeriod(value: string) {
-  return value === 'Q1' || value === 'Q2';
 }
 
 function getText(value: unknown) {
@@ -49,6 +44,9 @@ export async function POST(request: NextRequest) {
     // By the service's own date each OS goes to its own month (and its fortnight follows its day);
     // by batch the whole file goes to the month and fortnight the admin chose.
     const byServiceDate = settings.competenceSource === 'service_date';
+    // A company that pays by the month has no periods: its OS are stored without one, whatever the request says.
+    const cutDays = settings.periodCutDays;
+    const periods = periodKeys(cutDays);
     const fortnightPeriod = getText(body?.fortnight_period).toUpperCase();
     const competenceMonth = getText(body?.competence_month);
     const allowClosedPayroll = body?.allow_closed_payroll === true;
@@ -60,9 +58,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!byServiceDate && !isFortnightPeriod(fortnightPeriod)) {
+    if (!byServiceDate && periods.length && !(periods as string[]).includes(fortnightPeriod)) {
       return NextResponse.json(
-        { error: 'Selecione Q1 ou Q2 para importar este lote.' },
+        { error: `Selecione ${periods.map((key) => periodLabel(key, cutDays)).join(' ou ')} para importar este lote.` },
         { status: 400 }
       );
     }
@@ -113,7 +111,7 @@ export async function POST(request: NextRequest) {
       timePerformed: string;
       description: string;
       competenceMonth: string;
-      fortnightPeriod: string;
+      fortnightPeriod: string | null;
     }> = [];
 
     for (const row of incomingRows) {
@@ -156,7 +154,7 @@ export async function POST(request: NextRequest) {
         timePerformed,
         description,
         competenceMonth: rowCompetence,
-        fortnightPeriod: byServiceDate ? fortnightForDay(Number(datePerformed.slice(8, 10)), settings.fortnightSplitDay) : fortnightPeriod,
+        fortnightPeriod: !periods.length ? null : byServiceDate ? periodForDate(datePerformed, cutDays) : fortnightPeriod,
       });
     }
 

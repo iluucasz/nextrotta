@@ -87,3 +87,65 @@ test('the settings are read from the stored row and validated on input', () => {
   assert.match(settings.parseOrganizationSettingsInput({ ...base, settlePreviousMonthUntilDay: -1 }).error, /acerto do mês anterior/);
   assert.match(settings.parseOrganizationSettingsInput({ ...base, settlePreviousMonthUntilDay: 2.5 }).error, /acerto do mês anterior/);
 });
+
+// ---- payment periods inside the month (cut days)
+
+test('a month without cut days has no periods: it is paid by the month', () => {
+  assert.deepEqual(calendar.periodKeys([]), []);
+  assert.equal(calendar.periodForDay(10, []), null);
+  assert.equal(calendar.hasPeriods([]), false);
+});
+
+test('one cut day makes the usual two fortnights, the cut day itself still in the first', () => {
+  assert.deepEqual(calendar.periodKeys([15]), ['Q1', 'Q2']);
+  assert.equal(calendar.periodForDay(1, [15]), 'Q1');
+  assert.equal(calendar.periodForDay(15, [15]), 'Q1');
+  assert.equal(calendar.periodForDay(16, [15]), 'Q2');
+  assert.equal(calendar.periodForDay(31, [15]), 'Q2');
+  assert.equal(calendar.periodForDate('2026-10-23', [15]), 'Q2');
+  assert.equal(calendar.periodForDate('2026-02-30', [15]), null, 'not a real day');
+  assert.equal(calendar.periodForDate('', [15]), null);
+});
+
+test('any list of cut days cuts the month where the company wants', () => {
+  assert.deepEqual(calendar.periodKeys([10, 20]), ['Q1', 'Q2', 'Q3']);
+  assert.deepEqual([5, 10, 11, 20, 21, 31].map((day) => calendar.periodForDay(day, [10, 20])), ['Q1', 'Q1', 'Q2', 'Q2', 'Q3', 'Q3']);
+  assert.deepEqual([7, 8, 14, 15, 21, 22, 31].map((day) => calendar.periodForDay(day, [7, 14, 21])), ['Q1', 'Q2', 'Q2', 'Q3', 'Q3', 'Q4', 'Q4']);
+  assert.deepEqual(calendar.periodKeys([5, 10, 15, 20]), ['Q1', 'Q2', 'Q3', 'Q4', 'Q5']);
+});
+
+test('the screens say Q1 and Q2 for two fortnights and the days for anything else', () => {
+  assert.equal(calendar.periodLabel('Q1', [15]), 'Q1');
+  assert.equal(calendar.periodDescription('Q2', [15]), 'Segunda quinzena');
+  assert.equal(calendar.periodLabel('Q2', [10, 20]), 'Período 2');
+  assert.equal(calendar.periodDays('Q1', [10, 20]), 'dias 1 a 10');
+  assert.equal(calendar.periodDays('Q2', [10, 20]), 'dias 11 a 20');
+  assert.equal(calendar.periodDays('Q3', [10, 20]), 'dia 21 em diante');
+  assert.equal(calendar.periodDescription('Q3', [10, 20]), 'Dia 21 em diante');
+});
+
+test('cut days are whole days from 1 to 27, increasing, at most four', () => {
+  assert.deepEqual(calendar.normalizeCutDays([]), []);
+  assert.deepEqual(calendar.normalizeCutDays([15]), [15]);
+  assert.deepEqual(calendar.normalizeCutDays(['10', '20']), [10, 20]);
+  for (const bad of [[0], [28], [15, 15], [20, 10], [1.5], [1, 2, 3, 4, 5], ['x'], 'a', null, undefined]) assert.equal(calendar.normalizeCutDays(bad), null, JSON.stringify(bad));
+  assert.deepEqual(calendar.parseCutDays('10, 20'), [10, 20]);
+  assert.deepEqual(calendar.parseCutDays('7;14 21'), [7, 14, 21]);
+  assert.deepEqual(calendar.parseCutDays(''), []);
+  assert.equal(calendar.parseCutDays('20, 10'), null);
+  assert.equal(calendar.isPeriodKey('Q3'), true);
+  assert.equal(calendar.isPeriodKey('Q6'), false);
+});
+
+test('a company keeps its cut day: new ones start at 15, a stored list is read as is, an invalid one falls back', () => {
+  assert.deepEqual(settings.DEFAULT_ORGANIZATION_SETTINGS.periodCutDays, [15]);
+  assert.deepEqual(settings.normalizeOrganizationSettings({ commission_mode: 'excess' }).periodCutDays, [15]);
+  assert.deepEqual(settings.normalizeOrganizationSettings({ period_cut_days: [] }).periodCutDays, []);
+  assert.deepEqual(settings.normalizeOrganizationSettings({ period_cut_days: [10, 20] }).periodCutDays, [10, 20]);
+  assert.deepEqual(settings.normalizeOrganizationSettings({ period_cut_days: [20, 10] }).periodCutDays, [15]);
+  const base = { ...settings.DEFAULT_ORGANIZATION_SETTINGS };
+  assert.deepEqual(settings.parseOrganizationSettingsInput({ ...base, periodCutDays: [] }).settings.periodCutDays, []);
+  assert.match(settings.parseOrganizationSettingsInput({ ...base, periodCutDays: [28] }).error, /dias de corte/);
+  assert.match(settings.parseOrganizationSettingsInput({ ...base, periodCutDays: [10, 10] }).error, /dias de corte/);
+  assert.deepEqual(settings.pickTechnicianSettings({ ...base, periodCutDays: [10, 20] }).periodCutDays, [10, 20]);
+});

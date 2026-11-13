@@ -34,6 +34,18 @@ O valor por OS, hora ou dia é `commissionRate` (padrão da empresa) e `technici
 Na Folha, a janela do técnico explica a conta ("42 OS × R$ 30,00", "168,5 h × R$ 18,00") e avisa quando o mínimo ou o teto agiu.
 Teste: `scripts/test-payroll-rules.cjs`.
 
+## Períodos de pagamento (`periodCutDays`, migração `0051`)
+
+Configurações → Pagamento → "Períodos de pagamento". A empresa lista os dias em que o mês é cortado (regras puras em `lib/pay-calendar.ts`, `periodKeys`, `periodForDay`, `periodLabel`...):
+
+- **Mensal** (`[]`): o mês não é dividido. Q1/Q2 somem de Serviços (filtro, coluna, formulário, exclusão em lote), da janela de importação, do resumo da Folha e do PDF e do painel do técnico (fica só o cartão "Mensal", sem seletor de período). As OS entram sem período, mesmo que a requisição mande um.
+- **Quinzenal** (`[15]`, o padrão e o que toda empresa tinha): Q1 até o dia de corte, Q2 depois. O campo é o "Último dia da Q1" (1 a 27); mudou de lugar: saiu de Jornada e horas.
+- **Dias específicos** (`[10, 20]`, até 4 dias, de 1 a 27, crescentes): três períodos ou mais. Com dois períodos as telas dizem Q1 e Q2; com mais, "Período 1", "Período 2"... (o valor guardado é sempre Q1 a Q5).
+
+O período de cada OS é guardado ao lançá-la (importação por lote, por data ou cadastro manual), por isso **mudar os dias de corte não reclassifica OS antigas**: elas mantêm o período em que entraram. A folha continua sendo calculada pelo mês, o período serve para separar e conferir. A coluna antiga `fortnight_split_day` continua na tabela, mas não é mais lida nem gravada. Testes: `scripts/test-pay-calendar.cjs` (regras) e `scripts/test-pay-calendar-flow.cjs` (empresa mensal, quinzenal e com dias específicos, na importação e no cadastro).
+
+**Ainda não existe:** o "dia de fechamento do mês" (mês de 26 a 25). Horas, banco de horas e descontos são calculados pelo mês-calendário; mudar só o mês das OS deixaria a folha inconsistente. Precisa de um desenho que cubra horas e descontos.
+
 ## Vales (VA e VR) — abatem da comissão? como são pagos? (`vaDeductsFromCommission`, `vrDeductsFromCommission`, `vaPayment`, `vrPayment`, migração `0050`)
 
 Configurações → Pagamento, um painel para o VR e outro para o VA. Os padrões mantêm a regra de antes (abatem e vão no cartão).
@@ -50,11 +62,11 @@ Configurações → Pagamento → "Mês das OS". É o começo do **calendário d
 
 - **`competenceSource`** — quem define o mês de cada OS importada:
   - `batch` (padrão): o admin escolhe o mês e a quinzena (Q1/Q2) ao importar e o arquivo inteiro entra neles.
-  - `service_date`: cada OS entra no mês da própria data, e a quinzena segue o dia (`fortnightSplitDay`). Uma planilha de OP com setembro, outubro e novembro preenche cada mês sozinha; a janela de importação mostra quantas OS há por mês e deixa desmarcar os meses que não devem entrar. O servidor refaz esse cálculo (não confia no que a tela manda).
+  - `service_date`: cada OS entra no mês da própria data, e o período segue o dia (dias de corte, ver "Períodos de pagamento"). Uma planilha de OP com setembro, outubro e novembro preenche cada mês sozinha; a janela de importação mostra quantas OS há por mês e deixa desmarcar os meses que não devem entrar. O servidor refaz esse cálculo (não confia no que a tela manda).
   - Nesse modo, a OS de um técnico cuja **folha do mês já está fechada** é recusada ("A folha de 10/2026 deste técnico já está fechada"), porque a folha fechada não é recalculada: a janela avisa antes e oferece "Importar também as OS de folha fechada" (`allow_closed_payroll`). No modo `batch` essa checagem não existe (comportamento de antes).
 - **`settlePreviousMonthUntilDay`** (0 a 28, padrão 0) — até esse dia do mês, Serviços e Folha abrem no mês anterior (quem acerta outubro até 5 de novembro usa 5). 0 = sempre o mês atual.
 
-Ainda **não** existe: dias de corte livres (mensal, `[10, 20]`, semanal), dia de fechamento do mês diferente do último dia e esconder Q1/Q2 nas telas de quem paga por mês. Estão planejados como as próximas fases do calendário.
+Ainda **não** existe o dia de fechamento do mês diferente do último dia (ver "Períodos de pagamento").
 
 ## Onde fica
 
@@ -70,7 +82,7 @@ Ainda **não** existe: dias de corte livres (mensal, `[10, 20]`, semanal), dia d
 - `app/api/organization-settings/route.ts`:
   - `GET` do admin: tudo, mais `updatedAt`/`updatedBy`.
   - `GET` do técnico (ou do admin em modo preview): só `monthlyHours`, `dailyBreakMinutes`,
-    `serviceAwardTiers`, `monthlyHoursWarningFloor` e `fortnightSplitDay`.
+    `serviceAwardTiers`, `monthlyHoursWarningFloor`, `periodCutDays`, `vaPayment` e `vrPayment`.
   - `PUT`: só admin fora do preview. Campos ausentes mantêm o valor atual. Responde 400 com a mensagem
     de validação e audita antes/depois (`organization_settings.updated`).
   - O dono edita pelo painel: `PUT /api/platform/organizations/[id]/settings` (mesmas regras).
@@ -90,7 +102,7 @@ Ainda **não** existe: dias de corte livres (mensal, `[10, 20]`, semanal), dia d
 | Intervalo diário | 60 min | Horas da escala/apontamento, robô do Porto, dashboard gerencial, modal de almoço da planilha. |
 | Turno padrão | 08:00–18:00 | Escalas novas e apontamento; previsto do robô quando o Porto não informa o turno. |
 | Alerta de horas | 200 h | Cor do card de horas do técnico (vermelho abaixo, amarelo até a jornada). |
-| Último dia da Q1 | 15 | Painel do técnico, para serviço sem quinzena informada. |
+| Dias de corte do mês (`periodCutDays`) | `[15]` (duas quinzenas) | Importação e cadastro de OS, filtros e tabela de Serviços, resumo da Folha e do PDF, painel do técnico, assistente de IA — ver "Períodos de pagamento". |
 | Serviço cancelado cobra o previsto | não | Saldo no apontamento e no dashboard gerencial. |
 | Faixas de prêmio | nenhuma | Prêmio da folha (maior faixa atingida) e metas do painel do técnico. Sem faixas, não há prêmio nem metas. |
 | Horário da importação de horas | 23:00 | Quando a organização entra na fila do robô (`worker/porto-queue.ts`). |

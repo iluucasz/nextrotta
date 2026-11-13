@@ -33,11 +33,10 @@ import type { Service, ServiceFortnight, Technician } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { Checkbox } from '@/components/ui/checkbox';
-import { countByCompetence, defaultCompetenceMonth, monthLabel } from '@/lib/pay-calendar';
+import { countByCompetence, defaultCompetenceMonth, monthLabel, periodKeys, periodLabel, type PeriodKey } from '@/lib/pay-calendar';
 import { isTextSpreadsheet, readSpreadsheet } from '@/lib/spreadsheet-import';
 
 const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
-const serviceFortnightOptions: ServiceFortnight[] = ['Q1', 'Q2'];
 const importStageOrder = ['prepare', 'upload', 'process', 'finalize'] as const;
 /** Read when used, not at module load: the page can stay open across a month change. */
 const currentCompetenceMonth = () => brasiliaDateKey().slice(0, 7);
@@ -349,6 +348,10 @@ export default function AdminServicesPage() {
   const [allowClosedPayroll, setAllowClosedPayroll] = useState(false);
   const { settings: orgSettings, loaded: settingsLoaded } = useOrganizationSettings({ enabled: Boolean(user) });
   const byServiceDate = orgSettings.competenceSource === 'service_date';
+  // The periods the company pays in (none when it pays by the month: then no Q1/Q2 shows anywhere on this screen).
+  const cutDays = orgSettings.periodCutDays;
+  const periods: PeriodKey[] = periodKeys(cutDays);
+  const hasPeriods = periods.length > 0;
 
   // Companies that settle the month after it ends open on the previous month until their settle day.
   useEffect(() => {
@@ -465,7 +468,7 @@ export default function AdminServicesPage() {
   }, [servicesWithDetails]);
 
   const availableFortnights = useMemo(() => {
-    return serviceFortnightOptions.filter((period) => servicesWithDetails.some((service) => service.fortnight_period === period));
+    return periods.filter((period) => servicesWithDetails.some((service) => service.fortnight_period === period));
   }, [servicesWithDetails]);
 
   const filteredServices = useMemo(() => {
@@ -646,8 +649,8 @@ export default function AdminServicesPage() {
 
   async function handleImportSubmit() {
     if (!rowsToImport.length) return;
-    if (!byServiceDate && !importFortnight) {
-      setImportError('Selecione Q1 ou Q2 antes de importar o lote.');
+    if (!byServiceDate && hasPeriods && !importFortnight) {
+      setImportError(`Selecione ${periods.map((period) => periodLabel(period, cutDays)).join(' ou ')} antes de importar o lote.`);
       return;
     }
     if (!byServiceDate && !importCompetenceMonth) {
@@ -888,9 +891,9 @@ export default function AdminServicesPage() {
   }
 
   const totalValue = filteredServices.reduce((total, service) => total + Number(service.value), 0);
-  const uniquePeriods = new Set(filteredServices.map((service) => getServicePeriodKey(service))).size;
+  const uniquePeriods = new Set(filteredServices.map((service) => (hasPeriods ? getServicePeriodKey(service) : getServiceCompetenceMonth(service)))).size;
   const collaboratorCount = new Set(filteredServices.map((service) => service.technician_id)).size;
-  const bulkDeletePeriodLabel = bulkDeletePeriod === 'monthly' ? 'Mensal' : bulkDeletePeriod;
+  const bulkDeletePeriodLabel = bulkDeletePeriod === 'monthly' ? 'Mensal' : periodLabel(bulkDeletePeriod, cutDays);
   const selectedFormTechnician = sortedTechnicians.find((technician) => technician.id === formData.technician_id);
   const serviceFormTechnicians = selectedFormTechnician && selectedFormTechnician.status !== 'active'
     ? [selectedFormTechnician, ...sortedActiveTechnicians]
@@ -931,7 +934,7 @@ export default function AdminServicesPage() {
       <PageHeader
         eyebrow="Produção"
         title="Ordens de serviço"
-        description="Acompanhe todas as OS dos colaboradores, filtre por colaborador, tipo, competência e quinzena e faça ajustes pontuais no cadastro."
+        description={`Acompanhe todas as OS dos colaboradores, filtre por colaborador, tipo, competência${hasPeriods ? ' e período' : ''} e faça ajustes pontuais no cadastro.`}
       >
         <div className="flex flex-wrap gap-2">
           <TutorialVideoButton page="servicos" />
@@ -954,7 +957,7 @@ export default function AdminServicesPage() {
         <MetricCard title="Ordens" value={filteredServices.length} hint="No filtro atual" icon={Wrench} />
         <MetricCard title="Colaboradores" value={collaboratorCount} hint="Escopo atual da visão" icon={Users} />
         <MetricCard title="Valor bruto" value={formatCurrency(totalValue)} hint="Soma das OS" icon={Wrench} tone="success" />
-        <MetricCard title="Períodos" value={uniquePeriods} hint="Competência + quinzena" icon={Wrench} tone="warning" />
+        <MetricCard title={hasPeriods ? 'Períodos' : 'Competências'} value={uniquePeriods} hint={hasPeriods ? 'Competência + período' : 'Meses com OS'} icon={Wrench} tone="warning" />
       </div>
 
       <div className="mt-5">
@@ -1047,11 +1050,10 @@ export default function AdminServicesPage() {
 
               <div>
                 <p className="mb-2 text-sm font-medium">Tipo de deleção</p>
-                <div className="grid gap-2 sm:grid-cols-3">
+                <div className={`grid gap-2 ${periods.length > 1 ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
                   {[
                     { value: 'monthly' as const, label: 'Mensal' },
-                    { value: 'Q1' as const, label: 'Q1' },
-                    { value: 'Q2' as const, label: 'Q2' },
+                    ...periods.map((period) => ({ value: period, label: periodLabel(period, cutDays) })),
                   ].map((option) => (
                     <Button
                       key={option.value}
@@ -1279,30 +1281,32 @@ export default function AdminServicesPage() {
                   ) : (
                   <div className="mt-5 rounded-xl border border-border bg-background p-4">
                     <div className="space-y-1">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Quinzena</p>
+                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">{hasPeriods ? 'Período' : 'Competência'}</p>
                       <div className="flex items-center gap-2">
                         <h4 className="text-sm font-semibold text-foreground">Defina o fechamento do lote</h4>
-                        <HelpTip text="A quinzena e a competência definidas aqui serão aplicadas a todas as OS importadas neste arquivo." />
+                        <HelpTip text={hasPeriods ? 'O período e a competência definidos aqui serão aplicados a todas as OS importadas neste arquivo.' : 'A competência definida aqui será aplicada a todas as OS importadas neste arquivo.'} />
                       </div>
                     </div>
 
-                    <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_0.9fr]">
-                      <div>
-                        <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Período</p>
-                        <div className="grid gap-2 sm:grid-cols-2">
-                          {serviceFortnightOptions.map((period) => (
-                            <Button
-                              key={period}
-                              type="button"
-                              variant={importFortnight === period ? 'default' : 'outline'}
-                              onClick={() => setImportFortnight(period)}
-                              className="justify-start"
-                            >
-                              {period}
-                            </Button>
-                          ))}
+                    <div className={`mt-4 grid gap-4 ${hasPeriods ? 'lg:grid-cols-[1fr_0.9fr]' : ''}`}>
+                      {hasPeriods ? (
+                        <div>
+                          <p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Período</p>
+                          <div className="grid gap-2 sm:grid-cols-2">
+                            {periods.map((period) => (
+                              <Button
+                                key={period}
+                                type="button"
+                                variant={importFortnight === period ? 'default' : 'outline'}
+                                onClick={() => setImportFortnight(period)}
+                                className="justify-start"
+                              >
+                                {periodLabel(period, cutDays)}
+                              </Button>
+                            ))}
+                          </div>
                         </div>
-                      </div>
+                      ) : null}
 
                       <label className="text-sm">
                         <span className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">
@@ -1320,8 +1324,10 @@ export default function AdminServicesPage() {
 
                     <p className="mt-3 text-xs text-muted-foreground">
                       {importFortnight || importCompetenceMonth
-                        ? `Lote configurado${importFortnight ? ` como ${importFortnight}` : ''}${importCompetenceMonth ? ` em ${importCompetenceMonth}` : ''}.`
-                        : 'Selecione a quinzena e a competência antes de confirmar a importação.'}
+                        ? `Lote configurado${importFortnight ? ` como ${periodLabel(importFortnight, cutDays)}` : ''}${importCompetenceMonth ? ` em ${importCompetenceMonth}` : ''}.`
+                        : hasPeriods
+                          ? 'Selecione o período e a competência antes de confirmar a importação.'
+                          : 'Selecione a competência antes de confirmar a importação.'}
                     </p>
                   </div>
                   )}
@@ -1360,7 +1366,7 @@ export default function AdminServicesPage() {
                     </p>
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    {importFortnight ? <StatusBadge tone="info">{importFortnight}</StatusBadge> : null}
+                    {importFortnight ? <StatusBadge tone="info">{periodLabel(importFortnight, cutDays)}</StatusBadge> : null}
                     {importCompetenceMonth ? <StatusBadge tone="info">{importCompetenceMonth}</StatusBadge> : null}
                     {validImportRows.length ? <StatusBadge tone="success">{validImportRows.length} pronta(s)</StatusBadge> : null}
                   </div>
@@ -1419,7 +1425,7 @@ export default function AdminServicesPage() {
               <Button type="button" variant="outline" onClick={() => handleImportDialogChange(false)} disabled={isImporting}>
                 {isImporting ? 'Aguarde...' : 'Fechar'}
               </Button>
-              <Button type="button" onClick={handleImportSubmit} disabled={!rowsToImport.length || (!byServiceDate && (!importFortnight || !importCompetenceMonth)) || isImporting} className="min-w-40">
+              <Button type="button" onClick={handleImportSubmit} disabled={!rowsToImport.length || (!byServiceDate && ((hasPeriods && !importFortnight) || !importCompetenceMonth)) || isImporting} className="min-w-40">
                 {isImporting ? 'Importando...' : `Importar ${rowsToImport.length} OS`}
               </Button>
             </DialogFooter>
@@ -1528,21 +1534,23 @@ export default function AdminServicesPage() {
                       />
                     </label>
 
-                    <label className="text-sm">
-                      <span className="mb-1.5 block font-medium">Quinzena</span>
-                      <select
-                        value={formData.fortnight_period}
-                        onChange={(event) => setFormData((current) => ({ ...current, fortnight_period: event.target.value as '' | ServiceFortnight }))}
-                        className={inputClassName}
-                      >
-                        <option value="">Sem quinzena</option>
-                        {serviceFortnightOptions.map((fortnight) => (
-                          <option key={fortnight} value={fortnight}>
-                            {fortnight}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
+                    {hasPeriods ? (
+                      <label className="text-sm">
+                        <span className="mb-1.5 block font-medium">Período</span>
+                        <select
+                          value={formData.fortnight_period}
+                          onChange={(event) => setFormData((current) => ({ ...current, fortnight_period: event.target.value as '' | ServiceFortnight }))}
+                          className={inputClassName}
+                        >
+                          <option value="">Sem período</option>
+                          {periods.map((period) => (
+                            <option key={period} value={period}>
+                              {periodLabel(period, cutDays)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
 
                     <label className="text-sm">
                       <span className="mb-1.5 block font-medium">Hora</span>
@@ -1583,7 +1591,7 @@ export default function AdminServicesPage() {
       <div className="mt-5">
         <DataPanel
           title="Filtros administrativos"
-          description="Visão consolidada de todos os colaboradores com recortes por colaborador, tipo, competência, quinzena e busca textual."
+          description={`Visão consolidada de todos os colaboradores com recortes por colaborador, tipo, competência${hasPeriods ? ', período' : ''} e busca textual.`}
         >
           <div className="grid gap-3 xl:grid-cols-[minmax(0,1.35fr)_repeat(4,minmax(0,0.75fr))_auto] xl:items-end">
             <div className="flex min-h-11 items-center gap-2 rounded-xl border border-border bg-background px-3.5">
@@ -1632,17 +1640,19 @@ export default function AdminServicesPage() {
               </select>
             </label>
 
-            <label className="text-sm">
-              <span className="mb-1.5 block font-medium">Quinzena</span>
-              <select value={fortnightFilter} onChange={(event) => setFortnightFilter(event.target.value as 'all' | ServiceFortnight)} className={inputClassName}>
-                <option value="all">Todas</option>
-                {availableFortnights.map((fortnight) => (
-                  <option key={fortnight} value={fortnight}>
-                    {fortnight}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {hasPeriods ? (
+              <label className="text-sm">
+                <span className="mb-1.5 block font-medium">Período</span>
+                <select value={fortnightFilter} onChange={(event) => setFortnightFilter(event.target.value as 'all' | ServiceFortnight)} className={inputClassName}>
+                  <option value="all">Todos</option>
+                  {availableFortnights.map((fortnight) => (
+                    <option key={fortnight} value={fortnight}>
+                      {periodLabel(fortnight, cutDays)}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            ) : null}
 
             <Button
               type="button"
@@ -1676,7 +1686,7 @@ export default function AdminServicesPage() {
                     <th className="py-3 pr-4 font-medium">Tipo</th>
                     <th className="py-3 pr-4 font-medium">Valor</th>
                     <th className="py-3 pr-4 font-medium">Competência</th>
-                    <th className="py-3 pr-4 font-medium">Quinzena</th>
+                    {hasPeriods ? <th className="py-3 pr-4 font-medium">Período</th> : null}
                     <th className="py-3 pr-4 font-medium">Data</th>
                     <th className="py-3 pr-4 font-medium">Hora</th>
                     <th className="py-3 font-medium">Ações</th>
@@ -1692,7 +1702,7 @@ export default function AdminServicesPage() {
                       <td className="py-3 pr-4">
                         <StatusBadge tone="info">{formatCompetenceLabel(getServiceCompetenceMonth(service))}</StatusBadge>
                       </td>
-                      <td className="py-3 pr-4">{service.fortnight_period ? <StatusBadge tone="neutral">{service.fortnight_period}</StatusBadge> : '-'}</td>
+                      {hasPeriods ? <td className="py-3 pr-4">{service.fortnight_period ? <StatusBadge tone="neutral">{periodLabel(service.fortnight_period, cutDays)}</StatusBadge> : '-'}</td> : null}
                       <td className="py-3 pr-4 text-muted-foreground">{formatDate(service.date_performed)}</td>
                       <td className="py-3 pr-4 text-muted-foreground">{service.time_performed ? formatTime(service.time_performed) : '-'}</td>
                       <td className="py-3 text-right">

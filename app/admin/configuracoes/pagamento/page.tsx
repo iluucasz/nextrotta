@@ -4,7 +4,8 @@ import { Plus, Trash2 } from 'lucide-react';
 import { Panel } from '@/components/management-ui';
 import { Button } from '@/components/ui/button';
 import { newTier, useSettingsForm } from '@/components/settings/form';
-import { Choice, NumberField, SettingsPage, Toggle } from '@/components/settings/kit';
+import type { PeriodMode } from '@/components/settings/form';
+import { Choice, NumberField, SettingsPage, TextField, Toggle } from '@/components/settings/kit';
 import type { BenefitPayment, CommissionMode } from '@/lib/organization-settings';
 import type { CompetenceSource } from '@/lib/pay-calendar';
 
@@ -30,6 +31,15 @@ const BENEFIT_PAYMENT_HELP =
 
 const BENEFIT_DEDUCT_HELP =
   'Só vale no modo "Sobre o excedente". Ligado: o vale conta como fixo e a comissão só começa depois dele (produção − salário − vales). Desligado: o vale não entra na conta da comissão.';
+
+const PERIOD_OPTIONS: Array<{ value: PeriodMode; title: string; text: string }> = [
+  { value: 'monthly', title: 'Mensal', text: 'Um pagamento por mês' },
+  { value: 'fortnightly', title: 'Quinzenal', text: 'Dois períodos: Q1 e Q2' },
+  { value: 'custom', title: 'Dias específicos', text: 'Você escolhe os dias de corte' },
+];
+
+const PERIOD_HELP =
+  'Mensal: o mês não é dividido. Q1 e Q2 somem das telas, da importação e do painel do técnico.\nQuinzenal: o mês tem dois períodos, Q1 até o dia de corte e Q2 do dia seguinte em diante.\nDias específicos: liste os dias em que um período termina (por exemplo 10, 20 gera três períodos, até 4 dias). A folha continua sendo calculada pelo mês; o período serve para separar e conferir as OS.\nOS já importadas guardam o período em que foram lançadas.';
 
 const COMPETENCE_OPTIONS: Array<{ value: CompetenceSource; title: string; text: string }> = [
   { value: 'batch', title: 'Mês do lote', text: 'Você escolhe o mês ao importar' },
@@ -110,6 +120,20 @@ export default function PagamentoPage() {
           ) : null}
         </Panel>
       </div>
+
+      <Panel title="Períodos de pagamento" help={PERIOD_HELP}>
+        <Choice label="Como o mês é dividido" value={form.periodMode} options={PERIOD_OPTIONS} onChange={(value) => update('periodMode', value)} />
+        {form.periodMode === 'fortnightly' ? (
+          <div className="st-fields one st-divider">
+            <NumberField id="period-cut" label="Último dia da Q1" unit="dia" help="A Q1 vai do dia 1 até este dia; a Q2 vai do dia seguinte até o fim do mês (1 a 27)." value={form.periodCutDay} onChange={(value) => update('periodCutDay', value)} />
+          </div>
+        ) : null}
+        {form.periodMode === 'custom' ? (
+          <div className="st-fields one st-divider">
+            <TextField id="period-cuts" label="Dias de corte" placeholder="10, 20" help="Separe os dias por vírgula, de 1 a 27 e em ordem crescente. Cada dia é o último do seu período." value={form.periodCutList} onChange={(value) => update('periodCutList', value)} />
+          </div>
+        ) : null}
+      </Panel>
 
       <Panel title="Mês das OS" help={COMPETENCE_HELP}>
         <Choice label="Quem define o mês de cada OS importada" value={form.competenceSource} options={COMPETENCE_OPTIONS} onChange={(value) => update('competenceSource', value)} />

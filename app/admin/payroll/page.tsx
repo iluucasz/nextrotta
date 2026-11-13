@@ -26,7 +26,7 @@ import type { Discount, Payroll, Service, ServiceFortnight, Technician } from '@
 import { cn } from '@/lib/utils';
 import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
-import { defaultCompetenceMonth } from '@/lib/pay-calendar';
+import { defaultCompetenceMonth, hasPeriods, isPeriodKey, periodKeys, periodLabel } from '@/lib/pay-calendar';
 import type { CommissionMode } from '@/lib/organization-settings';
 import { calculateServiceAward, valueOrDefault } from '@/lib/organization-settings';
 import {
@@ -81,11 +81,8 @@ type ServiceFortnightBucket = {
   totalValue: number;
 };
 
-type ServiceFortnightSummary = {
-  Q1: ServiceFortnightBucket;
-  Q2: ServiceFortnightBucket;
-  unassigned: ServiceFortnightBucket;
-};
+/** OS count and value per payment period ("Q1".."Q5") and "unassigned"; only the periods that have OS are present. */
+type ServiceFortnightSummary = Record<string, ServiceFortnightBucket>;
 
 type PayrollRow = {
   technician: Technician;
@@ -168,17 +165,11 @@ function getServiceCompetence(service: Service) {
 }
 
 function createServiceFortnightSummary(services: Service[]): ServiceFortnightSummary {
-  const summary: ServiceFortnightSummary = {
-    Q1: { count: 0, totalValue: 0 },
-    Q2: { count: 0, totalValue: 0 },
-    unassigned: { count: 0, totalValue: 0 },
-  };
+  const summary: ServiceFortnightSummary = {};
 
   services.forEach((service) => {
-    const bucket =
-      service.fortnight_period === 'Q1' || service.fortnight_period === 'Q2'
-        ? summary[service.fortnight_period as ServiceFortnight]
-        : summary.unassigned;
+    const key = isPeriodKey(service.fortnight_period) ? service.fortnight_period : 'unassigned';
+    const bucket = (summary[key] ??= { count: 0, totalValue: 0 });
 
     bucket.count += 1;
     bucket.totalValue = roundMoney(bucket.totalValue + moneyValue(service.value));
@@ -187,16 +178,18 @@ function createServiceFortnightSummary(services: Service[]): ServiceFortnightSum
   return summary;
 }
 
-function formatFortnights(summary: ServiceFortnightSummary, withValues = false) {
-  const entries: Array<[string, ServiceFortnightBucket]> = [
-    ['Q1', summary.Q1],
-    ['Q2', summary.Q2],
-    ['Sem quinzena', summary.unassigned],
-  ];
+/** The summary's lines in order (Q1, Q2... then the OS with no period); none when the company pays by the month. */
+function fortnightLines(summary: ServiceFortnightSummary, cutDays: number[]) {
+  if (!hasPeriods(cutDays)) return [];
 
-  return entries
-    .filter(([, bucket]) => bucket.count > 0)
-    .map(([label, bucket]) => (withValues ? `${label} ${formatCurrency(bucket.totalValue)}` : `${label} ${bucket.count}`))
+  return [...periodKeys(cutDays), 'unassigned' as const]
+    .filter((key) => (summary[key]?.count ?? 0) > 0)
+    .map((key) => ({ label: key === 'unassigned' ? 'Sem período' : periodLabel(key, cutDays), ...summary[key] }));
+}
+
+function formatFortnights(summary: ServiceFortnightSummary, cutDays: number[], withValues = false) {
+  return fortnightLines(summary, cutDays)
+    .map((line) => (withValues ? `${line.label} ${formatCurrency(line.totalValue)}` : `${line.label} ${line.count}`))
     .join(' · ');
 }
 
@@ -784,13 +777,7 @@ export default function PayrollPage() {
         production: {
           serviceCount: row.serviceCount,
           total: roundMoney(item.total_services_value),
-          fortnights: (['Q1', 'Q2', 'unassigned'] as const)
-            .filter((key) => row.serviceFortnightSummary[key].count > 0)
-            .map((key) => ({
-              label: key === 'unassigned' ? 'Sem quinzena' : key,
-              count: row.serviceFortnightSummary[key].count,
-              value: row.serviceFortnightSummary[key].totalValue,
-            })),
+          fortnights: fortnightLines(row.serviceFortnightSummary, organizationSettings.periodCutDays).map((line) => ({ label: line.label, count: line.count, value: line.totalValue })),
         },
         hourBank: roundMoney(item.hour_bank_balance),
       });
@@ -1334,7 +1321,7 @@ Só informativo: não entra no valor em conta.`
             </div>
             <DialogDescription className={MODAL_DESCRIPTION_CLASS}>
               {formatCompetenceLabel(competenceMonth)}
-              {selectedRow ? ` · ${selectedRow.serviceCount} OS${formatFortnights(selectedRow.serviceFortnightSummary) ? ` (${formatFortnights(selectedRow.serviceFortnightSummary)})` : ''}` : ''}
+              {selectedRow ? ` · ${selectedRow.serviceCount} OS${formatFortnights(selectedRow.serviceFortnightSummary, organizationSettings.periodCutDays) ? ` (${formatFortnights(selectedRow.serviceFortnightSummary, organizationSettings.periodCutDays)})` : ''}` : ''}
             </DialogDescription>
           </DialogHeader>
 
@@ -1399,7 +1386,7 @@ Só informativo: não entra no valor em conta.`
                       <div className="divide-y divide-border">
                         <AmountRow
                           label="Valor bruto das OS"
-                          hint={selectedRow ? `${selectedRow.serviceCount} OS${formatFortnights(selectedRow.serviceFortnightSummary, true) ? `\n${formatFortnights(selectedRow.serviceFortnightSummary, true)}` : ''}` : undefined}
+                          hint={selectedRow ? `${selectedRow.serviceCount} OS${formatFortnights(selectedRow.serviceFortnightSummary, organizationSettings.periodCutDays, true) ? `\n${formatFortnights(selectedRow.serviceFortnightSummary, organizationSettings.periodCutDays, true)}` : ''}` : undefined}
                           {...lineProps('total_services_value', { locked: true })}
                         />
                       </div>
