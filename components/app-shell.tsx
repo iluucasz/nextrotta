@@ -21,13 +21,9 @@ import { AssistantWidget } from '@/components/assistant/widget';
 import { LegalGate } from '@/components/legal-gate';
 import { PasswordGate } from '@/components/password-gate';
 import {
-  Banknote,
   Bell,
   BookOpen,
-  Bot,
   ChartNoAxesCombined,
-  CreditCard,
-  DatabaseBackup,
   CalendarDays,
   ChevronDown,
   Clock3,
@@ -45,7 +41,6 @@ import {
   Settings,
   ShieldCheck,
   SlidersHorizontal,
-  Tags,
   TrendingUp,
   Users,
   WalletCards,
@@ -76,6 +71,8 @@ interface NavItem {
   icon: LucideIcon;
   /** Pages that live under this one: shown indented below it, open while you are inside the section. */
   children?: NavItem[];
+  /** Other pages that belong to this item (reached from its own tabs): the item stays highlighted there. */
+  alsoActiveFor?: string[];
 }
 
 interface AppShellProps {
@@ -133,14 +130,8 @@ const adminSections: NavSection[] = [
         href: '/admin/configuracoes',
         label: 'Configurações',
         icon: Settings,
-        children: [
-          { href: '/admin/configuracoes/pagamento', label: 'Pagamento', icon: Banknote },
-          { href: '/admin/configuracoes/jornada', label: 'Jornada e horas', icon: Clock3 },
-          { href: '/admin/configuracoes/porto', label: 'Robô do Porto', icon: Bot },
-          { href: '/admin/configuracoes/financeiro', label: 'Financeiro', icon: Tags },
-          { href: '/admin/configuracoes/backups', label: 'Backups', icon: DatabaseBackup },
-          { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
-        ],
+        // The tabs inside the settings screen already list these pages (components/settings/kit.tsx).
+        alsoActiveFor: ['/admin/assinatura'],
       },
     ],
   },
@@ -588,8 +579,13 @@ export function AppShell({ children, role, userName }: AppShellProps) {
   // The most specific page wins: /admin/schedule/registros is the child, not the Escala page above it.
   const activeLink = links
     .flatMap((link) => [link, ...(link.children ?? [])])
-    .filter((link) => (link.href === rootHref ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`)))
-    .sort((left, right) => right.href.length - left.href.length)[0];
+    .map((link) => {
+      const own = link.href === rootHref ? pathname === link.href : pathname === link.href || pathname.startsWith(`${link.href}/`);
+      const other = (link.alsoActiveFor ?? []).some((href) => pathname === href || pathname.startsWith(`${href}/`));
+      return own || other ? { link, weight: link.href.length } : null;
+    })
+    .filter((match): match is { link: NavItem; weight: number } => match !== null)
+    .sort((left, right) => right.weight - left.weight)[0]?.link;
 
   // The menu is rebuilt on every page: put it back where it was, then make sure the page you are on is in view.
   useLayoutEffect(() => {
