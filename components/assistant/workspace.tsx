@@ -501,7 +501,7 @@ export function AssistantWorkspace({ compact = false }: { compact?: boolean }) {
                 <Sparkles size={17} />
                 <span>
                   <small>Créditos</small>
-                  <strong>{status ? (status.impersonating ? 'Sem débito' : number(status.balance)) : '—'}</strong>
+                  <strong>{status ? number(status.balance) : '—'}</strong>
                 </span>
               </button>
               <HelpDot label="Créditos" text={creditsHelp} />
