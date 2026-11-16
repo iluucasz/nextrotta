@@ -172,6 +172,17 @@ export interface SubscriptionModule {
 
 const round2 = (value: number) => Math.round(value * 100) / 100;
 
+/**
+ * Splits the setup fee into instalments of whole cents; the last one takes the leftover cents. The first
+ * one is what a company pays to try the platform (and what the site announces as "Teste por R$ X").
+ */
+export function splitSetupFee(total: number, installments: number): number[] {
+  const count = Math.min(12, Math.max(1, Math.floor(Number(installments)) || 1));
+  const cents = Math.round(Number(total) * 100);
+  const each = Math.floor(cents / count);
+  return Array.from({ length: count }, (_, index) => (index === count - 1 ? cents - each * (count - 1) : each) / 100);
+}
+
 /** How many monthly payments the annual price asks for (10 when the annual price is "2 months free"). */
 export function annualFactor(plan: Pick<Plan, 'monthlyPrice' | 'annualPrice'>) {
   return plan.monthlyPrice > 0 && plan.annualPrice > 0 ? plan.annualPrice / plan.monthlyPrice : 12;

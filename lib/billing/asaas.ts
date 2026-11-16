@@ -91,14 +91,13 @@ export function createPayment(input: {
   description: string;
   externalReference: string;
   billingType?: AsaasBillingType;
-  /** Splits `value` into this many monthly charges (the first one due on `dueDate`). */
-  installmentCount?: number;
 }) {
-  const { value, installmentCount, ...rest } = input;
-  const body = installmentCount && installmentCount > 1
-    ? { ...rest, installmentCount, totalValue: value }
-    : { ...rest, value };
-  return request<AsaasPayment>('POST', '/payments', { billingType: 'UNDEFINED', ...body });
+  return request<AsaasPayment>('POST', '/payments', { billingType: 'UNDEFINED', ...input });
+}
+
+/** Asaas' way of canceling a charge that is not paid yet. */
+export function deletePayment(paymentId: string) {
+  return request<{ deleted: boolean }>('DELETE', `/payments/${paymentId}`);
 }
 
 export function createSubscription(input: {

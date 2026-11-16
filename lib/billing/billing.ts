@@ -3,7 +3,7 @@ import { sql } from '../db';
 import { createClosingBackup } from '../backup/service';
 import { notifyOrganization } from '../notifications';
 import { notifyPlatform } from '../platform/notice-alerts';
-import { calculateSubscriptionValue, type BillingCycle } from '../plans';
+import { calculateSubscriptionValue, splitSetupFee, type BillingCycle } from '../plans';
 import { PlatformError, type Actor } from '../platform/errors';
 import {
   AsaasError,
@@ -11,6 +11,7 @@ import {
   createCustomer,
   createPayment,
   createSubscription,
+  deletePayment,
   listCustomerPayments,
   updatePayment,
   updateSubscription,
@@ -48,7 +49,7 @@ function asPlatformError(error: unknown): never {
 async function loadContext(organizationId: string) {
   const rows = await sql`
     SELECT o.id, o.name, o.legal_name, o.document, o.email, o.phone, o.status, o.status_source, o.unbilled,
-           s.*, p.name AS plan_name, p.setup_installments,
+           s.*, p.name AS plan_name, p.setup_installments AS plan_setup_installments,
            (SELECT COUNT(*)::int FROM technicians t
              WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS active_technicians
     FROM organizations o
@@ -61,8 +62,33 @@ async function loadContext(organizationId: string) {
 }
 
 /** How many instalments the plan lets the setup fee be split into (1 = one charge). */
-function setupInstallments(context: Record<string, unknown>) {
-  return Math.max(1, Math.round(Number(context.setup_installments)) || 1);
+function planSetupInstallments(context: Record<string, unknown>) {
+  return Math.max(1, Math.round(Number(context.plan_setup_installments)) || 1);
+}
+
+/** The same day of a later month (days past 28 are clamped so every month has it). */
+function addMonths(dateKey: string, months: number) {
+  const [year, month, day] = dateKey.split('-').map(Number);
+  return new Date(Date.UTC(year, month - 1 + months, Math.min(day, 28))).toISOString().slice(0, 10);
+}
+
+/**
+ * Charges instalments 2 to N of the setup fee, one per month starting on `firstDueDate`. The first one is
+ * what the customer pays to start (reference ":setup"); these are the following ones.
+ */
+async function createLaterSetupParcels(organizationId: string, context: Record<string, unknown>, customerId: string, firstDueDate: string) {
+  const count = Math.max(1, Math.round(Number(context.setup_installments)) || 1);
+  const amounts = splitSetupFee(Number(context.setup_fee), count);
+  for (let index = 1; index < count; index += 1) {
+    const payment = await createPayment({
+      customer: customerId,
+      value: amounts[index],
+      dueDate: addMonths(firstDueDate, index - 1),
+      description: `NextRotta — implantação (parcela ${index + 1} de ${count})`,
+      externalReference: `${organizationId}:setup:${index + 1}`,
+    });
+    await upsertCharge(organizationId, payment);
+  }
 }
 
 function subscriptionValue(context: Record<string, unknown>) {
@@ -89,7 +115,7 @@ function subscriptionDescription(context: Record<string, unknown>) {
 
 function chargeKind(payment: AsaasPayment) {
   if (payment.subscription) return 'subscription';
-  if (payment.externalReference?.endsWith(':setup')) return 'setup';
+  if (/:setup(:\d+)?$/.test(payment.externalReference ?? '')) return 'setup';
   if (payment.externalReference?.includes(':credits:')) return 'credits';
   return 'one_off';
 }
@@ -175,7 +201,8 @@ export async function upsertCharge(organizationId: string, payment: AsaasPayment
     `;
   }
 
-  if (kind === 'setup' && PAID_STATUSES.includes(payment.status)) {
+  // Only the first instalment (reference ":setup") releases the account; the later ones are ordinary charges.
+  if (payment.externalReference?.endsWith(':setup') && PAID_STATUSES.includes(payment.status)) {
     await sql`UPDATE subscriptions SET setup_fee_status = 'paid', updated_at = NOW() WHERE organization_id = ${organizationId}`;
     // Self-service signup: the setup fee paid starts the subscription (first charge next month).
     await startSubscriptionAfterSetup(organizationId);
@@ -248,16 +275,19 @@ export async function activateBilling(organizationId: string, input: { firstDueD
     }
 
     if (context.setup_fee_status === 'pending' && !context.asaas_setup_payment_id && Number(context.setup_fee) > 0) {
+      const installments = planSetupInstallments(context);
       const setup = await createPayment({
         customer: customerId,
-        value: Number(context.setup_fee),
+        value: splitSetupFee(Number(context.setup_fee), installments)[0],
         dueDate: firstDueDate,
-        description: 'NextRotta — implantação',
+        description: installments > 1 ? `NextRotta — implantação (parcela 1 de ${installments})` : 'NextRotta — implantação',
         externalReference: `${organizationId}:setup`,
-        installmentCount: setupInstallments(context),
       });
-      await sql`UPDATE subscriptions SET asaas_setup_payment_id = ${setup.id}, updated_at = NOW() WHERE organization_id = ${organizationId}`;
+      await sql`UPDATE subscriptions SET asaas_setup_payment_id = ${setup.id}, setup_installments = ${installments}, updated_at = NOW() WHERE organization_id = ${organizationId}`;
       await upsertCharge(organizationId, setup);
+      if (installments > 1) {
+        await createLaterSetupParcels(organizationId, { ...context, setup_installments: installments }, customerId, addMonths(firstDueDate, 1));
+      }
     }
 
     const subscription = await createSubscription({
@@ -312,17 +342,18 @@ export function nextMonthDueDate(day: number) {
 /** The setup-fee charge of a self-service signup (due in 3 days; Pix, boleto or card). */
 export async function createSetupCharge(organizationId: string, customerId: string) {
   const context = await loadContext(organizationId);
-  const value = Number(context.setup_fee);
-  if (value <= 0) return null;
+  const total = Number(context.setup_fee);
+  if (total <= 0) return null;
+  // The customer pays the first instalment to start (a trial: cancel before the next one and nothing more is charged).
+  const installments = planSetupInstallments(context);
   const payment = await createPayment({
     customer: customerId,
-    value,
+    value: splitSetupFee(total, installments)[0],
     dueDate: addDays(brasiliaToday(), 3),
-    description: 'NextRotta — implantação',
+    description: installments > 1 ? `NextRotta — implantação (parcela 1 de ${installments})` : 'NextRotta — implantação',
     externalReference: `${organizationId}:setup`,
-    installmentCount: setupInstallments(context),
   }).catch(asPlatformError);
-  await sql`UPDATE subscriptions SET asaas_setup_payment_id = ${payment.id}, updated_at = NOW() WHERE organization_id = ${organizationId}`;
+  await sql`UPDATE subscriptions SET asaas_setup_payment_id = ${payment.id}, setup_installments = ${installments}, updated_at = NOW() WHERE organization_id = ${organizationId}`;
   await upsertCharge(organizationId, payment);
   return payment;
 }
@@ -354,6 +385,10 @@ export async function startSubscriptionAfterSetup(organizationId: string) {
       SET asaas_subscription_id = ${subscription.id}, next_due_date = ${nextDueDate}, updated_at = NOW()
       WHERE organization_id = ${organizationId}
     `;
+    // The remaining instalments of the setup fee fall due on the same days as the monthly charges.
+    if (Number(context.setup_installments) > 1) {
+      await createLaterSetupParcels(organizationId, context, String(context.asaas_customer_id), nextDueDate);
+    }
   }
 
   await sql`UPDATE organizations SET onboarding_status = 'setup', updated_at = NOW() WHERE id = ${organizationId} AND onboarding_status = 'awaiting_payment'`;
@@ -486,6 +521,111 @@ export async function cancelBilling(organizationId: string, actor: Actor) {
     href: `/plataforma/organizacoes/${organizationId}`,
     dedupeKey: `billing:canceled:${organizationId}:${brasiliaToday()}`,
   });
+}
+
+/**
+ * The company's admin cancels on their own. Nothing else is charged: the recurring charge ends and every
+ * charge still waiting to be paid (monthly fee, remaining setup instalments) is canceled in the gateway.
+ * Charges already overdue stay owed. The company keeps its read-only access to download its data, like any
+ * other canceled company, and the owner can reactivate it.
+ */
+export async function cancelSubscriptionByCustomer(organizationId: string, userId: string) {
+  const [organization] = await sql`SELECT status, unbilled FROM organizations WHERE id = ${organizationId} AND deleted_at IS NULL`;
+  if (!organization) throw new PlatformError('Empresa não encontrada.', 404);
+  if (organization.unbilled) throw new PlatformError('Esta conta não tem cobrança para cancelar.', 409);
+  if (organization.status === 'canceled') throw new PlatformError('A assinatura já está cancelada.', 409);
+
+  // Same as when the owner cancels: the data as of now is saved for the company to download.
+  await createClosingBackup(organizationId);
+
+  const context = await loadContext(organizationId);
+  if (context.asaas_subscription_id) await cancelSubscription(String(context.asaas_subscription_id)).catch(asPlatformError);
+
+  const pending = await sql`
+    SELECT id, asaas_payment_id FROM billing_charges
+    WHERE organization_id = ${organizationId} AND status = 'PENDING' AND kind IN ('subscription', 'setup')
+  `;
+  const failed: string[] = [];
+  for (const charge of pending) {
+    try {
+      await deletePayment(String(charge.asaas_payment_id));
+      await sql`UPDATE billing_charges SET status = 'DELETED', updated_at = NOW() WHERE id = ${charge.id}`;
+    } catch (error) {
+      failed.push(String(charge.asaas_payment_id));
+      console.error('[billing] could not cancel a pending charge:', charge.asaas_payment_id, error);
+    }
+  }
+
+  await sql`
+    UPDATE subscriptions SET asaas_subscription_id = NULL, next_due_date = NULL, updated_at = NOW()
+    WHERE organization_id = ${organizationId}
+  `;
+  await sql`
+    UPDATE organizations
+    SET status = 'canceled', status_source = 'billing', status_reason = 'Cancelado pelo cliente',
+        status_changed_at = NOW(), updated_at = NOW()
+    WHERE id = ${organizationId}
+  `;
+  await recordAudit({
+    organizationId,
+    actorId: userId,
+    actorRole: 'admin',
+    action: 'billing.canceled_by_customer',
+    targetType: 'subscription',
+    targetId: organizationId,
+    details: { canceledCharges: pending.length - failed.length, failedCharges: failed },
+  });
+  await notifyPlatform({
+    organizationId,
+    category: 'growth',
+    severity: failed.length ? 'critical' : 'warning',
+    title: 'Cliente cancelou a assinatura',
+    body: failed.length
+      ? `${failed.length} cobrança(s) pendente(s) não puderam ser canceladas no Asaas: cancele à mão.`
+      : 'A cobrança recorrente e as cobranças pendentes foram canceladas.',
+    href: `/plataforma/organizacoes/${organizationId}`,
+    dedupeKey: `billing:canceled-by-customer:${organizationId}:${brasiliaToday()}`,
+  });
+  return { canceledCharges: pending.length - failed.length };
+}
+
+/**
+ * What the company's admin should be told about at the top of the screens: the next charge waiting to be
+ * paid and whether the company is still on its trial (only the first setup instalment paid, no monthly fee
+ * yet), when it can cancel at no further cost. Null when there is nothing to say.
+ */
+export async function getBillingNotice(organizationId: string) {
+  const [organization] = await sql`SELECT status, unbilled FROM organizations WHERE id = ${organizationId}`;
+  if (!organization || organization.unbilled || organization.status === 'canceled') return null;
+
+  const [subscription] = await sql`SELECT setup_installments FROM subscriptions WHERE organization_id = ${organizationId} AND canceled_at IS NULL`;
+  if (!subscription) return null;
+
+  const [next] = await sql`
+    SELECT id, kind, description, value, due_date, invoice_url
+    FROM billing_charges
+    WHERE organization_id = ${organizationId} AND status = 'PENDING' AND kind IN ('subscription', 'setup')
+    ORDER BY due_date, created_at
+    LIMIT 1
+  `;
+  if (!next) return null;
+
+  const [paid] = await sql`
+    SELECT COUNT(*) FILTER (WHERE kind = 'setup')::int AS setup, COUNT(*) FILTER (WHERE kind = 'subscription')::int AS subscription
+    FROM billing_charges WHERE organization_id = ${organizationId} AND status = ANY(${PAID_STATUSES})
+  `;
+  const dueDate = new Date(next.due_date).toISOString().slice(0, 10);
+  const daysLeft = Math.round((Date.parse(dueDate) - Date.parse(brasiliaToday())) / 86_400_000);
+  return {
+    chargeId: String(next.id),
+    kind: String(next.kind),
+    description: (next.description as string | null) ?? null,
+    value: Number(next.value),
+    dueDate,
+    daysLeft,
+    invoiceUrl: (next.invoice_url as string | null) ?? null,
+    trial: Number(subscription.setup_installments) > 1 && Number(paid.setup) === 1 && Number(paid.subscription) === 0,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------

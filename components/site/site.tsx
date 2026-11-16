@@ -1,5 +1,6 @@
 'use client';
 import { legalText } from '@/lib/legal/texts';
+import { splitSetupFee } from '@/lib/plans';
 import Link from 'next/link';
 import { splitNewsBody, stripSceneMarkers } from '@/lib/news-scenes';
 import { NewsFigure } from './news-scenes';
@@ -335,6 +336,11 @@ export function Faq({ content }: { content: SiteContent }) {
 const integer = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
 const unlimited = (value: number | null) =>
   value === null ? 'Ilimitado' : integer(value);
+/** The first instalment of the setup fee: what a company pays to try the platform (null when it is paid at once). */
+const trialLabel = (fee: number, installments: number) =>
+  installments > 1
+    ? `Teste por ${money(splitSetupFee(fee, installments)[0])} · cancele quando quiser`
+    : null;
 const setupLabel = (fee: number, installments: number) =>
   installments > 1
     ? `Implantação de ${money(fee)} em até ${installments}x`
@@ -409,6 +415,14 @@ function BuilderCard({
           <Check size={16} />
           {setupLabel(setupFee, builder.setupInstallments)}
         </li>
+        {trialLabel(setupFee, builder.setupInstallments) ? (
+          <li className="nr-trial-row">
+            <Gift size={16} />
+            {trialLabel(setupFee, builder.setupInstallments)}
+          </li>
+        ) : (
+          <li aria-hidden="true" className="nr-row-spacer" />
+        )}
         <li>
           <Check size={16} />
           Backup diário
@@ -513,9 +527,9 @@ export function Pricing({
       <div className="nr-free-month">
         <Gift size={18} />
         <span>
-          <strong>1º mês grátis.</strong> Hoje você paga só a implantação; a
-          primeira {cycle === 'annual' ? 'anuidade' : 'mensalidade'} só vem no
-          mês seguinte.
+          <strong>Teste sem risco:</strong> pague só a 1ª parcela da implantação.
+          Não gostou? Cancele quando quiser, sem nenhuma outra cobrança. O 1º
+          mês de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é grátis.
         </span>
       </div>
     </div>
@@ -553,8 +567,8 @@ export function Pricing({
         className="nr-grid-3 nr-pricing-grid"
         style={
           {
-            '--pricing-rows': orderedFeatures.length + 10,
-            '--pricing-benefit-rows': orderedFeatures.length + 4,
+            '--pricing-rows': orderedFeatures.length + 11,
+            '--pricing-benefit-rows': orderedFeatures.length + 5,
           } as CSSProperties
         }
       >
@@ -612,6 +626,14 @@ export function Pricing({
                   ? 'Implantação: valor negociado'
                   : setupLabel(p.setupFee, p.setupInstallments)}
               </li>
+              {!p.onRequest && trialLabel(p.setupFee, p.setupInstallments) ? (
+                <li className="nr-trial-row">
+                  <Gift size={16} />
+                  {trialLabel(p.setupFee, p.setupInstallments)}
+                </li>
+              ) : (
+                <li aria-hidden="true" className="nr-row-spacer" />
+              )}
               <li>
                 <Check size={16} />
                 Backup diário

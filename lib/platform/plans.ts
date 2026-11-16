@@ -291,6 +291,7 @@ export async function getSubscription(organizationId: string) {
     ...calculateSubscriptionValue(pricing, Number(row.active_technicians)),
     setupFee: Number(row.setup_fee),
     setupFeeStatus: String(row.setup_fee_status),
+    setupInstallments: Number(row.setup_installments ?? 1),
     graceDays: Number(row.grace_days),
     limitOverrides: row.limit_overrides as Partial<PlanLimits>,
     nextDueDate: row.next_due_date,

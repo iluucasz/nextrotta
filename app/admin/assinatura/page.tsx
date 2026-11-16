@@ -8,6 +8,7 @@ import '@/components/settings/settings.css';
 import { useAppSession } from '@/hooks/use-app-session';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { AiCreditsPanel, ExportPanel } from './credits-panel';
+import { CancelPanel } from './cancel-panel';
 import { UpgradePanel } from './upgrade-panel';
 
 type Subscription = {
@@ -24,6 +25,7 @@ type Subscription = {
   value: number;
   setupFee: number;
   setupFeeStatus: 'none' | 'pending' | 'paid' | 'waived';
+  setupInstallments: number;
   nextDueDate: string | null;
 };
 
@@ -154,7 +156,7 @@ export default function SubscriptionPage() {
 
           {!lifetime ? (
           <div className="mg-grid-finance st-billing">
-            <SectionPanel title="Cobranças" description="Pague pelo link de cada cobrança (Pix, boleto ou cartão).">
+            <SectionPanel title="Cobranças" description="Pague pelo link de cada cobrança (Pix, boleto ou cartão). Dá para adiantar qualquer parcela.">
               {charges.length ? (
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[520px] text-sm">
@@ -239,6 +241,7 @@ export default function SubscriptionPage() {
           ) : null}
 
           {!lifetime ? <UpgradePanel /> : null}
+          {!lifetime ? <CancelPanel setupFee={subscription.setupFee} setupInstallments={subscription.setupInstallments ?? 1} charges={charges} /> : null}
           <AiCreditsPanel />
         </div>
       ) : null}

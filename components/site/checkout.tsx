@@ -1,6 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { splitSetupFee } from '@/lib/plans';
 import { ArrowLeft, ArrowRight, CalendarClock, Check, CheckCircle2, CreditCard, Gift, Loader2, ShieldCheck, Wrench, XCircle } from 'lucide-react';
 
 /**
@@ -287,6 +288,8 @@ export function MarketingCheckout() {
   const setupFee = quote?.setupFee ?? chosen?.setupFee ?? 0;
   const per = cycle === 'annual' ? 'ano' : 'mês';
   const installments = quote?.setupInstallments ?? chosen?.setupInstallments ?? 1;
+  const parcels = splitSetupFee(setupFee, installments);
+  const trial = installments > 1 && setupFee > 0;
 
   return (
     <section className="nr-public-section nr-contact">
@@ -294,13 +297,22 @@ export function MarketingCheckout() {
         <p className="nr-kicker">CONTRATAÇÃO</p>
         <h1>Assine agora e comece com a gente.</h1>
         <p>
-          Crie a conta da sua empresa em poucos minutos. Você paga hoje só a implantação; a primeira {cycle === 'annual' ? 'anuidade' : 'mensalidade'} vem
+          Crie a conta da sua empresa em poucos minutos. Você paga hoje só {trial ? 'a 1ª parcela da' : 'a'} implantação; a primeira {cycle === 'annual' ? 'anuidade' : 'mensalidade'} vem
           no mês seguinte, no dia que você escolher.
         </p>
         <div className="nr-free-month" style={{ marginTop: 18 }}>
           <Gift size={18} />
           <span>
-            <strong>1º mês grátis.</strong> Nada de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} agora: só a implantação.
+            {trial ? (
+              <>
+                <strong>Teste por {money(parcels[0])}.</strong> Não gostou? Cancele quando quiser e não paga mais nada. O 1º mês de{' '}
+                {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é grátis.
+              </>
+            ) : (
+              <>
+                <strong>1º mês grátis.</strong> Nada de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} agora: só a implantação.
+              </>
+            )}
           </span>
         </div>
 
@@ -319,11 +331,11 @@ export function MarketingCheckout() {
           />
           <SummaryRow
             icon={<CreditCard size={18} />}
-            title={installments > 1 && setupFee > 0 ? 'Implantação' : 'Hoje: implantação'}
-            value={setupFee > 0 ? money(setupFee) : 'Sem custo'}
+            title={trial ? 'Hoje: 1ª parcela da implantação' : 'Hoje: implantação'}
+            value={setupFee > 0 ? money(trial ? parcels[0] : setupFee) : 'Sem custo'}
             detail={
-              installments > 1 && setupFee > 0
-                ? `Pix, boleto ou cartão, em até ${installments}x de ${money(setupFee / installments)}. A primeira parcela libera o seu acesso.`
+              trial
+                ? `Pix, boleto ou cartão. A implantação de ${money(setupFee)} sai em ${installments}x: se continuar, esta é a 1ª parcela e faltam ${installments - 1}, junto com a mensalidade. Se cancelar antes, não paga mais nada.`
                 : 'Pix, boleto ou cartão. Pago uma única vez, no seu primeiro acesso.'
             }
           />
@@ -585,7 +597,7 @@ export function MarketingCheckout() {
                 </label>
                 <p style={{ marginTop: 16, fontSize: 13, color: MUTED, lineHeight: 1.6 }}>
                   Ao concluir, sua conta é criada e você entra direto em {values.slug || 'sua-empresa'}.{rootDomain}
-                  {setupFee > 0 ? `, onde paga a implantação (${money(setupFee)})` : ''}.
+                  {setupFee > 0 ? `, onde paga ${trial ? 'a 1ª parcela da implantação' : 'a implantação'} (${money(trial ? parcels[0] : setupFee)})` : ''}.
                 </p>
               </>
             )}

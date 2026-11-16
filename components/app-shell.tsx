@@ -154,6 +154,18 @@ const LINK_FEATURES: Record<string, string> = {
   '/dashboard/hours': 'hours',
 };
 
+/** The next charge waiting to be paid (admins only), and whether the company is still on its trial. */
+type BillingNoticeInfo = {
+  chargeId: string;
+  kind: string;
+  description: string | null;
+  value: number;
+  dueDate: string;
+  daysLeft: number;
+  invoiceUrl: string | null;
+  trial: boolean;
+};
+
 type OrganizationStatusInfo = {
   readOnly: boolean;
   pastDue: boolean;
@@ -161,6 +173,7 @@ type OrganizationStatusInfo = {
   features: string[] | null;
   /** The platform's maintenance notice, when on. */
   maintenance: string | null;
+  billingNotice?: BillingNoticeInfo | null;
   /** Read-only organizations: last day they can still view everything (then download only). */
   readOnlyUntil: string | null;
   /** Subscribed on the site and still being set up by the team: browsing only. */
@@ -202,6 +215,72 @@ function BillingBanner({ readOnly, readOnlyUntil }: { readOnly: boolean; readOnl
           seja pausado.
         </>
       )}
+    </div>
+  );
+}
+
+const dismissedNoticeKey = (chargeId: string) => `nr-billing-notice-dismissed:${chargeId}`;
+
+/**
+ * Tells the admin about the next charge (and the trial: cancel in Assinatura and nothing more is charged).
+ * The "x" hides it for that charge only; the next charge brings it back.
+ */
+function BillingNoticeBanner({ notice }: { notice: BillingNoticeInfo }) {
+  const [hidden, setHidden] = useState(true);
+  useEffect(() => {
+    try {
+      setHidden(window.localStorage.getItem(dismissedNoticeKey(notice.chargeId)) === '1');
+    } catch {
+      setHidden(false);
+    }
+  }, [notice.chargeId]);
+  if (hidden) return null;
+
+  const value = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(notice.value);
+  const date = new Intl.DateTimeFormat('pt-BR', { timeZone: 'UTC', day: '2-digit', month: 'long' }).format(new Date(`${notice.dueDate}T00:00:00Z`));
+  const when = notice.daysLeft <= 0 ? 'vence hoje' : notice.daysLeft === 1 ? 'vence amanhã' : `vence em ${notice.daysLeft} dias (${date})`;
+
+  return (
+    <div className="flex items-start gap-3 border-b border-sky-200 bg-sky-50 px-4 py-2 text-sm text-sky-950" role="status">
+      <p className="flex-1">
+        {notice.trial ? (
+          <>
+            <strong className="font-semibold">Você está no período de teste.</strong> Não gostou? Cancele em{' '}
+            <a href="/admin/assinatura" className="font-medium underline underline-offset-2">
+              Assinatura
+            </a>{' '}
+            e não paga mais nada. Se continuar, a próxima cobrança é de {value} e {when}.
+          </>
+        ) : (
+          <>
+            <strong className="font-semibold">Próxima cobrança: {value}</strong> {when}.{' '}
+            {notice.invoiceUrl ? (
+              <a href={notice.invoiceUrl} target="_blank" rel="noopener noreferrer" className="font-medium underline underline-offset-2">
+                Pagar agora
+              </a>
+            ) : (
+              <a href="/admin/assinatura" className="font-medium underline underline-offset-2">
+                Ver em Assinatura
+              </a>
+            )}
+          </>
+        )}
+      </p>
+      <button
+        type="button"
+        aria-label="Fechar aviso"
+        className="shrink-0 rounded p-0.5 text-sky-900 hover:bg-sky-100"
+        onClick={() => {
+          setHidden(true);
+          try {
+            window.localStorage.setItem(dismissedNoticeKey(notice.chargeId), '1');
+          } catch {
+            /* the notice just comes back next time */
+          }
+        }}
+      >
+        <X size={16} />
+      </button>
     </div>
   );
 }
@@ -622,6 +701,12 @@ export function AppShell({ children, role, userName }: AppShellProps) {
       {previewMode ? <PreviewBanner userName={userName} /> : impersonationMode ? <ImpersonationBanner /> : null}
       {organizationStatus?.maintenance ? <MaintenanceBanner message={organizationStatus.maintenance} /> : null}
       {organizationStatus?.preparing ? <PreparingBanner /> : null}
+      {organizationStatus?.billingNotice &&
+      !organizationStatus.readOnly &&
+      !organizationStatus.pastDue &&
+      (organizationStatus.billingNotice.trial || organizationStatus.billingNotice.daysLeft <= 7) ? (
+        <BillingNoticeBanner notice={organizationStatus.billingNotice} />
+      ) : null}
       {organizationStatus?.readOnly || organizationStatus?.pastDue ? (
         <BillingBanner readOnly={organizationStatus.readOnly} readOnlyUntil={organizationStatus.readOnlyUntil} />
       ) : null}

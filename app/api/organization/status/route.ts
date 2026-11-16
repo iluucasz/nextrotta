@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
+import { getBillingNotice } from '@/lib/billing/billing';
 import { enabledFeatures, getEntitlements } from '@/lib/billing/entitlements';
 import { getMaintenanceNotice } from '@/lib/platform/settings';
 import { getAccessById } from '@/lib/organization-access';
@@ -17,11 +18,13 @@ export async function GET(request: NextRequest) {
     const auth = await verifyOrganizationAuth(request);
     if (!auth) return NextResponse.json({ error: 'Não autorizado' }, { status: 401 });
 
-    const [rows, entitlements, maintenance, access] = await Promise.all([
+    const [rows, entitlements, maintenance, access, billingNotice] = await Promise.all([
       sql`SELECT status, name FROM organizations WHERE id = ${auth.organizationId}`,
       getEntitlements(auth.organizationId),
       getMaintenanceNotice(),
       getAccessById(auth.organizationId),
+      // Only the company's admin pays, so only they are told about charges.
+      auth.role === 'admin' ? getBillingNotice(auth.organizationId).catch(() => null) : Promise.resolve(null),
     ]);
     const status = String(rows[0]?.status ?? 'active');
 
@@ -33,6 +36,7 @@ export async function GET(request: NextRequest) {
       plan: entitlements.planKey ? { key: entitlements.planKey, name: entitlements.planName } : null,
       features: enabledFeatures(entitlements),
       maintenance,
+      billingNotice,
       readOnlyUntil: access?.readOnlyUntil ?? null,
       // Subscribed on the site, setup fee paid, team still preparing: look around, no changes yet.
       preparing: access?.onboarding === 'setup',
