@@ -8,6 +8,7 @@ import { grantMonthlyCredits } from '../lib/platform/ai-credits';
 import { expireCoupons } from '../lib/platform/coupons';
 import { runPlatformChecks } from '../lib/platform/notice-checks';
 import { collectVpsMetrics, flushVpsMetrics, runAutomaticVpsCleanup, vpsAgentConfigured } from '../lib/platform/vps';
+import { runFleetChecks } from '../lib/vehicles/notices';
 import { recordHeartbeat, trackRun } from '../lib/worker-health';
 import { refreshAllInstanceStatuses } from '../lib/whatsapp/instance';
 import { hasScheduledNotificationInWindow, runDueNotifications } from '../lib/whatsapp/notifications';
@@ -120,6 +121,29 @@ async function runBackups() {
   }
 }
 
+/**
+ * Every day at 08:00 (Brasília): the Carros reminders (the weekly "consulte as multas dos carros" on Mondays, the deadline to name
+ * the driver, licensing and insurance dates), so they reach the admin even if nobody opens the system. Each notice is once only.
+ */
+let fleetRunning = false;
+let lastFleetDay = '';
+async function runFleet() {
+  if (fleetRunning) return;
+  fleetRunning = true;
+  try {
+    const result = await trackRun('fleet', null, () => runFleetChecks(brasiliaDay(new Date())));
+    log(`Carros: ${result.checked} empresa(s) conferida(s), ${result.failed} com falha.`);
+    if (!result.failed) lastFleetDay = brasiliaDay(new Date());
+  } catch (error) {
+    log('Avisos do app Carros falharam:', error);
+  } finally {
+    fleetRunning = false;
+  }
+}
+
+/** Brasília hour of the day (0-23). */
+const brasiliaHour = () => Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Sao_Paulo', hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+
 async function heartbeat() {
   try {
     await recordHeartbeat();
@@ -163,6 +187,8 @@ async function maintenance() {
   if (isBalanceConfigured() && new Date().getMinutes() < 30) void readAiBalance();
   // The nightly backups at 00:00 cover the normal case; this catches a day the worker was down at midnight.
   if (lastBackupDay !== brasiliaDay(new Date())) void runBackups();
+  // Same for the 08:00 Carros round: a worker that was down at 08:00 does it on the next tick of the day.
+  if (brasiliaHour() >= 8 && lastFleetDay !== brasiliaDay(new Date())) void runFleet();
 }
 
 /** The daily VPS cleanup, once the owner switched it on (Configurações da plataforma → VPS). */
@@ -200,10 +226,11 @@ if (runArg) {
     schedule: () => runAllNow(portoHooks, 'schedule'),
     billing: runBilling,
     backups: runBackups,
+    fleet: runFleet,
   };
   const job = jobs[runArg] ?? null;
   if (!job) {
-    console.error(`--run inválido: "${runArg}" (use "hours", "schedule", "billing" ou "backups")`);
+    console.error(`--run inválido: "${runArg}" (use "hours", "schedule", "billing", "backups" ou "fleet")`);
     process.exit(1);
   }
   job().then(() => process.exit(0));
@@ -217,6 +244,7 @@ if (runArg) {
   cron.schedule('0 6 * * *', runBilling, { timezone: 'America/Sao_Paulo' });
   // Daily backup of each organization, at midnight Brasília time.
   cron.schedule('0 0 * * *', () => void runBackups(), { timezone: 'America/Sao_Paulo' });
+  cron.schedule('0 8 * * *', () => void runFleet(), { timezone: 'America/Sao_Paulo' });
   // WhatsApp notification times are edited in the admin UI, so rather than one cron entry per
   // notification this checks every few minutes what is due. Each notification claims its day/month
   // before running, so it's once only.

@@ -8,6 +8,30 @@ const brDate = (key: string) => `${key.slice(8, 10)}/${key.slice(5, 7)}/${key.sl
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) / 86_400_000);
 
 /**
+ * The worker's daily round (08:00 Brasília): runs checkFleet for every company that has cars and is not blocked, so the weekly
+ * reminder (every Monday), the deadlines and the licensing dates reach the admin without anyone opening the system.
+ * One company failing never stops the others. Safe to run again: each notice says a thing once.
+ */
+export async function runFleetChecks(today: string): Promise<{ checked: number; failed: number }> {
+  const companies = await sql`
+    SELECT DISTINCT o.id
+    FROM organizations o
+    JOIN vehicles v ON v.organization_id = o.id AND v.deleted_at IS NULL
+    WHERE o.deleted_at IS NULL AND o.status IN ('active', 'past_due')
+  `;
+  let failed = 0;
+  for (const company of companies) {
+    try {
+      await checkFleet(String(company.id), today);
+    } catch (error) {
+      failed += 1;
+      console.error('[carros] weekly check failed for', company.id, error);
+    }
+  }
+  return { checked: companies.length - failed, failed };
+}
+
+/**
  * What the Carros app tells the admin through the bell: once a week, to look up the cars' fines; each fine whose time to name
  * the driver is running out; and each car whose licensing or insurance is about to expire. Each says a thing once (dedupe key)
  * and goes away when the situation does.

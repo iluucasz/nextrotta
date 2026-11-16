@@ -174,7 +174,26 @@ test('the bell reminds once a week, warns of a deadline running out and of licen
   assert.deepEqual(open, ['fleet:fines-check:2026-12-07'], 'naming the driver and renewing the licensing take their warnings off the bell');
 });
 
-test('removing a fine is a soft delete', { skip: !hasDatabase }, async () => {
+test('the worker round reaches every company with cars on its own, and skips blocked ones', { skip: !hasDatabase }, async () => {
+  const wipe = () => sql`DELETE FROM notifications WHERE organization_id = ANY(${orgs}::uuid[])`;
+  await wipe();
+  const today = '2026-12-14'; // a Monday
+  await notices.runFleetChecks(today);
+  const keys = async (org) => (await sql`SELECT dedupe_key FROM notifications WHERE organization_id = ${org}`).map((row) => row.dedupe_key);
+  assert.ok((await keys(actor.organizationId)).includes('fleet:fines-check:2026-12-14'), 'the Monday reminder is created without anyone opening the system');
+  assert.ok((await keys(other.organizationId)).includes('fleet:fines-check:2026-12-14'));
+
+  await sql`UPDATE organizations SET status = 'suspended' WHERE id = ${other.organizationId}`;
+  await wipe();
+  await notices.runFleetChecks(today);
+  assert.deepEqual(await keys(other.organizationId), [], 'a blocked company gets nothing');
+  assert.equal((await keys(actor.organizationId)).length > 0, true);
+
+  await notices.runFleetChecks(today);
+  assert.equal((await keys(actor.organizationId)).filter((key) => key.startsWith('fleet:fines-check:')).length, 1, 'running again the same week adds nothing');
+});
+
+test('removing a fine is a soft delete',{ skip: !hasDatabase }, async () => {
   const [fine] = await list();
   await fines.removeFine(actor, fine.id);
   assert.equal((await list()).length, 0);
