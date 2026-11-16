@@ -11,6 +11,7 @@ import { competenceForDate, cycleDay, shiftMonth } from './pay-calendar';
 import { getOrganizationSystemStatus } from './system-status';
 import { findPortoLoginProblem, portoLoginNotice } from './porto-login-errors';
 import { checkParts } from './parts/notices';
+import { checkFleet } from './vehicles/notices';
 
 const MONTH_NAMES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 
@@ -317,6 +318,7 @@ export async function runNotificationChecks(organizationId: string) {
     ['storage', checkStorage],
     ['expenses', checkExpenses],
     ['parts', (id: string) => checkParts(id, brasiliaDateKey())],
+    ['fleet', (id: string) => checkFleet(id, brasiliaDateKey())],
   ];
 
   await Promise.all(checks.map(([name, check]) => check(organizationId).catch((error) => console.error(`[notifications] ${name} check failed:`, error))));

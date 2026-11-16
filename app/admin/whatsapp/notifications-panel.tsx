@@ -236,7 +236,9 @@ function NotificationCard({ type, setting, onChange, unsaved, testPhone, enabled
           {definition.trigger === 'event' ? (
             <p className="flex items-center gap-2 rounded-md border border-border bg-secondary/40 px-3 py-2 text-sm text-muted-foreground">
               <Zap className="h-4 w-4 text-primary" />
-              Disparada automaticamente pelo sistema, uma única vez por {type === 'payroll_closed' ? 'folha' : 'dia justificado'}.
+              {type === 'fine_notice'
+                ? 'Disparada quando você avisa o prestador de uma multa.'
+                : `Disparada automaticamente pelo sistema, uma única vez por ${type === 'payroll_closed' ? 'folha' : 'dia justificado'}.`}
             </p>
           ) : (
             <div className="flex flex-wrap gap-4">

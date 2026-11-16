@@ -11,6 +11,7 @@ export const NOTIFICATION_TYPES = [
   'daily_hours',
   'day_off',
   'justified',
+  'fine_notice',
 ] as const;
 
 export type NotificationType = (typeof NOTIFICATION_TYPES)[number];
@@ -197,6 +198,29 @@ export const NOTIFICATION_DEFINITIONS: Record<NotificationType, NotificationDefi
         'Uma mensagem por técnico por dia justificado. Salvar a mesma semana de novo não reenvia.',
         'A variável {observacao} traz o que você escreveu no apontamento. Fica vazia se não houver observação.',
       ],
+    },
+  },
+  fine_notice: {
+    label: 'Multa do carro',
+    description: 'Enviada quando você avisa o prestador de uma multa, em Apps → Carros → Multas.',
+    trigger: 'event',
+    defaultTime: '09:00',
+    defaultTemplate:
+      'Olá, {nome}.\n\nO carro *{placa}* recebeu uma multa em *{data}*: {infracao}, no valor de *{valor}*.\n\nPelo histórico, o carro estava com você. Abra o link, confirme que está ciente e diga se concorda com a multa (o prazo para indicar o condutor termina em *{prazo}*):\n{link}',
+    variables: [
+      NAME_VARIABLE,
+      { key: 'placa', description: 'Placa do carro', example: 'ABC-1D23' },
+      { key: 'data', description: 'Data e hora da infração', example: '16/11/2026 às 14:30' },
+      { key: 'infracao', description: 'O que foi a infração', example: 'Excesso de velocidade até 20%' },
+      { key: 'valor', description: 'Valor da multa', example: 'R$ 130,16' },
+      { key: 'prazo', description: 'Prazo para indicar o condutor (vazio se não foi informado)', example: '16/12/2026' },
+      { key: 'link', description: 'Link de "Minhas multas" no sistema da empresa', example: 'https://suaempresa.nextrotta.app/dashboard/multas' },
+    ],
+    help: {
+      purpose: 'Avisa o prestador de que tomou uma multa, para ele confirmar que está ciente e dizer se concorda, sem esperar a carta pelo correio.',
+      when: 'Na hora em que você clica em "Avisar o prestador", na multa. Não tem horário.',
+      recipients: ['O condutor da multa, e só ele.', 'Sem telefone cadastrado ou com o WhatsApp desligado, a multa continua aparecendo em "Minhas multas" no sistema dele.'],
+      notes: ['Avisar de novo manda outra mensagem.', 'O condutor sugerido vem do histórico do carro (quem estava com ele na hora da infração).'],
     },
   },
 };

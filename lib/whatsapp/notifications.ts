@@ -682,6 +682,54 @@ export async function notifyJustified(
   return results;
 }
 
+/**
+ * Event: the admin told a driver about a traffic fine (Apps → Carros → Multas). Telling again sends again (the key carries the
+ * moment of the notice). Null when the WhatsApp of the company, or this notice, is off.
+ */
+export async function notifyFineNotice(
+  organizationId: string,
+  params: {
+    fineId: string;
+    technicianId: string;
+    plate: string;
+    infractionAt: string;
+    description: string;
+    amount: number;
+    deadline: string | null;
+    notifiedAt: string;
+  },
+): Promise<DeliveryResult | null> {
+  const config = await getWhatsAppConfig(organizationId);
+  if (!config.enabled || !config.notifications.fine_notice.enabled) return null;
+
+  const technician = (await loadActiveTechnicians(organizationId, [params.technicianId])).get(params.technicianId);
+  if (!technician) return null;
+
+  const when = new Date(params.infractionAt);
+  const day = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(when);
+  const hour = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', hour: '2-digit', minute: '2-digit', hour12: false }).format(when);
+  const base = await organizationBaseUrl(organizationId);
+
+  const message = renderTemplate(config.notifications.fine_notice.template, {
+    nome: firstName(technician.name),
+    placa: params.plate.length === 7 ? `${params.plate.slice(0, 3)}-${params.plate.slice(3)}` : params.plate,
+    data: `${day} às ${hour}`,
+    infracao: params.description,
+    valor: formatCurrency(params.amount),
+    prazo: params.deadline ? formatDateKey(params.deadline) : '',
+    link: base ? `${base.replace(/\/+$/, '')}/dashboard/multas` : '',
+  });
+
+  return deliver(config, {
+    recipient: technician,
+    type: 'fine_notice',
+    trigger: 'event',
+    dedupeKey: `fine_notice:${params.fineId}:${Date.parse(params.notifiedAt)}`,
+    referenceDate: Date.parse(params.infractionAt) ? new Date(params.infractionAt).toISOString().slice(0, 10) : null,
+    message,
+  });
+}
+
 export async function sendTestMessage(
   organizationId: string,
   params: { phone: string; message: string; createdBy: string },

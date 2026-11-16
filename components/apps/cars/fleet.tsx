@@ -7,6 +7,8 @@ import { HelpDot, ModalNotice, ModalSection, SegmentedControl, SummaryBand } fro
 import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS } from '@/components/modal-kit';
 import { dueState, formatPlate, VEHICLE_STATUS_LABELS, VEHICLE_STATUSES, type DueState } from '@/lib/vehicles/rules';
 import type { AssignmentRow, VehicleRow } from '@/lib/vehicles/store';
+import { FinesPanel } from './fines';
+import { brDate, brDay, call } from './call';
 import './cars.css';
 
 type Technician = { id: string; name: string };
@@ -14,17 +16,8 @@ type Fleet = { today: string; vehicles: VehicleRow[]; technicians: Technician[] 
 
 const FIELD = 'h-10 w-full rounded-md border border-input bg-background px-3 text-[15px]';
 
-const brDate = (value: string | null) => (value ? value.split('-').reverse().join('/') : '—');
-const brDateTime = (value: string) =>
-  new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(value));
+const brDateTime = brDay;
 const carName = (car: VehicleRow) => [car.brand, car.model, car.year].filter(Boolean).join(' ');
-
-async function call<T>(url: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(url, { cache: 'no-store', ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) } });
-  const data = await response.json().catch(() => null);
-  if (!response.ok) throw new Error(data?.error || 'Não foi possível concluir. Tente de novo.');
-  return data as T;
-}
 
 function DueBadge({ label, state, date }: { label: string; state: DueState; date: string | null }) {
   if (state === 'none') return null;
@@ -49,11 +42,18 @@ function Dues({ car, today }: { car: VehicleRow; today: string }) {
 }
 
 // The rest of a car's data (model, year, Renavam, due dates...) comes back from the plate lookup, never typed here.
-type Form = { plate: string; status: string; technicianId: string };
+// Only the due dates of licensing and insurance are typed (when the car is edited): the alerts of the bell depend on them.
+type Form = { plate: string; status: string; technicianId: string; licensingDue: string; insuranceDue: string };
 
-const emptyForm: Form = { plate: '', status: 'active', technicianId: '' };
+const emptyForm: Form = { plate: '', status: 'active', technicianId: '', licensingDue: '', insuranceDue: '' };
 
-const toForm = (car: VehicleRow): Form => ({ plate: formatPlate(car.plate), status: car.status, technicianId: car.technicianId ?? '' });
+const toForm = (car: VehicleRow): Form => ({
+  plate: formatPlate(car.plate),
+  status: car.status,
+  technicianId: car.technicianId ?? '',
+  licensingDue: car.licensingDue ?? '',
+  insuranceDue: car.insuranceDue ?? '',
+});
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
@@ -165,6 +165,25 @@ function CarDialog({
             </ModalSection>
 
             {car ? (
+              <ModalSection
+                title="Documentos"
+                help="Quando o licenciamento ou o seguro estiver para vencer, o sino avisa. Depois de regularizar, é só colocar aqui o novo vencimento e o aviso some. Guarde os papéis do carro na Biblioteca."
+              >
+                <div className="cr-grid">
+                  <Field label="Licenciamento vence em">
+                    <input className={FIELD} type="date" value={form.licensingDue} onChange={set('licensingDue')} />
+                  </Field>
+                  <Field label="Seguro vence em">
+                    <input className={FIELD} type="date" value={form.insuranceDue} onChange={set('insuranceDue')} />
+                  </Field>
+                </div>
+                <a className="cr-link" href="/admin/library">
+                  Guardar documentos do carro na Biblioteca
+                </a>
+              </ModalSection>
+            ) : null}
+
+            {car ? (
               <ModalSection title="Histórico">
                 {history === null ? (
                   <p className="cr-muted">Carregando…</p>
@@ -226,6 +245,7 @@ export function FleetApp() {
   const [fleet, setFleet] = useState<Fleet | null>(null);
   const [error, setError] = useState('');
   const [view, setView] = useState<'technicians' | 'cars'>('technicians');
+  const [tab, setTab] = useState<'cars' | 'fines'>('cars');
   const [dialog, setDialog] = useState<{ car: VehicleRow | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -240,6 +260,10 @@ export function FleetApp() {
   useEffect(() => {
     void load();
   }, [load]);
+  // The bell links straight to the fines (?tab=multas).
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('tab') === 'multas') setTab('fines');
+  }, []);
 
   async function give(car: VehicleRow, technicianId: string) {
     setBusy(car.id);
@@ -273,18 +297,36 @@ export function FleetApp() {
           <h1>
             Carros<span>.</span>
           </h1>
-          <p>Quem está com cada carro da empresa.</p>
+          <p>Quem está com cada carro e as multas da frota.</p>
         </div>
         <div className="mg-header-actions">
-          <button type="button" className="mg-button mg-button-dark" onClick={() => setDialog({ car: null })}>
-            <Plus size={16} /> Adicionar carro
-          </button>
+          {tab === 'cars' ? (
+            <button type="button" className="mg-button mg-button-dark" onClick={() => setDialog({ car: null })}>
+              <Plus size={16} /> Adicionar carro
+            </button>
+          ) : null}
         </div>
       </header>
 
+      <SegmentedControl
+        label="Área"
+        value={tab}
+        onChange={setTab}
+        options={[
+          { value: 'cars', label: 'Carros' },
+          { value: 'fines', label: 'Multas' },
+        ]}
+      />
+
       {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
 
-      {!fleet ? (
+      {tab === 'fines' ? (
+        fleet ? (
+          <FinesPanel cars={fleet.vehicles} technicians={fleet.technicians} />
+        ) : error ? null : (
+          <p className="cr-muted">Carregando…</p>
+        )
+      ) : !fleet ? (
         error ? null : <p className="cr-muted">Carregando…</p>
       ) : fleet.vehicles.length === 0 ? (
         <div className="cr-empty">

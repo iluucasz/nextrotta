@@ -23,6 +23,7 @@ export const KIND_LABEL: Record<string, string> = {
   porto: 'Robô do Porto',
   payroll: 'Folha',
   parts: 'Venda de Peças',
+  fleet: 'Carros',
   technician: 'Técnicos',
   schedule: 'Escala',
   expenses: 'Despesas',

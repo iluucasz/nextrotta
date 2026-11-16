@@ -239,6 +239,165 @@
   color: #be123c;
 }
 
+/* Multas tab. */
+.mg-dashboard .cr-toolbar-wide {
+  flex-wrap: wrap;
+}
+.mg-dashboard .cr-filters {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.mg-dashboard .cr-fines-table {
+  min-width: 860px;
+}
+.mg-dashboard .cr-fines-table th:nth-child(4) {
+  text-align: right;
+}
+.mg-dashboard .cr-fine-what {
+  font-weight: 600;
+}
+.mg-dashboard .cr-stage {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mg-dashboard .cr-stage.is-to_identify,
+.mg-dashboard .cr-stage.is-to_notify,
+.mg-dashboard .cr-stage.is-to_indicate {
+  background: #fef3c7;
+  color: #b45309;
+}
+.mg-dashboard .cr-stage.is-to_pay {
+  background: #ffe4e8;
+  color: #be123c;
+}
+.mg-dashboard .cr-stage.is-appeal {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+.mg-dashboard .cr-stage.is-resolved {
+  background: #ecfdf5;
+  color: #047857;
+}
+.mg-dashboard .cr-flag {
+  display: block;
+  margin-top: 4px;
+  color: #be123c;
+  font-size: 13px;
+  font-weight: 600;
+}
+.cr-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* Steps of a fine, in the dialog. */
+.cr-steps {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cr-step {
+  display: flex;
+  gap: 12px;
+  padding: 11px 0;
+  border-bottom: 1px solid var(--border);
+}
+.cr-step:last-child {
+  border-bottom: 0;
+}
+.cr-step-mark {
+  display: grid;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  place-items: center;
+  color: #94a3b8;
+}
+.cr-step.is-done .cr-step-mark {
+  color: #059669;
+}
+.cr-step-dot {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 999px;
+}
+.cr-step-body {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 12px;
+  font-size: 15px;
+}
+.cr-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  font-size: 14px;
+}
+
+/* A technician's own fines (/dashboard/multas). */
+.mg-dashboard .cr-mine {
+  display: grid;
+  gap: 14px;
+}
+.mg-dashboard .cr-fine-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+}
+.mg-dashboard .cr-fine-card.is-pending {
+  border-color: #fcd34d;
+}
+.mg-dashboard .cr-fine-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.mg-dashboard .cr-fine-facts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px 16px;
+  margin: 0;
+  font-size: 14px;
+}
+.mg-dashboard .cr-fine-facts dt {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+.mg-dashboard .cr-fine-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+.mg-dashboard .cr-fine-answer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 @media (max-width: 560px) {
   .cr-grid {
     grid-template-columns: minmax(0, 1fr);

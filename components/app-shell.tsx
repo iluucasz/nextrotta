@@ -43,6 +43,7 @@ import {
   ShieldCheck,
   SlidersHorizontal,
   TrendingUp,
+  TriangleAlert,
   Users,
   WalletCards,
   Wrench,
@@ -63,6 +64,10 @@ let cachedNavScroll = 0;
 let cachedClosedSections: Record<string, boolean> = {};
 let cachedClosedSectionsKnown = false;
 const SIDEBAR_SECTIONS_STORAGE_KEY = 'app-sidebar-closed-sections';
+
+// "Minhas multas" shows in the technician's menu only when he has a car or a fine to answer: asked once per page load.
+const FLEET_LINK = '/dashboard/multas';
+let cachedHasFleet: boolean | null = null;
 
 type Role = 'admin' | 'technician';
 
@@ -308,6 +313,8 @@ const technicianLinks: NavItem[] = [
   { href: '/dashboard/schedule', label: 'Agenda', icon: CalendarDays },
   { href: '/dashboard/payroll', label: 'Pagamento', icon: WalletCards },
   { href: '/dashboard/pecas', label: 'Minhas peças', icon: Package },
+  // Only for who has a car or a fine to answer (see hasFleet in AppShell).
+  { href: FLEET_LINK, label: 'Minhas multas', icon: TriangleAlert },
   { href: '/dashboard/library', label: 'Biblioteca', icon: BookOpen },
 ];
 
@@ -583,10 +590,22 @@ export function AppShell({ children, role, userName }: AppShellProps) {
     return !feature || !features || features.includes(feature);
   };
   const { visibility, loading: visibilityLoading } = useTechnicianVisibility({ enabled: role === 'technician' });
+  const [hasFleet, setHasFleet] = useState(cachedHasFleet === true);
+  useEffect(() => {
+    if (role !== 'technician' || cachedHasFleet !== null) return;
+    fetch('/api/my-fines?has=1', { cache: 'no-store' })
+      .then((response) => (response.ok ? response.json() : { has: false }))
+      .then((data: { has?: boolean }) => {
+        cachedHasFleet = Boolean(data.has);
+        setHasFleet(cachedHasFleet);
+      })
+      .catch(() => undefined);
+  }, [role]);
   // Pages the admin hid for this technician drop out of the menu; the pages themselves also
   // redirect, in case someone reaches them by URL. Until the settings arrive, the hideable entries
   // stay out too — briefly showing a link that then vanishes would reveal it was hidden.
   const technicianItems = technicianLinks.filter((link) => {
+    if (link.href === FLEET_LINK) return hasFleet || pathname === FLEET_LINK;
     const page = (Object.keys(TECHNICIAN_PAGE_PATHS) as HideableTechnicianPage[]).find((key) => TECHNICIAN_PAGE_PATHS[key] === link.href);
     return !page || (!visibilityLoading && visibility[page].visible);
   });

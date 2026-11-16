@@ -106,6 +106,20 @@ export const SPECS: Spec[] = [
     ],
   },
   {
+    table: 'vehicle_fines', sheet: 'Multas dos carros', group: 'operation', about: 'As multas dos carros, quem dirigia e como cada uma foi tratada.', newestBy: 'infraction_at',
+    columns: [
+      { header: 'Carro', get: (row, context) => context.vehicle(row.vehicle_id), width: 30 }, tech('Condutor'), { header: 'Auto de infração', key: 'ait_number', width: 20 },
+      { header: 'Data da infração', key: 'infraction_at', kind: 'datetime' }, { header: 'Infração', key: 'description', width: 40 }, { header: 'Local', key: 'location', width: 30 },
+      { header: 'Órgão', key: 'authority' }, { header: 'Valor', key: 'amount', kind: 'money' }, { header: 'Pontos', key: 'points', kind: 'int' },
+      { header: 'Notificação recebida em', key: 'received_on', kind: 'date' }, { header: 'Prazo para indicar', key: 'indication_deadline', kind: 'date' },
+      { header: 'Vencimento da multa', key: 'payment_due', kind: 'date' }, { header: 'Prestador avisado em', key: 'notified_at', kind: 'datetime' },
+      { header: 'Ciente em', key: 'acknowledged_at', kind: 'datetime' }, { header: 'Posição do prestador', key: 'driver_stance', words: { agrees: 'Concorda', disputes: 'Não concorda' } },
+      { header: 'Condutor indicado em', key: 'indicated_at', kind: 'datetime' },
+      { header: 'Recurso', key: 'appeal_status', words: { none: 'Sem recurso', planned: 'Vamos recorrer', filed: 'Recurso enviado', won: 'Recurso ganho', lost: 'Recurso negado' } },
+      { header: 'Paga em', key: 'paid_at', kind: 'date' }, { header: 'Observações', key: 'notes', width: 40 }, created,
+    ],
+  },
+  {
     table: 'services', sheet: 'Serviços (OS)', group: 'operation', about: 'Todas as ordens de serviço, da mais recente para a mais antiga.', newestBy: 'date_performed',
     columns: [
       { header: 'Data', key: 'date_performed', kind: 'date' }, { header: 'Hora', key: 'time_performed', kind: 'time' }, { header: 'Código da OS', key: 'order_code', width: 18 },
