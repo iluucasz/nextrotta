@@ -30,6 +30,7 @@ import {
   History,
   Landmark,
   LayoutDashboard,
+  LayoutGrid,
   Eye,
   LogOut,
   Menu,
@@ -120,6 +121,8 @@ const adminSections: NavSection[] = [
       { href: '/admin/library', label: 'Biblioteca', icon: BookOpen },
       { href: '/admin/whatsapp', label: 'WhatsApp', icon: MessageCircle },
       { href: '/admin/config-porto', label: 'Config. Porto', icon: ShieldCheck },
+      // Every new integration/extra is listed inside Apps, not as its own link here.
+      { href: '/admin/apps', label: 'Apps', icon: LayoutGrid },
     ],
   },
   {

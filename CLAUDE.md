@@ -74,7 +74,7 @@
 - Schema: só por migração em `db/migrations/` (o antigo `ensure*Schema()` em runtime foi removido).
 - `lib/payroll-utils.ts` — cálculo da folha. `lib/hour-bank.ts` — banco de horas (220h/mês). `lib/work-hours-service.ts` — apontamento de horas.
 - `lib/porto-integration/` + `lib/porto-jobs/` — automação do Portal do Prestador (só rodam no worker; excluídos do `tsconfig` raiz). O app chama o worker via `lib/porto-worker-client.ts`.
-- `lib/whatsapp/` — Evolution API, notificações e store. `lib/livechat/` — Livechat (regras puras, banco, WhatsApp). `lib/backup/` — backups e restauração. `lib/billing/` — Asaas, direitos e limites. `lib/ai/` — assistente. `lib/platform/` — o que o painel do dono usa. `lib/legal/` — textos legais versionados.
+- `lib/whatsapp/` — Evolution API, notificações e store. `lib/livechat/` — Livechat (regras puras, banco, WhatsApp). `lib/backup/` — backups e restauração. `lib/billing/` — Asaas, direitos e limites. `lib/ai/` — assistente. `lib/platform/` — o que o painel do dono usa. `lib/legal/` — textos legais versionados. `lib/apps/` — catálogo de Apps (`/admin/apps`), onde entram as integrações novas em vez de links no menu.
 - `lib/schedule-planner.ts`, `lib/schedule-write-service.ts` — montagem da escala.
 - `app/admin/schedule/registros/` — histórico "Registros da escala" (submenu de Escala na sidebar: `children` em `adminLinks` de `components/app-shell.tsx`); a leitura/rotulagem das linhas fica em `lib/schedule-display.ts`, usada também pela tela de montagem.
 - `lib/types.ts` — tipos de domínio compartilhados.
