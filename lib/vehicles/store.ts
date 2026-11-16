@@ -18,7 +18,7 @@ export type VehicleRow = {
   id: string;
   plate: string;
   brand: string | null;
-  model: string;
+  model: string | null;
   year: number | null;
   color: string | null;
   renavam: string | null;
@@ -41,7 +41,7 @@ function toRow(row: Record<string, unknown>): VehicleRow {
     id: String(row.id),
     plate: String(row.plate),
     brand: (row.brand as string | null) ?? null,
-    model: String(row.model),
+    model: (row.model as string | null) ?? null,
     year: row.year === null ? null : Number(row.year),
     color: (row.color as string | null) ?? null,
     renavam: (row.renavam as string | null) ?? null,
@@ -142,7 +142,7 @@ export async function createVehicle(actor: Actor, input: Partial<VehicleInput>, 
         licensing_due, insurance_due, notes, status, created_by
       )
       VALUES (
-        ${actor.organizationId}, ${input.plate}, ${input.brand ?? null}, ${input.model}, ${input.year ?? null}, ${input.color ?? null},
+        ${actor.organizationId}, ${input.plate}, ${input.brand ?? null}, ${input.model ?? null}, ${input.year ?? null}, ${input.color ?? null},
         ${input.renavam ?? null}, ${input.chassis ?? null}, ${input.fuel ?? null}, ${input.odometer ?? null},
         ${input.licensingDue ?? null}::date, ${input.insuranceDue ?? null}::date, ${input.notes ?? null}, ${input.status ?? 'active'}, ${actor.userId}
       )

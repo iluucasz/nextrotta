@@ -57,6 +57,13 @@ test('a car is added with its data, without a technician', { skip: !hasDatabase 
   assert.deepEqual([car.id, car.plate, car.model, car.year, car.licensingDue, car.odometer, car.technicianId], [id, 'ABC1D23', 'Strada', 2023, '2027-01-31', 12000, null]);
 });
 
+test('a car can be added with only the plate and a technician (the rest comes later)', { skip: !hasDatabase }, async () => {
+  const id = await store.createVehicle(actor, rules.parseVehicleInput({ plate: 'ZZZ9Z99' }).value, ana);
+  const car = (await fleet()).find((item) => item.id === id);
+  assert.deepEqual([car.plate, car.model, car.brand, car.year, car.technicianName], ['ZZZ9Z99', null, null, null, 'Ana']);
+  await store.removeVehicle(actor, id);
+});
+
 test('the same plate cannot be used twice in a company, but can in another one', { skip: !hasDatabase }, async () => {
   await rejects(create({ plate: 'ABC1D23' }), 409, /placa/);
   await create({ plate: 'ABC1D23' }, null, other);

@@ -48,33 +48,12 @@ function Dues({ car, today }: { car: VehicleRow; today: string }) {
   );
 }
 
-type Form = {
-  plate: string;
-  brand: string;
-  model: string;
-  year: string;
-  color: string;
-  fuel: string;
-  odometer: string;
-  renavam: string;
-  chassis: string;
-  licensingDue: string;
-  insuranceDue: string;
-  status: string;
-  technicianId: string;
-  notes: string;
-};
+// The rest of a car's data (model, year, Renavam, due dates...) comes back from the plate lookup, never typed here.
+type Form = { plate: string; status: string; technicianId: string };
 
-const emptyForm: Form = {
-  plate: '', brand: '', model: '', year: '', color: '', fuel: '', odometer: '', renavam: '', chassis: '',
-  licensingDue: '', insuranceDue: '', status: 'active', technicianId: '', notes: '',
-};
+const emptyForm: Form = { plate: '', status: 'active', technicianId: '' };
 
-const toForm = (car: VehicleRow): Form => ({
-  plate: formatPlate(car.plate), brand: car.brand ?? '', model: car.model, year: car.year ? String(car.year) : '', color: car.color ?? '',
-  fuel: car.fuel ?? '', odometer: car.odometer === null ? '' : String(car.odometer), renavam: car.renavam ?? '', chassis: car.chassis ?? '',
-  licensingDue: car.licensingDue ?? '', insuranceDue: car.insuranceDue ?? '', status: car.status, technicianId: car.technicianId ?? '', notes: car.notes ?? '',
-});
+const toForm = (car: VehicleRow): Form => ({ plate: formatPlate(car.plate), status: car.status, technicianId: car.technicianId ?? '' });
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
   return (
@@ -103,7 +82,7 @@ function CarDialog({
   const [confirmRemove, setConfirmRemove] = useState(false);
   const [history, setHistory] = useState<AssignmentRow[] | null>(null);
   const confirmRef = useRef<HTMLDivElement>(null);
-  const set = (key: keyof Form) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) =>
+  const set = (key: keyof Form) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
     setForm((current) => ({ ...current, [key]: event.target.value }));
 
   // The confirmation sits at the end of a scrolling dialog: bring it into view when it opens.
@@ -137,7 +116,7 @@ function CarDialog({
   const save = (event: React.FormEvent) => {
     event.preventDefault();
     void run(() =>
-      call(car ? `/api/vehicles/${car.id}` : '/api/vehicles', { method: car ? 'PATCH' : 'POST', body: JSON.stringify(form) }),
+      call(car ? `/api/vehicles/${car.id}` : '/api/vehicles', { method: car ? 'PATCH' : 'POST', body: JSON.stringify(car ? form : { plate: form.plate, technicianId: form.technicianId }) }),
     );
   };
 
@@ -151,7 +130,7 @@ function CarDialog({
       <DialogContent className="flex max-h-[92vh] flex-col gap-0 p-0 sm:max-w-2xl">
         <DialogHeader className={MODAL_HEADER_CLASS}>
           <DialogTitle className={MODAL_TITLE_CLASS}>{car ? `Carro ${formatPlate(car.plate)}` : 'Adicionar carro'}</DialogTitle>
-          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>{car ? carName(car) : 'Dados do carro e com qual técnico ele fica.'}</DialogDescription>
+          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>{car ? carName(car) : 'Informe a placa e com qual técnico o carro fica.'}</DialogDescription>
         </DialogHeader>
         <form onSubmit={save} className="flex min-h-0 flex-1 flex-col">
           <div className={`${MODAL_BODY_CLASS} space-y-7`}>
@@ -160,9 +139,17 @@ function CarDialog({
                 <Field label="Placa">
                   <input className={FIELD} value={form.plate} onChange={set('plate')} placeholder="ABC-1D23" autoCapitalize="characters" required />
                 </Field>
-                <Field label="Modelo">
-                  <input className={FIELD} value={form.model} onChange={set('model')} placeholder="Strada" required />
-                </Field>
+                {car ? (
+                  <Field label="Situação">
+                    <select className={FIELD} value={form.status} onChange={set('status')}>
+                      {VEHICLE_STATUSES.map((status) => (
+                        <option key={status} value={status}>
+                          {VEHICLE_STATUS_LABELS[status]}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                ) : null}
               </div>
             </ModalSection>
 
@@ -176,51 +163,6 @@ function CarDialog({
                 ))}
               </select>
             </ModalSection>
-
-            <details className="cr-more" open={Boolean(car)}>
-              <summary>Mais dados (opcional)</summary>
-              <div className="cr-grid">
-                <Field label="Marca">
-                  <input className={FIELD} value={form.brand} onChange={set('brand')} placeholder="Fiat" />
-                </Field>
-                <Field label="Ano">
-                  <input className={FIELD} value={form.year} onChange={set('year')} inputMode="numeric" placeholder="2023" />
-                </Field>
-                <Field label="Cor">
-                  <input className={FIELD} value={form.color} onChange={set('color')} />
-                </Field>
-                <Field label="Combustível">
-                  <input className={FIELD} value={form.fuel} onChange={set('fuel')} placeholder="Flex" />
-                </Field>
-                <Field label="Quilometragem">
-                  <input className={FIELD} value={form.odometer} onChange={set('odometer')} inputMode="numeric" placeholder="0" />
-                </Field>
-                <Field label="Situação">
-                  <select className={FIELD} value={form.status} onChange={set('status')}>
-                    {VEHICLE_STATUSES.map((status) => (
-                      <option key={status} value={status}>
-                        {VEHICLE_STATUS_LABELS[status]}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Renavam">
-                  <input className={FIELD} value={form.renavam} onChange={set('renavam')} inputMode="numeric" />
-                </Field>
-                <Field label="Chassi">
-                  <input className={FIELD} value={form.chassis} onChange={set('chassis')} autoCapitalize="characters" />
-                </Field>
-                <Field label="Licenciamento vence em">
-                  <input className={FIELD} type="date" value={form.licensingDue} onChange={set('licensingDue')} />
-                </Field>
-                <Field label="Seguro vence em">
-                  <input className={FIELD} type="date" value={form.insuranceDue} onChange={set('insuranceDue')} />
-                </Field>
-                <Field label="Observações" wide>
-                  <textarea className={`${FIELD} h-20 py-2`} value={form.notes} onChange={set('notes')} maxLength={1000} />
-                </Field>
-              </div>
-            </details>
 
             {car ? (
               <ModalSection title="Histórico">
@@ -398,7 +340,7 @@ export function FleetApp() {
                       <td>
                         <span className="cr-plate">{formatPlate(car.plate)}</span>
                       </td>
-                      <td>{carName(car)}</td>
+                      <td>{carName(car) || '—'}</td>
                       <td>
                         <select
                           className="cr-inline-select"
@@ -470,7 +412,7 @@ export function FleetApp() {
                           <li key={car.id}>
                             <button type="button" className="cr-car" onClick={() => setDialog({ car })}>
                               <span className="cr-plate">{formatPlate(car.plate)}</span>
-                              <span>{carName(car)}</span>
+                              <span className="cr-muted">{carName(car)}</span>
                               <Dues car={car} today={fleet.today} />
                             </button>
                           </li>
@@ -490,7 +432,7 @@ export function FleetApp() {
                       <li key={car.id}>
                         <button type="button" className="cr-car" onClick={() => setDialog({ car })}>
                           <span className="cr-plate">{formatPlate(car.plate)}</span>
-                          <span>{carName(car)}</span>
+                          <span className="cr-muted">{carName(car)}</span>
                           <Dues car={car} today={fleet.today} />
                         </button>
                       </li>

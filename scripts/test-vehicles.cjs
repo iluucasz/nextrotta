@@ -33,9 +33,10 @@ test('due dates: none, ok, soon (inside 30 days, the limit day included) and ove
   assert.equal(rules.dueState('2027-03-01', today), 'ok');
 });
 
-test('a new car needs a valid plate and a model, and the rest is cleaned', () => {
+test('a new car only needs a valid plate (the rest comes from the lookup) and what is sent is cleaned', () => {
   assert.match(rules.parseVehicleInput({ plate: 'xx', model: 'Strada' }).error, /Placa/);
-  assert.match(rules.parseVehicleInput({ plate: 'ABC1D23', model: '  ' }).error, /modelo/);
+  assert.deepEqual(rules.parseVehicleInput({ plate: 'abc1234' }).value, { plate: 'ABC1234' });
+  assert.deepEqual(rules.parseVehicleInput({ plate: 'ABC1D23', model: '  ' }).value, { plate: 'ABC1D23', model: null });
   const ok = rules.parseVehicleInput({
     plate: 'abc-1d23', model: ' Strada ', brand: 'Fiat', year: '2023', odometer: '12.500', renavam: '123.456.789-01',
     chassis: '9bwzzz377vt004251', licensingDue: '2027-01-31', status: 'maintenance', color: '',

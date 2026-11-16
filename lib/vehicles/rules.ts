@@ -54,7 +54,7 @@ export function dueState(due: string | null | undefined, today: string, warningD
 export type VehicleInput = {
   plate: string;
   brand: string | null;
-  model: string;
+  model: string | null;
   year: number | null;
   color: string | null;
   renavam: string | null;
@@ -75,7 +75,8 @@ const text = (value: unknown, max: number): string | null => {
 const isDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
 
 /**
- * Cleans what the form sent. `partial` (an edit) only checks the fields that came; a create needs plate and model.
+ * Cleans what the form sent. `partial` (an edit) only checks the fields that came; a create only needs the plate (the rest
+ * comes back from the plate lookup).
  * Returns the first problem in plain language, or the cleaned values (only the fields present when partial).
  */
 export function parseVehicleInput(body: Record<string, unknown>, partial = false): { value: Partial<VehicleInput> } | { error: string } {
@@ -87,11 +88,7 @@ export function parseVehicleInput(body: Record<string, unknown>, partial = false
     if (!isValidPlate(plate)) return { error: 'Placa inválida. Use o formato ABC-1234 ou ABC-1D23.' };
     out.plate = plate;
   }
-  if (!partial || has('model')) {
-    const model = text(body.model, 80);
-    if (!model) return { error: 'Informe o modelo do carro.' };
-    out.model = model;
-  }
+  if (has('model')) out.model = text(body.model, 80);
   if (has('brand')) out.brand = text(body.brand, 60);
   if (has('color')) out.color = text(body.color, 40);
   if (has('fuel')) out.fuel = text(body.fuel, 30);
