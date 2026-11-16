@@ -176,7 +176,7 @@ export default function SubscriptionPage() {
                         return (
                           <tr key={charge.id} className="border-b border-border last:border-0">
                             <td className="py-2.5 pr-3">{formatDate(charge.dueDate)}</td>
-                            <td className="py-2.5 pr-3">{CHARGE_KIND_LABELS[charge.kind] ?? charge.kind}</td>
+                            <td className="py-2.5 pr-3">{charge.kind === 'setup' && charge.description ? charge.description.replace(/^NextRotta — /, '').replace(/^implantação/, 'Implantação') : (CHARGE_KIND_LABELS[charge.kind] ?? charge.kind)}</td>
                             <td className="py-2.5 pr-3">{formatCurrency(charge.value)}</td>
                             <td className="py-2.5 pr-3">
                               <span className={`inline-flex rounded-full border px-2 py-0.5 text-xs font-medium ${status.className}`}>{status.label}</span>

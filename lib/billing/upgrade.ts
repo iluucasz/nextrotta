@@ -21,8 +21,6 @@ const integer = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
 const amount = (value: number | null) => (value === null ? 'Ilimitado' : integer(value));
 const storage = (mb: number | null) =>
   mb === null ? 'Ilimitado' : mb >= 1024 ? `${integer(Math.round((mb / 1024) * 10) / 10)} GB` : `${integer(mb)} MB`;
-const retention = (days: number | null) =>
-  days === null ? 'Ilimitado' : days % 30 === 0 ? `${days / 30} ${days === 30 ? 'mês' : 'meses'}` : `${days} dias`;
 /** null = unlimited, so it beats any number. */
 const better = (to: number | null, from: number | null) => (to === null ? from !== null : from !== null && to > from);
 
@@ -50,9 +48,6 @@ function improvements(current: Plan, next: Plan, overrides: Partial<PlanLimits>)
       from: has(current, 'porto') ? amount(before.portoRunsMonth) : '—',
       to: amount(after.portoRunsMonth),
     });
-  }
-  if (better(next.backupRetentionDays, current.backupRetentionDays)) {
-    rows.push({ label: 'Backups diários guardados por', from: retention(current.backupRetentionDays), to: retention(next.backupRetentionDays) });
   }
   const credits = (plan: Plan) => (has(plan, 'ai') ? plan.aiMonthlyCredits : 0);
   if (credits(next) > credits(current)) {

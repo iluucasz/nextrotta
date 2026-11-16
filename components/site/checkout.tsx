@@ -305,8 +305,8 @@ export function MarketingCheckout() {
           <span>
             {trial ? (
               <>
-                <strong>Teste por {money(parcels[0])}.</strong> Não gostou? Cancele quando quiser e não paga mais nada. O 1º mês de{' '}
-                {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é grátis.
+                <strong>Teste por {money(parcels[0])}.</strong> Não gostou? Cancele quando quiser e não paga mais nada.{' '}
+                <strong>O 1º mês de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é grátis.</strong>
               </>
             ) : (
               <>

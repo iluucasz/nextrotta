@@ -77,7 +77,7 @@ const EXPORT_ONLY_PAGE = '/acesso-encerrado';
 const exportOnlyAllowedRoutes = [EXPORT_ONLY_PAGE, '/api/organization/access', '/api/organization/export'];
 // To get its data and to ask for help: the backups only to read and download (making or restoring one is blocked), tickets to open and answer.
 const exportOnlyReadPrefixes = ['/api/organization/backups', '/api/organization/files', '/api/support/livechat'];
-const exportOnlyWritePrefixes = ['/api/bug-reports', '/api/organization/billing/verify', '/api/support/livechat'];
+const exportOnlyWritePrefixes = ['/api/bug-reports', '/api/organization/billing/verify', '/api/organization/billing/cancel', '/api/support/livechat'];
 
 /**
  * A company that subscribed on the site: until the setup fee is paid it only reaches the welcome
@@ -252,6 +252,8 @@ export async function middleware(request: NextRequest) {
       !onboardingAllowedRoutes.includes(path) &&
       // Upgrading the plan is a purchase, allowed while the team prepares the platform.
       path !== '/api/organization/billing/upgrade' &&
+      // Canceling is allowed at any time, including during the trial while the team still prepares the platform.
+      path !== '/api/organization/billing/cancel' &&
       !path.startsWith('/api/auth/') &&
       !readOnlyAllowedPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
     ) {

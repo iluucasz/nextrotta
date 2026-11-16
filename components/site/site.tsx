@@ -528,8 +528,11 @@ export function Pricing({
         <Gift size={18} />
         <span>
           <strong>Teste sem risco:</strong> pague só a 1ª parcela da implantação.
-          Não gostou? Cancele quando quiser, sem nenhuma outra cobrança. O 1º
-          mês de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é grátis.
+          Não gostou? Cancele quando quiser, sem nenhuma outra cobrança.{' '}
+          <strong>
+            O 1º mês de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é
+            grátis.
+          </strong>
         </span>
       </div>
     </div>

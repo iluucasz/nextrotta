@@ -29,3 +29,5 @@ Decisão do dono. Os valores moram no banco (`plans`, `features.module_price`) e
 - **Avisos no topo** (admins): `getBillingNotice` → `billingNotice` em `/api/organization/status` → `BillingNoticeBanner` (`components/app-shell.tsx`). Durante o teste (só a 1ª parcela paga, nenhuma mensalidade paga) o aviso fica sempre; depois só aparece a 7 dias do vencimento. O "x" esconde aquele aviso (por cobrança, `localStorage`); a próxima cobrança traz o aviso de volta. Atrasos seguem no aviso âmbar antigo.
 - **Site:** faixa "Teste sem risco" em `/planos`, linha "Teste por R$ X · cancele quando quiser" em cada cartão (X = 1ª parcela) e o mesmo no resumo do `/contratar`.
 - Teste: `scripts/test-customer-cancel.cjs` (gateway simulado).
+
+- Verificado ponta a ponta no sandbox do Asaas (16/11/2026, contas `zz-pay-*`, arquivadas): cadastro cobra só a 1ª parcela; pagando-a, a mensalidade e as outras parcelas são criadas; o cancelamento pela tela apaga as pendentes também no Asaas e leva a empresa a `/acesso-encerrado`. O cancelamento é liberado durante a preparação e com o acesso travado (`middleware.ts`).

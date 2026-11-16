@@ -93,7 +93,9 @@ export function CancelPanel({
             </DialogDescription>
           </DialogHeader>
           <label className="grid gap-1.5 text-sm">
-            Digite <strong>CANCELAR</strong> para confirmar
+            <span>
+              Digite <strong>CANCELAR</strong> para confirmar
+            </span>
             <input
               value={word}
               onChange={(event) => setWord(event.target.value)}
