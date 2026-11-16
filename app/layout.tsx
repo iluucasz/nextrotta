@@ -38,7 +38,7 @@ export default function RootLayout({
     <html lang="pt-BR">
       <body className={`${geist.variable} ${geistMono.variable} font-sans antialiased`}>
         {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
+        <Analytics />
       </body>
     </html>
   );
