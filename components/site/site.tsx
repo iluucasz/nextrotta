@@ -405,31 +405,6 @@ function BuilderCard({
           <Check size={16} />
           Até {builder.includedTechnicians + extraTechnicians} técnicos
         </li>
-        <li className="nr-builder-module nr-builder-stepper">
-          <Check size={16} />
-          <span>Técnico extra</span>
-          <span className="nr-stepper">
-            <button
-              type="button"
-              aria-label="Menos um técnico"
-              disabled={extraTechnicians === 0}
-              onClick={() => setExtraTechnicians((n) => Math.max(0, n - 1))}
-            >
-              −
-            </button>
-            <output aria-live="polite">{extraTechnicians}</output>
-            <button
-              type="button"
-              aria-label="Mais um técnico"
-              onClick={() => setExtraTechnicians((n) => Math.min(200, n + 1))}
-            >
-              +
-            </button>
-          </span>
-          <small>
-            +{money(builder.extraTechnicianPrice * (cycle === 'annual' ? builder.annualPrice / builder.monthlyPrice : 1))}
-          </small>
-        </li>
         <li>
           <Check size={16} />
           {setupLabel(setupFee, builder.setupInstallments)}
@@ -478,6 +453,31 @@ function BuilderCard({
             </li>
           );
         })}
+        <li className="nr-builder-module nr-builder-stepper">
+          <Check size={16} />
+          <span>Técnico extra</span>
+          <span className="nr-stepper">
+            <button
+              type="button"
+              aria-label="Menos um técnico"
+              disabled={extraTechnicians === 0}
+              onClick={() => setExtraTechnicians((n) => Math.max(0, n - 1))}
+            >
+              −
+            </button>
+            <output aria-live="polite">{extraTechnicians}</output>
+            <button
+              type="button"
+              aria-label="Mais um técnico"
+              onClick={() => setExtraTechnicians((n) => Math.min(200, n + 1))}
+            >
+              +
+            </button>
+          </span>
+          <small>
+            +{money(builder.extraTechnicianPrice * (cycle === 'annual' ? builder.annualPrice / builder.monthlyPrice : 1))}
+          </small>
+        </li>
       </ul>
       <div className="nr-plan-note" />
     </article>
@@ -598,16 +598,6 @@ export function Pricing({
                   ? 'Quantidade de técnicos negociada'
                   : `Até ${p.includedTechnicians} técnicos`}
               </li>
-              {!p.onRequest && p.extraTechnicianPrice <= 0 ? (
-                <li aria-hidden="true" className="nr-row-spacer" />
-              ) : (
-                <li>
-                  <Check size={16} />
-                  {p.onRequest
-                    ? 'Técnicos extras: valor negociado'
-                    : `${money(p.extraTechnicianPrice)}/mês por técnico extra`}
-                </li>
-              )}
               <li>
                 <Check size={16} />
                 {p.onRequest
@@ -634,6 +624,14 @@ export function Pricing({
                   </li>
                 );
               })}
+              {!p.onRequest && p.extraTechnicianPrice <= 0 ? null : (
+                <li>
+                  <Check size={16} />
+                  {p.onRequest
+                    ? 'Técnicos extras: valor negociado'
+                    : `${money(p.extraTechnicianPrice)}/mês por técnico extra`}
+                </li>
+              )}
             </ul>
             <div className="nr-plan-note">
               {p.ai && (
