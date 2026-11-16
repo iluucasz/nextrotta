@@ -78,7 +78,9 @@ test('the top notice shows the next charge and that this is the trial', { skip: 
   const notice = await getBillingNotice(org);
   assert.equal(notice.trial, true);
   assert.equal(notice.dueDate, '2099-12-10');
-  assert.equal(notice.value, 333);
+  assert.equal(notice.value, 666, 'the instalment and the monthly fee fall due the same day, so both count');
+  assert.equal(notice.charges, 2);
+  assert.equal(notice.invoiceUrl, null, 'two charges: paid one by one in Assinatura');
   assert.ok(notice.daysLeft > 30);
 });
 

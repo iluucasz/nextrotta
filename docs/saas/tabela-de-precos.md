@@ -31,3 +31,5 @@ Decisão do dono. Os valores moram no banco (`plans`, `features.module_price`) e
 - Teste: `scripts/test-customer-cancel.cjs` (gateway simulado).
 
 - Verificado ponta a ponta no sandbox do Asaas (16/11/2026, contas `zz-pay-*`, arquivadas): cadastro cobra só a 1ª parcela; pagando-a, a mensalidade e as outras parcelas são criadas; o cancelamento pela tela apaga as pendentes também no Asaas e leva a empresa a `/acesso-encerrado`. O cancelamento é liberado durante a preparação e com o acesso travado (`middleware.ts`).
+
+- **Ciclo anual verificado** (16/11/2026, sandbox): anuidade = mensal × 10 (Pro 5.499,90, Essencial 2.499,90); o Asaas recebe a assinatura `YEARLY` com o vencimento no mês seguinte; as parcelas da implantação seguem mensais e o cancelamento apaga a anuidade pendente e a assinatura. O aviso do topo soma tudo que vence no mesmo dia (anuidade/mensalidade + parcela). Técnico extra comprado no Monte o seu no anual = ×10 (199,90/ano); o que passar do incluído é cobrado ×12 (`calculateSubscriptionValue`).

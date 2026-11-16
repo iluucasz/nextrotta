@@ -160,6 +160,7 @@ type BillingNoticeInfo = {
   kind: string;
   description: string | null;
   value: number;
+  charges?: number;
   dueDate: string;
   daysLeft: number;
   invoiceUrl: string | null;

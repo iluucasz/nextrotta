@@ -37,7 +37,7 @@ type BuilderOption = PlanOption & {
 };
 
 type Quote = {
-  plan: { key: string; name: string };
+  plan: { key: string; name: string; includedTechnicians?: number };
   cycle: 'monthly' | 'annual';
   billingDay: number;
   billingDays: number[];
@@ -306,11 +306,11 @@ export function MarketingCheckout() {
             {trial ? (
               <>
                 <strong>Teste por {money(parcels[0])}.</strong> Não gostou? Cancele quando quiser e não paga mais nada.{' '}
-                <strong>O 1º mês de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é grátis.</strong>
+                <strong>{cycle === 'annual' ? 'A anuidade só é cobrada no mês seguinte.' : 'O 1º mês de mensalidade é grátis.'}</strong>
               </>
             ) : (
               <>
-                <strong>1º mês grátis.</strong> Nada de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} agora: só a implantação.
+                <strong>{cycle === 'annual' ? 'Sem anuidade agora.' : '1º mês grátis.'}</strong> Hoje só a implantação.
               </>
             )}
           </span>
@@ -323,7 +323,7 @@ export function MarketingCheckout() {
             value={chosen ? `${money(recurring)}/${per}` : '—'}
             detail={
               chosen
-                ? `Até ${(isBuilder ? quote?.includedTechnicians : undefined) ?? chosen.includedTechnicians} técnicos incluídos${chosen.extraTechnicianPrice ? ` · técnico extra ${money(chosen.extraTechnicianPrice)}/mês` : ''}.${
+                ? `Até ${(isBuilder ? quote?.plan.includedTechnicians : undefined) ?? chosen.includedTechnicians} técnicos incluídos${chosen.extraTechnicianPrice ? ` · técnico extra ${money(chosen.extraTechnicianPrice)}/mês` : ''}.${
                     isBuilder ? ` Módulos: ${quotedModules.length ? quotedModules.map((module) => module.name).join(', ') : 'nenhum além da base'}.` : ''
                   }`
                 : undefined
@@ -335,13 +335,13 @@ export function MarketingCheckout() {
             value={setupFee > 0 ? money(trial ? parcels[0] : setupFee) : 'Sem custo'}
             detail={
               trial
-                ? `Pix, boleto ou cartão. A implantação de ${money(setupFee)} sai em ${installments}x: se continuar, esta é a 1ª parcela e faltam ${installments - 1}, junto com a mensalidade. Se cancelar antes, não paga mais nada.`
+                ? `Pix, boleto ou cartão. A implantação de ${money(setupFee)} sai em ${installments}x: se continuar, esta é a 1ª parcela e faltam ${installments - 1}, junto com a ${cycle === 'annual' ? 'anuidade' : 'mensalidade'}. Se cancelar antes, não paga mais nada.`
                 : 'Pix, boleto ou cartão. Pago uma única vez, no seu primeiro acesso.'
             }
           />
           <SummaryRow
             icon={<CalendarClock size={18} />}
-            title={`Primeira ${cycle === 'annual' ? 'anuidade' : 'mensalidade'} (1º mês grátis)`}
+            title={`Primeira ${cycle === 'annual' ? 'anuidade' : 'mensalidade'}${cycle === 'annual' ? '' : ' (1º mês grátis)'}`}
             value={quote ? longDate(quote.firstDueDate) : `dia ${billingDay}`}
             detail={`Só no mês seguinte ao pagamento da implantação. Depois, todo dia ${billingDay}${cycle === 'annual' ? ', uma vez por ano' : ''}.`}
           />

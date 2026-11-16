@@ -610,6 +610,13 @@ export async function getBillingNotice(organizationId: string) {
   `;
   if (!next) return null;
 
+  // Everything that falls due on that day (the monthly fee and a setup instalment, or the annual fee, come together).
+  const [day] = await sql`
+    SELECT COUNT(*)::int AS charges, COALESCE(SUM(value), 0) AS total
+    FROM billing_charges
+    WHERE organization_id = ${organizationId} AND status = 'PENDING' AND kind IN ('subscription', 'setup') AND due_date = ${next.due_date}
+  `;
+
   const [paid] = await sql`
     SELECT COUNT(*) FILTER (WHERE kind = 'setup')::int AS setup, COUNT(*) FILTER (WHERE kind = 'subscription')::int AS subscription
     FROM billing_charges WHERE organization_id = ${organizationId} AND status = ANY(${PAID_STATUSES})
@@ -620,10 +627,12 @@ export async function getBillingNotice(organizationId: string) {
     chargeId: String(next.id),
     kind: String(next.kind),
     description: (next.description as string | null) ?? null,
-    value: Number(next.value),
+    value: Number(day.total),
+    charges: Number(day.charges),
     dueDate,
     daysLeft,
-    invoiceUrl: (next.invoice_url as string | null) ?? null,
+    // One charge has its own payment link; several are paid one by one in Assinatura.
+    invoiceUrl: Number(day.charges) === 1 ? ((next.invoice_url as string | null) ?? null) : null,
     trial: Number(subscription.setup_installments) > 1 && Number(paid.setup) === 1 && Number(paid.subscription) === 0,
   };
 }

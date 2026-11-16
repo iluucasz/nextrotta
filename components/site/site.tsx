@@ -490,6 +490,7 @@ function BuilderCard({
           </span>
           <small>
             +{money(builder.extraTechnicianPrice * (cycle === 'annual' ? builder.annualPrice / builder.monthlyPrice : 1))}
+            {cycle === 'annual' ? '/ano' : ''}
           </small>
         </li>
       </ul>
@@ -530,8 +531,9 @@ export function Pricing({
           <strong>Teste sem risco:</strong> pague só a 1ª parcela da implantação.
           Não gostou? Cancele quando quiser, sem nenhuma outra cobrança.{' '}
           <strong>
-            O 1º mês de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} é
-            grátis.
+            {cycle === 'annual'
+              ? 'A anuidade só é cobrada no mês seguinte.'
+              : 'O 1º mês de mensalidade é grátis.'}
           </strong>
         </span>
       </div>
