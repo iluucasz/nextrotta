@@ -3,6 +3,7 @@ import { after, NextRequest, NextResponse } from 'next/server';
 import { verifyAuth } from '@/lib/auth';
 import { syncSubscriptionValueQuietly } from '@/lib/billing/billing';
 import { blockUnlessFeature } from '@/lib/billing/require-feature';
+import { checkTechnicianCap } from '@/lib/billing/entitlements';
 import { sql } from '@/lib/db';
 import { notifyOrganization } from '@/lib/notifications';
 import { getOrganizationSettings } from '@/lib/organization-settings-store';
@@ -43,6 +44,8 @@ export async function POST(request: NextRequest) {
     const { toCreate, skipped } = planPortoImport(candidates, new Set(activeRows.map((row) => String(row.qra))));
 
     if (toCreate.length > 0) {
+      const technicianCap = await checkTechnicianCap(organizationId, toCreate.filter((item) => item.status === 'active').length);
+      if (!technicianCap.allowed) return NextResponse.json({ error: technicianCap.message }, { status: 403 });
       const defaults = await getOrganizationSettings(organizationId);
       // All or nothing: a failure in one row must not leave half the list created.
       await sql.transaction(

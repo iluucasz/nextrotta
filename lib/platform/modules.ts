@@ -41,12 +41,12 @@ export async function listModuleOffers(builder?: Plan | null): Promise<ModuleOff
 }
 
 /** What the builder costs with these modules, or an error naming the ones that can't be chosen. */
-export async function quoteBuilderSelection(moduleKeys: unknown, cycle: BillingCycle) {
+export async function quoteBuilderSelection(moduleKeys: unknown, cycle: BillingCycle, extraTechnicians: unknown = 0) {
   const plan = await getBuilderPlan();
   if (!plan) throw new PlatformError('A montagem de plano não está disponível.');
   const selected = Array.isArray(moduleKeys) ? moduleKeys.map(String) : [];
   const offers = await listModuleOffers(plan);
-  const quote = quoteBuilder(plan, offers, selected, cycle);
+  const quote = quoteBuilder(plan, offers, selected, cycle, Number(extraTechnicians));
   if (quote.unknown.length) {
     throw new PlatformError(`Módulo indisponível: ${quote.unknown.join(', ')}.`);
   }

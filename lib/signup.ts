@@ -63,7 +63,7 @@ export function isValidDocument(raw: unknown) {
  * What the checkout shows before confirming: today's charge and the first recurring one. For the
  * builder plan ("montagem") `modules` lists the chosen modules; the price is the base plus theirs.
  */
-export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: unknown, moduleKeys: unknown = []) {
+export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: unknown, moduleKeys: unknown = [], extraTechnicians: unknown = 0) {
   const rows = await sql`SELECT * FROM plans WHERE key = ${String(planKey ?? '')} AND archived_at IS NULL AND (visible = TRUE OR kind = 'builder')`;
   if (!rows[0]) throw new PlatformError('Plano indisponível.');
   const plan = planFromRow(rows[0]);
@@ -74,11 +74,15 @@ export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: 
 
   let basePrice = billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
   let setupFee = plan.setupFee;
+  let includedTechnicians = plan.includedTechnicians;
+  let boughtTechnicians = 0;
   let modules: SubscriptionModule[] = [];
   let moduleDetails: Array<SubscriptionModule & { name: string; description: string | null }> = [];
   if (plan.kind === 'builder') {
-    const { quote, details } = await quoteBuilderSelection(moduleKeys, billingCycle);
+    const { quote, details } = await quoteBuilderSelection(moduleKeys, billingCycle, extraTechnicians);
     basePrice = quote.basePrice;
+    includedTechnicians = quote.includedTechnicians;
+    boughtTechnicians = quote.extraTechnicians;
     setupFee = quote.setupFee;
     modules = quote.modules;
     moduleDetails = details;
@@ -88,20 +92,20 @@ export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: 
       cycle: billingCycle,
       basePrice,
       extraTechnicianPrice: plan.extraTechnicianPrice,
-      includedTechnicians: plan.includedTechnicians,
+      includedTechnicians,
       discountPercent: 0,
       discountAmount: 0,
     },
     0,
   ).value;
-  return { plan, cycle: billingCycle, billingDay: day, basePrice, setupFee, modules, moduleDetails, recurring, firstDueDate: nextMonthDueDate(day) };
+  return { plan, cycle: billingCycle, billingDay: day, basePrice, setupFee, includedTechnicians, extraTechnicians: boughtTechnicians, modules, moduleDetails, recurring, firstDueDate: nextMonthDueDate(day) };
 }
 
 export async function signUp(input: Record<string, unknown>, sourceIp: string | null, userAgent: string | null = null) {
   // Honeypot: bots fill every field.
   if (clip(input.website, 200)) throw new PlatformError('Não foi possível concluir.', 400);
 
-  const quote = await quoteSignup(input.plan, input.cycle, input.billingDay, input.modules);
+  const quote = await quoteSignup(input.plan, input.cycle, input.billingDay, input.modules, input.extraTechnicians);
 
   const company = clip(input.company, 160);
   const legalName = clip(input.legalName, 200) || company;
@@ -190,7 +194,7 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
           setup_fee, setup_fee_status, grace_days, billing_day, asaas_customer_id, modules
         )
         VALUES (
-          ${organizationId}, ${plan.id}, ${quote.cycle}, ${quote.basePrice}, ${plan.extraTechnicianPrice}, ${plan.includedTechnicians},
+          ${organizationId}, ${plan.id}, ${quote.cycle}, ${quote.basePrice}, ${plan.extraTechnicianPrice}, ${quote.includedTechnicians},
           ${quote.setupFee}, ${needsPayment ? 'pending' : 'none'}, ${defaultGraceDays}, ${quote.billingDay}, ${customerId},
           ${JSON.stringify(quote.modules)}::jsonb
         )
@@ -215,7 +219,7 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
     action: 'organization.self_signup',
     targetType: 'organization',
     targetId: organizationId,
-    details: { plan: plan.key, cycle: quote.cycle, billingDay: quote.billingDay, setupFee: quote.setupFee, modules: quote.modules.map((module) => module.key) },
+    details: { plan: plan.key, cycle: quote.cycle, billingDay: quote.billingDay, setupFee: quote.setupFee, modules: quote.modules.map((module) => module.key), extraTechnicians: quote.extraTechnicians },
   });
   await autoAssignQuietly(organizationId);
   await notifyPlatform({

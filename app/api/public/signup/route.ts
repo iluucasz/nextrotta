@@ -27,9 +27,10 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ slug: result.slug, available: result.available, reason: result.reason ?? null });
     }
     const modules = (params.get('modules') ?? '').split(',').map((key) => key.trim()).filter(Boolean);
-    const quote = await quoteSignup(params.get('plan'), params.get('cycle'), params.get('billingDay') ?? BILLING_DAYS[1], modules);
+    const quote = await quoteSignup(params.get('plan'), params.get('cycle'), params.get('billingDay') ?? BILLING_DAYS[1], modules, params.get('extraTechnicians'));
     return NextResponse.json({
-      plan: { key: quote.plan.key, name: quote.plan.name, description: quote.plan.description, includedTechnicians: quote.plan.includedTechnicians },
+      plan: { key: quote.plan.key, name: quote.plan.name, description: quote.plan.description, includedTechnicians: quote.includedTechnicians },
+      extraTechnicians: quote.extraTechnicians,
       cycle: quote.cycle,
       billingDay: quote.billingDay,
       billingDays: BILLING_DAYS,

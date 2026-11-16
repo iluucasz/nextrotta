@@ -43,6 +43,8 @@ type Quote = {
   modules?: Array<{ key: string; name: string; price: number; setupFee: number }>;
   setupFee: number;
   setupInstallments?: number;
+  includedTechnicians?: number;
+  extraTechnicians?: number;
   recurring: number;
   firstDueDate: string;
 };
@@ -135,6 +137,7 @@ export function MarketingCheckout() {
   const [plans, setPlans] = useState<PlanOption[] | null>(null);
   const [builder, setBuilder] = useState<BuilderOption | null>(null);
   const [modules, setModules] = useState<string[]>([]);
+  const [extraTechnicians, setExtraTechnicians] = useState(0);
   const [loadError, setLoadError] = useState('');
   const [step, setStep] = useState(0);
   const [plan, setPlan] = useState('');
@@ -189,6 +192,7 @@ export function MarketingCheckout() {
         if (data.builder && wanted === data.builder.key) {
           const offered = new Set(data.builder.modules.map((module) => module.key));
           setModules((query.get('modulos') ?? '').split(',').filter((key) => offered.has(key)));
+          setExtraTechnicians(Math.min(200, Math.max(0, Math.floor(Number(query.get('tecnicos'))) || 0)));
           setPlan(data.builder.key);
         } else {
           setPlan((fromQuery ?? options.find((candidate) => candidate.featured) ?? options[0])?.key ?? '');
@@ -203,7 +207,7 @@ export function MarketingCheckout() {
   useEffect(() => {
     if (!plan) return;
     let active = true;
-    const moduleQuery = isBuilder && modules.length ? `&modules=${modules.join(',')}` : '';
+    const moduleQuery = isBuilder ? `${modules.length ? `&modules=${modules.join(',')}` : ''}${extraTechnicians ? `&extraTechnicians=${extraTechnicians}` : ''}` : '';
     fetch(`/api/public/signup?plan=${encodeURIComponent(plan)}&cycle=${cycle}&billingDay=${billingDay}${moduleQuery}`, { cache: 'no-store' })
       .then((response) => response.json().then((data) => (response.ok ? data : Promise.reject(new Error(data?.error)))))
       .then((data: Quote) => active && setQuote(data))
@@ -211,7 +215,7 @@ export function MarketingCheckout() {
     return () => {
       active = false;
     };
-  }, [plan, cycle, billingDay, isBuilder, modules]);
+  }, [plan, cycle, billingDay, isBuilder, modules, extraTechnicians]);
 
   // The address follows the company name until the customer edits it.
   useEffect(() => {
@@ -262,7 +266,7 @@ export function MarketingCheckout() {
       const response = await fetch('/api/public/signup', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...values, confirm: undefined, plan, cycle, billingDay, acceptTerms, ...(isBuilder ? { modules } : {}) }),
+        body: JSON.stringify({ ...values, confirm: undefined, plan, cycle, billingDay, acceptTerms, ...(isBuilder ? { modules, extraTechnicians } : {}) }),
       });
       const data = await response.json().catch(() => null);
       if (!response.ok) {
@@ -301,7 +305,7 @@ export function MarketingCheckout() {
             value={chosen ? `${money(recurring)}/${per}` : '—'}
             detail={
               chosen
-                ? `Até ${chosen.includedTechnicians} técnicos incluídos${chosen.extraTechnicianPrice ? ` · técnico extra ${money(chosen.extraTechnicianPrice)}/mês` : ''}.${
+                ? `Até ${(isBuilder ? quote?.includedTechnicians : undefined) ?? chosen.includedTechnicians} técnicos incluídos${chosen.extraTechnicianPrice ? ` · técnico extra ${money(chosen.extraTechnicianPrice)}/mês` : ''}.${
                     isBuilder ? ` Módulos: ${quotedModules.length ? quotedModules.map((module) => module.name).join(', ') : 'nenhum além da base'}.` : ''
                   }`
                 : undefined
@@ -427,8 +431,23 @@ export function MarketingCheckout() {
                         </label>
                       ))}
                     </div>
+                    <p style={{ margin: '18px 0 10px', fontWeight: 600, fontSize: 15 }}>Técnicos</p>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1.5px solid #dce5de', background: '#fcfdf9', borderRadius: 10, padding: '10px 14px' }}>
+                      <span style={{ flex: 1 }}>
+                        <strong style={{ fontWeight: 600 }}>Técnicos extras</strong>
+                        <small style={{ display: 'block', color: MUTED }}>A base inclui ${builder.includedTechnicians}.</small>
+                      </span>
+                      <span className="nr-stepper">
+                        <button type="button" aria-label="Menos um técnico" disabled={extraTechnicians === 0} onClick={() => setExtraTechnicians((n) => Math.max(0, n - 1))}>−</button>
+                        <output aria-live="polite">${extraTechnicians}</output>
+                        <button type="button" aria-label="Mais um técnico" onClick={() => setExtraTechnicians((n) => Math.min(200, n + 1))}>+</button>
+                      </span>
+                      <span style={{ whiteSpace: 'nowrap', color: GREEN, fontWeight: 600 }}>
+                        +${money(builder.extraTechnicianPrice * (cycle === 'annual' ? builder.annualPrice / builder.monthlyPrice : 1))}/${per}
+                      </span>
+                    </div>
                     <small style={{ display: 'block', marginTop: 8, color: MUTED }}>
-                      A base já inclui técnicos, OS, horas, escala e folha. Precisa de outro módulo depois? É só falar com a gente.
+                      A base já inclui técnicos, OS, escala e folha. Precisa de outro módulo depois? É só falar com a gente.
                     </small>
                   </>
                 ) : null}

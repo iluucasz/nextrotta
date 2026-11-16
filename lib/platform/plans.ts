@@ -223,6 +223,8 @@ export type SubscriptionInput = {
   limitOverrides?: Partial<PlanLimits>;
   /** Builder plan only: the modules to add to the base. Left out, an existing subscription keeps its own. */
   modules?: string[];
+  /** Builder plan only: technicians bought on top of the base's. Left out, an existing subscription keeps its own. */
+  extraTechnicians?: number;
 };
 
 export function parseSubscriptionInput(input: Record<string, unknown>): SubscriptionInput {
@@ -242,6 +244,11 @@ export function parseSubscriptionInput(input: Record<string, unknown>): Subscrip
   if (input.modules !== undefined) {
     if (!Array.isArray(input.modules) || !input.modules.every((key) => typeof key === 'string')) throw new PlatformError('Módulos: envie a lista de chaves.');
     result.modules = input.modules as string[];
+  }
+  if (input.extraTechnicians !== undefined) {
+    const bought = Number(input.extraTechnicians);
+    if (!Number.isInteger(bought) || bought < 0 || bought > 200) throw new PlatformError('Técnicos extras: um número inteiro de 0 a 200.');
+    result.extraTechnicians = bought;
   }
   if (input.graceDays !== undefined) result.graceDays = wholeNumber(input.graceDays, 'Carência');
   if (input.limitOverrides !== undefined) {
@@ -317,13 +324,16 @@ export async function setSubscription(organizationId: string, input: Subscriptio
   let basePrice = input.cycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
   let modules: SubscriptionModule[] = [];
   let defaultSetupFee = plan.setupFee;
+  let includedTechnicians = plan.includedTechnicians;
   if (plan.kind === 'builder') {
     const keep = ((Array.isArray(existing?.modules) ? existing.modules : []) as SubscriptionModule[]).map((module) => module.key);
-    const quote = quoteBuilder(plan, await listModuleOffers(plan), input.modules ?? keep, input.cycle);
+    const keepTechnicians = existing && existing.plan_id === plan.id ? Math.max(0, Number(existing.included_technicians) - plan.includedTechnicians) : 0;
+    const quote = quoteBuilder(plan, await listModuleOffers(plan), input.modules ?? keep, input.cycle, input.extraTechnicians ?? keepTechnicians);
     if (quote.unknown.length) throw new PlatformError(`Módulo indisponível: ${quote.unknown.join(', ')}.`);
     basePrice = quote.basePrice;
     modules = quote.modules;
     defaultSetupFee = quote.setupFee;
+    includedTechnicians = quote.includedTechnicians;
   }
   const setupFee = input.setupFee ?? (existing ? Number(existing.setup_fee) : defaultSetupFee);
   const setupFeeStatus = existing
@@ -340,7 +350,7 @@ export async function setSubscription(organizationId: string, input: Subscriptio
       discount_percent, discount_amount, setup_fee, setup_fee_status, grace_days, limit_overrides, modules
     )
     VALUES (
-      ${organizationId}, ${plan.id}, ${input.cycle}, ${basePrice}, ${plan.extraTechnicianPrice}, ${plan.includedTechnicians},
+      ${organizationId}, ${plan.id}, ${input.cycle}, ${basePrice}, ${plan.extraTechnicianPrice}, ${includedTechnicians},
       ${input.discountPercent ?? 0}, ${input.discountAmount ?? 0}, ${setupFee}, ${setupFeeStatus},
       ${input.graceDays ?? defaultGraceDays}, ${JSON.stringify(input.limitOverrides ?? {})}::jsonb, ${JSON.stringify(modules)}::jsonb
     )

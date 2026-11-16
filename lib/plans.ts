@@ -177,6 +177,9 @@ export function annualFactor(plan: Pick<Plan, 'monthlyPrice' | 'annualPrice'>) {
   return plan.monthlyPrice > 0 && plan.annualPrice > 0 ? plan.annualPrice / plan.monthlyPrice : 12;
 }
 
+/** Most technicians a builder subscription can buy up front. */
+export const MAX_EXTRA_TECHNICIANS = 200;
+
 export interface BuilderQuote {
   /** Base plan price for the cycle, before the modules. */
   planPrice: number;
@@ -185,6 +188,11 @@ export interface BuilderQuote {
   basePrice: number;
   /** Plan setup fee plus the modules' ones. */
   setupFee: number;
+  /** Technicians bought on top of the base's, and what they add to basePrice (already inside it). */
+  extraTechnicians: number;
+  extraTechniciansPrice: number;
+  /** Technicians the subscription includes: the base's plus the bought ones. */
+  includedTechnicians: number;
   /** Chosen keys that are neither included in the base nor on sale. */
   unknown: string[];
 }
@@ -195,10 +203,11 @@ export interface BuilderQuote {
  * same factor the base plan uses.
  */
 export function quoteBuilder(
-  plan: Pick<Plan, 'monthlyPrice' | 'annualPrice' | 'setupFee' | 'features'>,
+  plan: Pick<Plan, 'monthlyPrice' | 'annualPrice' | 'setupFee' | 'features' | 'extraTechnicianPrice' | 'includedTechnicians'>,
   offers: ModuleOffer[],
   selected: string[],
   cycle: BillingCycle,
+  extraTechnicians = 0,
 ): BuilderQuote {
   const factor = cycle === 'annual' ? annualFactor(plan) : 1;
   const planPrice = cycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
@@ -210,10 +219,15 @@ export function quoteBuilder(
     if (!offer) unknown.push(key);
     else modules.push({ key, price: round2(offer.monthlyPrice * factor), setupFee: round2(offer.setupFee) });
   }
+  const bought = Math.min(MAX_EXTRA_TECHNICIANS, Math.max(0, Math.floor(Number(extraTechnicians)) || 0));
+  const extraTechniciansPrice = round2(bought * (Number(plan.extraTechnicianPrice) || 0) * factor);
   return {
     planPrice,
     modules,
-    basePrice: round2(planPrice + modules.reduce((total, module) => total + module.price, 0)),
+    extraTechnicians: bought,
+    extraTechniciansPrice,
+    includedTechnicians: (Number(plan.includedTechnicians) || 0) + bought,
+    basePrice: round2(planPrice + modules.reduce((total, module) => total + module.price, 0) + extraTechniciansPrice),
     setupFee: round2(plan.setupFee + modules.reduce((total, module) => total + module.setupFee, 0)),
     unknown,
   };

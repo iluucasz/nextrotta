@@ -40,4 +40,13 @@
 .nr-public-plan li.nr-builder-module { padding: 0; }
 .nr-builder-module label { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 0; cursor: pointer; }
 .nr-builder-module input { width: 17px; height: 17px; accent-color: #327b56; flex-shrink: 0; }
+.nr-builder-stepper { display: flex; align-items: center; gap: 6px; padding: 6px 0 !important; white-space: nowrap; }
+.nr-builder-stepper > span:first-of-type { flex: 1; }
+.nr-builder-stepper > svg { color: #86a274; flex-shrink: 0; }
+.nr-stepper { display: inline-flex; align-items: center; gap: 2px; }
+.nr-builder-stepper small { font-size: 12.5px !important; }
+.nr-stepper button { width: 22px; height: 22px; border-radius: 7px; border: 1px solid #cfdcc9; background: #fff; color: #327b56; font-size: 17px; line-height: 1; display: grid; place-items: center; cursor: pointer; padding: 0; }
+.nr-stepper button:hover:not(:disabled) { background: #eef6ef; }
+.nr-stepper button:disabled { opacity: .4; cursor: default; }
+.nr-stepper output { min-width: 18px; text-align: center; font-size: 15px; font-weight: 600; color: #1c392e; }
 .nr-builder-module small { margin-left: auto; font-size: 13px; color: #327b56; font-weight: 600; white-space: nowrap; }

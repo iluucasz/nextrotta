@@ -357,11 +357,15 @@ function BuilderCard({
   orderedFeatures: PublicFeature[];
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [extraTechnicians, setExtraTechnicians] = useState(0);
   const chosen = builder.modules.filter((module) =>
     selected.includes(module.key),
   );
   const price =
     (cycle === 'annual' ? builder.annualPrice : builder.monthlyPrice) +
+    extraTechnicians *
+      builder.extraTechnicianPrice *
+      (cycle === 'annual' ? builder.annualPrice / builder.monthlyPrice : 1) +
     chosen.reduce(
       (total, module) =>
         total + (cycle === 'annual' ? module.annualPrice : module.monthlyPrice),
@@ -381,30 +385,50 @@ function BuilderCard({
       <h3>{builder.name}</h3>
       <p>{builder.description}</p>
       <div className="nr-public-price">
-        {chosen.length ? '' : 'A partir de '}
         {money(price)}
         <small>/{cycle === 'annual' ? 'ano' : 'mês'}</small>
       </div>
       <small>
-        {chosen.length
-          ? `Base + ${chosen.length} ${chosen.length === 1 ? 'módulo' : 'módulos'}${cycle === 'annual' ? ` · equivale a ${money(price / 12)}/mês` : ''}`
-          : 'Marque abaixo só o que a sua operação precisa'}
+        {chosen.length || extraTechnicians
+          ? `Base${chosen.length ? ` + ${chosen.length} ${chosen.length === 1 ? 'módulo' : 'módulos'}` : ''}${extraTechnicians ? ` + ${extraTechnicians} ${extraTechnicians === 1 ? 'técnico' : 'técnicos'}` : ''}${cycle === 'annual' ? ` · equivale a ${money(price / 12)}/mês` : ''}`
+          : 'A partir deste valor · escolha só o que precisa'}
       </small>
       <Link
-        href={`/contratar?plano=${builder.key}&ciclo=${cycle}${selected.length ? `&modulos=${selected.join(',')}` : ''}`}
+        href={`/contratar?plano=${builder.key}&ciclo=${cycle}${selected.length ? `&modulos=${selected.join(',')}` : ''}${extraTechnicians ? `&tecnicos=${extraTechnicians}` : ''}`}
         className="nr-btn"
       >
-        {chosen.length ? 'Contratar meu plano' : 'Montar meu plano'}
+        {chosen.length || extraTechnicians ? 'Contratar meu plano' : 'Montar meu plano'}
         <ArrowRight size={15} />
       </Link>
       <ul>
         <li>
           <Check size={16} />
-          Até {builder.includedTechnicians} técnicos
+          Até {builder.includedTechnicians + extraTechnicians} técnicos
         </li>
-        <li>
+        <li className="nr-builder-module nr-builder-stepper">
           <Check size={16} />
-          {money(builder.extraTechnicianPrice)}/mês por técnico extra
+          <span>Técnico extra</span>
+          <span className="nr-stepper">
+            <button
+              type="button"
+              aria-label="Menos um técnico"
+              disabled={extraTechnicians === 0}
+              onClick={() => setExtraTechnicians((n) => Math.max(0, n - 1))}
+            >
+              −
+            </button>
+            <output aria-live="polite">{extraTechnicians}</output>
+            <button
+              type="button"
+              aria-label="Mais um técnico"
+              onClick={() => setExtraTechnicians((n) => Math.min(200, n + 1))}
+            >
+              +
+            </button>
+          </span>
+          <small>
+            +{money(builder.extraTechnicianPrice * (cycle === 'annual' ? builder.annualPrice / builder.monthlyPrice : 1))}
+          </small>
         </li>
         <li>
           <Check size={16} />
@@ -574,12 +598,16 @@ export function Pricing({
                   ? 'Quantidade de técnicos negociada'
                   : `Até ${p.includedTechnicians} técnicos`}
               </li>
-              <li>
-                <Check size={16} />
-                {p.onRequest
-                  ? 'Técnicos extras: valor negociado'
-                  : `${money(p.extraTechnicianPrice)}/mês por técnico extra`}
-              </li>
+              {!p.onRequest && p.extraTechnicianPrice <= 0 ? (
+                <li aria-hidden="true" className="nr-row-spacer" />
+              ) : (
+                <li>
+                  <Check size={16} />
+                  {p.onRequest
+                    ? 'Técnicos extras: valor negociado'
+                    : `${money(p.extraTechnicianPrice)}/mês por técnico extra`}
+                </li>
+              )}
               <li>
                 <Check size={16} />
                 {p.onRequest

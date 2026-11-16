@@ -122,3 +122,17 @@ test('the real customer keeps her price and the old "Sob medida" is off', { skip
   assert.equal(builder.visible, false);
   assert.equal(builder.archived_at, null);
 });
+
+test('extra technicians bought up front raise the price and the included count', () => {
+  const plan = { ...base, extraTechnicianPrice: 19.99, includedTechnicians: 4 };
+  const monthly = quoteBuilder(plan, offers, [], 'monthly', 3);
+  assert.equal(monthly.extraTechnicians, 3);
+  assert.equal(monthly.includedTechnicians, 7);
+  assert.equal(monthly.basePrice, Math.round((217 + 3 * 19.99) * 100) / 100);
+  const annual = quoteBuilder(plan, offers, [], 'annual', 2);
+  assert.equal(annual.basePrice, Math.round((2170 + 2 * 19.99 * 10) * 100) / 100);
+  // Garbage never lowers the price or goes past the cap.
+  assert.equal(quoteBuilder(plan, offers, [], 'monthly', -5).extraTechnicians, 0);
+  assert.equal(quoteBuilder(plan, offers, [], 'monthly', 'x').extraTechnicians, 0);
+  assert.equal(quoteBuilder(plan, offers, [], 'monthly', 99999).extraTechnicians, 200);
+});

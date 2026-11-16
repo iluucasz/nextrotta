@@ -127,6 +127,29 @@ export async function checkLimit(
   return used + amount <= limit ? { allowed: true } : { allowed: false, message: LIMIT_MESSAGES[key](limit) };
 }
 
+/**
+ * Plans that sell no extra technicians (a technician price of 0, like Essencial) hold a fixed number of
+ * active technicians: the ones the subscription includes. Any other plan bills the extras instead.
+ */
+export async function checkTechnicianCap(
+  organizationId: string,
+  amount = 1,
+): Promise<{ allowed: true } | { allowed: false; message: string }> {
+  const rows = await sql`
+    SELECT s.included_technicians, s.extra_technician_price,
+           (SELECT COUNT(*)::int FROM technicians t
+             WHERE t.organization_id = ${organizationId} AND t.deleted_at IS NULL AND t.status = 'active') AS active
+    FROM subscriptions s
+    WHERE s.organization_id = ${organizationId} AND s.canceled_at IS NULL
+  `;
+  const subscription = rows[0];
+  if (!subscription || Number(subscription.extra_technician_price) > 0 || Number(subscription.included_technicians) <= 0) return { allowed: true };
+
+  const cap = Number(subscription.included_technicians);
+  if (Number(subscription.active) + amount <= cap) return { allowed: true };
+  return { allowed: false, message: `O plano permite até ${cap} técnicos ativos. Desative um técnico ou fale com o suporte para mudar de plano.` };
+}
+
 /** SQL condition: organization `alias` may use `feature` (no subscription = everything allowed). */
 export function featureAllowedSql(alias: string, feature: PlanFeature) {
   return `(

@@ -30,7 +30,7 @@ function planFields(features: Feature[], isNew: boolean): Field[] {
     { key: 'displayOrder', label: 'Ordem de exibição', type: 'number' },
     { key: 'monthlyPrice', label: 'Preço mensal (R$)', type: 'number', required: true },
     { key: 'annualPrice', label: 'Preço anual (R$)', type: 'number', required: true },
-    { key: 'extraTechnicianPrice', label: 'Técnico extra (R$ / mês)', type: 'number' },
+    { key: 'extraTechnicianPrice', label: 'Técnico extra (R$ / mês)', type: 'number', hint: '0 = não vende técnico extra (limite fixo)' },
     { key: 'setupFee', label: 'Implantação (R$)', type: 'number' },
     { key: 'setupInstallments', label: 'Parcelas da implantação (até)', type: 'number', hint: '1 = à vista' },
     { key: 'includedTechnicians', label: 'Técnicos incluídos', type: 'number' },

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { after, NextRequest, NextResponse } from 'next/server';
 import { hashPassword, verifyAuth } from '@/lib/auth';
 import { syncSubscriptionValueQuietly } from '@/lib/billing/billing';
-import { checkLimit } from '@/lib/billing/entitlements';
+import { checkLimit, checkTechnicianCap } from '@/lib/billing/entitlements';
 import { sql } from '@/lib/db';
 import { notifyOrganization } from '@/lib/notifications';
 import { valueOrDefault } from '@/lib/organization-settings';
@@ -211,6 +211,10 @@ export async function POST(request: NextRequest) {
     if (!userLimit.allowed) {
       return NextResponse.json({ error: userLimit.message }, { status: 403 });
     }
+    const technicianCap = await checkTechnicianCap(organizationId);
+    if (!technicianCap.allowed) {
+      return NextResponse.json({ error: technicianCap.message }, { status: 403 });
+    }
 
     const passwordHash = await hashPassword(password);
     const userId = existingUser?.id ?? randomUUID();
@@ -358,6 +362,13 @@ export async function PATCH(request: NextRequest) {
     const currentStatus = existingTechnicians[0].status as string;
     const nextStatus = status === 'inactive' || status === 'active' ? status : currentStatus;
     const statusChanged = nextStatus !== currentStatus;
+
+    if (statusChanged && nextStatus === 'active') {
+      const technicianCap = await checkTechnicianCap(organizationId);
+      if (!technicianCap.allowed) {
+        return NextResponse.json({ error: technicianCap.message }, { status: 403 });
+      }
+    }
 
     if (nextStatus !== 'inactive') {
       const qraHolder = await findActiveTechnicianWithQra(organizationId, qra, technicianId);
