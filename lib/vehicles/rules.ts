@@ -33,6 +33,10 @@ export function normalizeRenavam(input: unknown): string {
   return String(input ?? '').replace(/\D/g, '');
 }
 
+export const BRAZIL_STATES = [
+  'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
+] as const;
+
 /** Chassis (VIN): 17 characters, never I, O or Q. */
 export function normalizeChassis(input: unknown): string {
   return String(input ?? '')
@@ -58,6 +62,8 @@ export type VehicleInput = {
   year: number | null;
   color: string | null;
   renavam: string | null;
+  /** UF where the car is registered: it picks the Detran the fines are looked up in. */
+  state: string | null;
   chassis: string | null;
   fuel: string | null;
   odometer: number | null;
@@ -116,6 +122,11 @@ export function parseVehicleInput(body: Record<string, unknown>, partial = false
     const renavam = normalizeRenavam(body.renavam);
     if (renavam && (renavam.length < 9 || renavam.length > 11)) return { error: 'Renavam inválido: são de 9 a 11 números.' };
     out.renavam = renavam || null;
+  }
+  if (has('state')) {
+    const state = String(body.state ?? '').trim().toUpperCase();
+    if (state && !(BRAZIL_STATES as readonly string[]).includes(state)) return { error: 'Estado (UF) inválido.' };
+    out.state = state || null;
   }
   if (has('chassis')) {
     const chassis = normalizeChassis(body.chassis);

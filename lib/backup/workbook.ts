@@ -94,7 +94,7 @@ export const SPECS: Spec[] = [
       { header: 'Placa', key: 'plate' }, { header: 'Marca', key: 'brand' }, { header: 'Modelo', key: 'model', width: 26 }, { header: 'Ano', key: 'year', kind: 'int' },
       { header: 'Cor', key: 'color' }, { header: 'Situação', key: 'status', words: { active: 'Em uso', maintenance: 'Na oficina', inactive: 'Parado' } },
       tech('Com o técnico'), { header: 'Quilometragem', key: 'odometer', kind: 'int' }, { header: 'Licenciamento vence em', key: 'licensing_due', kind: 'date' },
-      { header: 'Seguro vence em', key: 'insurance_due', kind: 'date' }, { header: 'Renavam', key: 'renavam' }, { header: 'Chassi', key: 'chassis', width: 22 },
+      { header: 'Seguro vence em', key: 'insurance_due', kind: 'date' }, { header: 'Renavam', key: 'renavam' }, { header: 'Estado (UF)', key: 'state' }, { header: 'Chassi', key: 'chassis', width: 22 },
       { header: 'Observações', key: 'notes', width: 40 }, created,
     ],
   },
@@ -116,7 +116,8 @@ export const SPECS: Spec[] = [
       { header: 'Ciente em', key: 'acknowledged_at', kind: 'datetime' }, { header: 'Posição do prestador', key: 'driver_stance', words: { agrees: 'Concorda', disputes: 'Não concorda' } },
       { header: 'Condutor indicado em', key: 'indicated_at', kind: 'datetime' },
       { header: 'Recurso', key: 'appeal_status', words: { none: 'Sem recurso', planned: 'Vamos recorrer', filed: 'Recurso enviado', won: 'Recurso ganho', lost: 'Recurso negado' } },
-      { header: 'Paga em', key: 'paid_at', kind: 'date' }, { header: 'Observações', key: 'notes', width: 40 }, created,
+      { header: 'Paga em', key: 'paid_at', kind: 'date' }, { header: 'Origem', key: 'source', words: { manual: 'Registrada à mão', auto: 'Consulta automática' } },
+      { header: 'Observações', key: 'notes', width: 40 }, created,
     ],
   },
   {

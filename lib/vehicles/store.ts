@@ -22,6 +22,7 @@ export type VehicleRow = {
   year: number | null;
   color: string | null;
   renavam: string | null;
+  state: string | null;
   chassis: string | null;
   fuel: string | null;
   odometer: number | null;
@@ -29,6 +30,10 @@ export type VehicleRow = {
   insuranceDue: string | null;
   notes: string | null;
   status: string;
+  /** The weekly fines lookup: when it last ran for this car, how it went, and why not when it could not. */
+  finesCheckedAt: string | null;
+  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | null;
+  finesCheckMessage: string | null;
   technicianId: string | null;
   technicianName: string | null;
   /** When the current technician took the car. */
@@ -45,6 +50,10 @@ function toRow(row: Record<string, unknown>): VehicleRow {
     year: row.year === null ? null : Number(row.year),
     color: (row.color as string | null) ?? null,
     renavam: (row.renavam as string | null) ?? null,
+    state: (row.state as string | null) ?? null,
+    finesCheckedAt: row.fines_checked_at ? new Date(row.fines_checked_at as string).toISOString() : null,
+    finesCheckStatus: (row.fines_check_status as VehicleRow['finesCheckStatus']) ?? null,
+    finesCheckMessage: (row.fines_check_message as string | null) ?? null,
     chassis: (row.chassis as string | null) ?? null,
     fuel: (row.fuel as string | null) ?? null,
     odometer: row.odometer === null ? null : Number(row.odometer),
@@ -138,12 +147,12 @@ export async function createVehicle(actor: Actor, input: Partial<VehicleInput>, 
   try {
     const rows = await sql`
       INSERT INTO vehicles (
-        organization_id, plate, brand, model, year, color, renavam, chassis, fuel, odometer,
+        organization_id, plate, brand, model, year, color, renavam, state, chassis, fuel, odometer,
         licensing_due, insurance_due, notes, status, created_by
       )
       VALUES (
         ${actor.organizationId}, ${input.plate}, ${input.brand ?? null}, ${input.model ?? null}, ${input.year ?? null}, ${input.color ?? null},
-        ${input.renavam ?? null}, ${input.chassis ?? null}, ${input.fuel ?? null}, ${input.odometer ?? null},
+        ${input.renavam ?? null}, ${input.state ?? null}, ${input.chassis ?? null}, ${input.fuel ?? null}, ${input.odometer ?? null},
         ${input.licensingDue ?? null}::date, ${input.insuranceDue ?? null}::date, ${input.notes ?? null}, ${input.status ?? 'active'}, ${actor.userId}
       )
       RETURNING id
@@ -174,6 +183,7 @@ export async function updateVehicle(actor: Actor, id: string, patch: Partial<Veh
         year = CASE WHEN ${has('year')} THEN ${keep('year')}::int ELSE year END,
         color = CASE WHEN ${has('color')} THEN ${keep('color')} ELSE color END,
         renavam = CASE WHEN ${has('renavam')} THEN ${keep('renavam')} ELSE renavam END,
+        state = CASE WHEN ${has('state')} THEN ${keep('state')} ELSE state END,
         chassis = CASE WHEN ${has('chassis')} THEN ${keep('chassis')} ELSE chassis END,
         fuel = CASE WHEN ${has('fuel')} THEN ${keep('fuel')} ELSE fuel END,
         odometer = CASE WHEN ${has('odometer')} THEN ${keep('odometer')}::int ELSE odometer END,

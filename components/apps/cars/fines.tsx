@@ -24,7 +24,13 @@ import type { AssignmentRow, VehicleRow } from '@/lib/vehicles/store';
 import { brDate, brDateTime, call, money, toLocalInput } from './call';
 
 type Technician = { id: string; name: string };
-type FinesData = { today: string; fines: FineRow[]; summary: { open: number; urgent: number; toPay: number; toPayAmount: number } };
+type FinesData = {
+  today: string;
+  fines: FineRow[];
+  summary: { open: number; urgent: number; toPay: number; toPayAmount: number };
+  /** The weekly automatic lookup: granted to this company, and the platform has its provider set up. */
+  lookup: { enabled: boolean; configured: boolean };
+};
 
 const FIELD = 'h-10 w-full rounded-md border border-input bg-background px-3 text-[15px]';
 const AREA = 'w-full rounded-md border border-input bg-background px-3 py-2 text-[15px]';
@@ -459,8 +465,10 @@ function DeadlineBadge({ fine, today }: { fine: FineRow; today: string }) {
 type Scope = 'open' | 'resolved' | 'all';
 
 /** The Multas tab of Carros: every fine, who drove, and what is left to do on each. */
-export function FinesPanel({ cars, technicians }: { cars: VehicleRow[]; technicians: Technician[] }) {
+export function FinesPanel({ cars, technicians, onCarsChanged }: { cars: VehicleRow[]; technicians: Technician[]; onCarsChanged: () => Promise<void> }) {
   const [data, setData] = useState<FinesData | null>(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [lookupNote, setLookupNote] = useState('');
   const [error, setError] = useState('');
   const [dialog, setDialog] = useState<{ fineId: string | null } | null>(null);
   const [scope, setScope] = useState<Scope>('open');
@@ -493,6 +501,26 @@ export function FinesPanel({ cars, technicians }: { cars: VehicleRow[]; technici
     });
   }, [data, scope, stage, technicianId, vehicleId]);
 
+  async function lookupNow() {
+    setLookingUp(true);
+    setError('');
+    setLookupNote('');
+    try {
+      const result = await call<{ cars: number; skipped: number; created: number; failed: number; limited: boolean }>('/api/vehicles/fines/lookup', { method: 'POST' });
+      setLookupNote(
+        result.cars === 0
+          ? 'Nada a consultar agora: os carros foram consultados há pouco ou faltam Renavam e estado.'
+          : `${result.cars} carro(s) consultado(s): ${result.created === 0 ? 'nenhuma multa nova' : `${result.created} multa(s) nova(s) registrada(s)`}${result.failed ? `, ${result.failed} com falha` : ''}.${result.limited ? ' Ainda há carros esperando: clique de novo.' : ''}`,
+      );
+      await onCarsChanged();
+      await load();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Não foi possível consultar agora.');
+    } finally {
+      setLookingUp(false);
+    }
+  }
+
   async function markChecked() {
     try {
       await call('/api/vehicles/fines/checked', { method: 'POST' });
@@ -515,16 +543,47 @@ export function FinesPanel({ cars, technicians }: { cars: VehicleRow[]; technici
         <button type="button" className="mg-button mg-button-dark" onClick={() => setDialog({ fineId: null })}>
           <Plus size={16} /> Registrar multa
         </button>
-        <button type="button" className="mg-button" disabled={checked} onClick={() => void markChecked()}>
-          {checked ? 'Consulta da semana feita' : 'Já consultei as multas esta semana'}
-        </button>
+        {data.lookup.enabled && data.lookup.configured ? (
+          <button type="button" className="mg-button" disabled={lookingUp} onClick={() => void lookupNow()}>
+            {lookingUp ? <Loader2 size={16} className="animate-spin" /> : null} Consultar agora
+          </button>
+        ) : (
+          <button type="button" className="mg-button" disabled={checked} onClick={() => void markChecked()}>
+            {checked ? 'Consulta da semana feita' : 'Já consultei as multas esta semana'}
+          </button>
+        )}
         <HelpDot
           label="Multas"
-          text="Uma vez por semana o sino lembra de consultar as multas dos carros no Detran ou na Carteira Digital de Trânsito. Quando achar uma, registre aqui: o sistema sugere quem estava com o carro, avisa o prestador e conta o prazo para indicar o condutor."
+          text={
+            data.lookup.enabled
+              ? 'Toda semana o sistema consulta as multas dos carros que têm Renavam e estado preenchidos e registra as novas sozinho: ele sugere quem estava com o carro e avisa você no sino. Confira o prazo na notificação e avise o prestador. A indicação do condutor continua sendo feita no site oficial.'
+              : 'Uma vez por semana o sino lembra de consultar as multas dos carros no Detran ou na Carteira Digital de Trânsito. Quando achar uma, registre aqui: o sistema sugere quem estava com o carro, avisa o prestador e conta o prazo para indicar o condutor.'
+          }
         />
       </div>
 
+      {data.lookup.enabled && !data.lookup.configured ? (
+        <ModalNotice tone="warning">A consulta automática ainda não foi configurada pelo NextRotta. Até lá, consulte à mão e registre aqui.</ModalNotice>
+      ) : null}
+      {lookupNote ? <ModalNotice tone="success">{lookupNote}</ModalNotice> : null}
       {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
+      {data.lookup.enabled
+        ? (() => {
+            const problems = cars.filter((car) => car.finesCheckStatus && car.finesCheckStatus !== 'ok');
+            return problems.length ? (
+              <div className="cr-lookup-issues">
+                <strong>Carros que a consulta automática não alcançou por completo</strong>
+                <ul>
+                  {problems.map((car) => (
+                    <li key={car.id}>
+                      <span className="cr-plate">{formatPlate(car.plate)}</span> <span className="cr-muted">{car.finesCheckMessage}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null;
+          })()
+        : null}
 
       <SummaryBand
         items={[
@@ -597,7 +656,10 @@ export function FinesPanel({ cars, technicians }: { cars: VehicleRow[]; technici
                   </td>
                   <td>{fine.technicianName ?? <span className="cr-muted">—</span>}</td>
                   <td>
-                    <div className="cr-fine-what">{fine.description}</div>
+                    <div className="cr-fine-what">
+                      {fine.description}
+                      {fine.source === 'auto' ? <span className="cr-auto-tag">Automática</span> : null}
+                    </div>
                     <div className="cr-muted">{brDateTime(fine.infractionAt)}</div>
                   </td>
                   <td className="cr-num">{money(fine.amount)}</td>

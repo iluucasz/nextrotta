@@ -5,7 +5,7 @@ import { Car, Loader2, Pencil, Plus } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { HelpDot, ModalNotice, ModalSection, SegmentedControl, SummaryBand } from '@/components/modal-kit';
 import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS } from '@/components/modal-kit';
-import { dueState, formatPlate, VEHICLE_STATUS_LABELS, VEHICLE_STATUSES, type DueState } from '@/lib/vehicles/rules';
+import { BRAZIL_STATES, dueState, formatPlate, VEHICLE_STATUS_LABELS, VEHICLE_STATUSES, type DueState } from '@/lib/vehicles/rules';
 import type { AssignmentRow, VehicleRow } from '@/lib/vehicles/store';
 import { FinesPanel } from './fines';
 import { brDate, brDay, call } from './call';
@@ -43,9 +43,9 @@ function Dues({ car, today }: { car: VehicleRow; today: string }) {
 
 // The rest of a car's data (model, year, Renavam, due dates...) comes back from the plate lookup, never typed here.
 // Only the due dates of licensing and insurance are typed (when the car is edited): the alerts of the bell depend on them.
-type Form = { plate: string; status: string; technicianId: string; licensingDue: string; insuranceDue: string };
+type Form = { plate: string; status: string; technicianId: string; licensingDue: string; insuranceDue: string; renavam: string; state: string };
 
-const emptyForm: Form = { plate: '', status: 'active', technicianId: '', licensingDue: '', insuranceDue: '' };
+const emptyForm: Form = { plate: '', status: 'active', technicianId: '', licensingDue: '', insuranceDue: '', renavam: '', state: '' };
 
 const toForm = (car: VehicleRow): Form => ({
   plate: formatPlate(car.plate),
@@ -53,6 +53,8 @@ const toForm = (car: VehicleRow): Form => ({
   technicianId: car.technicianId ?? '',
   licensingDue: car.licensingDue ?? '',
   insuranceDue: car.insuranceDue ?? '',
+  renavam: car.renavam ?? '',
+  state: car.state ?? '',
 });
 
 function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
@@ -163,6 +165,29 @@ function CarDialog({
                 ))}
               </select>
             </ModalSection>
+
+            {car ? (
+              <ModalSection
+                title="Consulta de multas"
+                help="Para o sistema consultar as multas deste carro toda semana, ele precisa do Renavam e do estado onde o carro é emplacado (UF). Está no documento do carro (CRLV)."
+              >
+                <div className="cr-grid">
+                  <Field label="Renavam">
+                    <input className={FIELD} inputMode="numeric" value={form.renavam} onChange={set('renavam')} />
+                  </Field>
+                  <Field label="Estado (UF)">
+                    <select className={FIELD} value={form.state} onChange={set('state')}>
+                      <option value="">Escolha</option>
+                      {BRAZIL_STATES.map((uf) => (
+                        <option key={uf} value={uf}>
+                          {uf}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              </ModalSection>
+            ) : null}
 
             {car ? (
               <ModalSection
@@ -322,7 +347,7 @@ export function FleetApp() {
 
       {tab === 'fines' ? (
         fleet ? (
-          <FinesPanel cars={fleet.vehicles} technicians={fleet.technicians} />
+          <FinesPanel cars={fleet.vehicles} technicians={fleet.technicians} onCarsChanged={load} />
         ) : error ? null : (
           <p className="cr-muted">Carregando…</p>
         )

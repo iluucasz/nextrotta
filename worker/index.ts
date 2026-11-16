@@ -8,6 +8,7 @@ import { grantMonthlyCredits } from '../lib/platform/ai-credits';
 import { expireCoupons } from '../lib/platform/coupons';
 import { runPlatformChecks } from '../lib/platform/notice-checks';
 import { collectVpsMetrics, flushVpsMetrics, runAutomaticVpsCleanup, vpsAgentConfigured } from '../lib/platform/vps';
+import { runFineLookups } from '../lib/vehicles/fines-sync';
 import { runFleetChecks } from '../lib/vehicles/notices';
 import { recordHeartbeat, trackRun } from '../lib/worker-health';
 import { refreshAllInstanceStatuses } from '../lib/whatsapp/instance';
@@ -136,6 +137,17 @@ async function runFleet() {
     if (!result.failed) lastFleetDay = brasiliaDay(new Date());
   } catch (error) {
     log('Avisos do app Carros falharam:', error);
+  }
+  // The weekly lookup of the cars' fines through the paid provider: each car waits its week, so running daily never pays twice.
+  try {
+    const round = await trackRun('fine_lookups', null, () => runFineLookups(brasiliaDay(new Date())));
+    log(
+      round.configured
+        ? `Consulta de multas: ${round.companies} empresa(s), ${round.created} multa(s) nova(s), ${round.failed} falha(s).`
+        : 'Consulta de multas: INFOSIMPLES_TOKEN não está configurado neste container; nada foi consultado.',
+    );
+  } catch (error) {
+    log('Consulta automática de multas falhou:', error);
   } finally {
     fleetRunning = false;
   }

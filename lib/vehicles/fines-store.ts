@@ -33,6 +33,8 @@ export type FineRow = {
   paidAt: string | null;
   notes: string | null;
   stage: FineStage;
+  /** Typed by the admin, or found by the weekly lookup. */
+  source: 'manual' | 'auto';
   createdAt: string;
 };
 
@@ -68,6 +70,7 @@ function toRow(row: Record<string, unknown>): FineRow {
     driverNote: (row.driver_note as string | null) ?? null,
     notes: (row.notes as string | null) ?? null,
     stage: fineStage(base),
+    source: row.source === 'auto' ? 'auto' : 'manual',
     createdAt: new Date(row.created_at as string).toISOString(),
     ...base,
   };
