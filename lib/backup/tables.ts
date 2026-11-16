@@ -15,6 +15,7 @@ export const BACKUP_TABLES = [
   'audit_events',
   'parts', 'part_images', 'part_transfers', 'part_sales', 'part_sale_items', 'part_inventories', 'part_inventory_items',
   'part_debts', 'part_movements', 'part_account_entries', 'parts_settings', 'mercadopago_accounts',
+  'vehicles', 'vehicle_assignments',
 ] as const;
 
 /** Tables with an organization_id that are not the organization's data: short-lived, platform-internal or the register of the backups. */

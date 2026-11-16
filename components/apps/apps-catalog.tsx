@@ -2,11 +2,12 @@
 
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
-import { ArrowUpRight, MessageCircle, Package, Puzzle, Search, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react';
+import { ArrowUpRight, Car, MessageCircle, Package, Puzzle, Search, ShieldCheck, Sparkles, type LucideIcon } from 'lucide-react';
 import { APP_CATALOG, appCategories, filterApps, type AppEntry } from '@/lib/apps/catalog';
 import './apps.css';
 
 const ICONS: Record<string, LucideIcon> = {
+  car: Car,
   message: MessageCircle,
   package: Package,
   shield: ShieldCheck,

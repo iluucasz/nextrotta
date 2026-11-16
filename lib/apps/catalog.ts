@@ -23,7 +23,17 @@ export interface AppEntry {
   status: AppStatus;
 }
 
-export const APP_CATALOG: AppEntry[] = [];
+export const APP_CATALOG: AppEntry[] = [
+  {
+    id: 'carros',
+    name: 'Carros',
+    summary: 'Os carros da empresa, quem está com cada um e os vencimentos.',
+    category: 'Frota',
+    icon: 'car',
+    href: '/admin/apps/carros',
+    status: 'available',
+  },
+];
 
 /** Categories in the order they first appear in the catalog. */
 export function appCategories(apps: AppEntry[]): string[] {

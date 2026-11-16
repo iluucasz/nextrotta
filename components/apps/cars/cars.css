@@ -1,0 +1,249 @@
+/* Carros app (/admin/apps/carros). Sits under .mg-dashboard, like the other redesigned screens. */
+.mg-dashboard.cr {
+  display: grid;
+  gap: 22px;
+}
+
+.mg-dashboard .cr-muted {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+.mg-dashboard .cr-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mg-dashboard .cr-empty {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  padding: 48px 16px;
+  border: 1px dashed var(--border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--muted-foreground);
+  text-align: center;
+}
+.mg-dashboard .cr-empty p {
+  margin: 0;
+}
+
+/* Plate: the way it looks on the car. */
+.mg-dashboard .cr-plate {
+  display: inline-block;
+  padding: 2px 9px;
+  border: 1.5px solid #1e293b;
+  border-radius: 6px;
+  background: #fff;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  white-space: nowrap;
+}
+
+.mg-dashboard .cr-dues {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mg-dashboard .cr-due {
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mg-dashboard .cr-due.is-ok {
+  background: #ecfdf5;
+  color: #047857;
+}
+.mg-dashboard .cr-due.is-soon {
+  background: #fef3c7;
+  color: #b45309;
+}
+.mg-dashboard .cr-due.is-overdue {
+  background: #ffe4e8;
+  color: #be123c;
+}
+
+.mg-dashboard .cr-status {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mg-dashboard .cr-status.is-active {
+  background: #ecfdf5;
+  color: #047857;
+}
+.mg-dashboard .cr-status.is-maintenance {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.mg-dashboard .cr-inline-select {
+  height: 36px;
+  max-width: 100%;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+  font-size: 14px;
+}
+
+/* All cars: a table that scrolls sideways on a phone. */
+.mg-dashboard .cr-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+}
+.mg-dashboard .cr-table {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.mg-dashboard .cr-table th {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--muted-foreground);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.4px;
+  text-align: left;
+  text-transform: uppercase;
+}
+.mg-dashboard .cr-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.mg-dashboard .cr-table tr:last-child td {
+  border-bottom: 0;
+}
+.mg-dashboard .cr-num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mg-dashboard .cr-table th:nth-child(4) {
+  text-align: right;
+}
+
+/* By technician: one card per person with their cars. */
+.mg-dashboard .cr-people {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.mg-dashboard .cr-person {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+}
+.mg-dashboard .cr-person.is-yard {
+  border-style: dashed;
+  background: #fafafa;
+}
+.mg-dashboard .cr-person header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.mg-dashboard .cr-person h3 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 650;
+}
+.mg-dashboard .cr-person ul {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mg-dashboard .cr-car {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  text-align: left;
+  transition: border-color 0.15s;
+}
+.mg-dashboard .cr-car:hover {
+  border-color: var(--primary);
+}
+
+/* The add / edit dialog. */
+.cr-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+.cr-field {
+  display: grid;
+  gap: 5px;
+  font-size: 14px;
+}
+.cr-field > span {
+  color: var(--muted-foreground);
+  font-weight: 550;
+}
+.cr-field.is-wide {
+  grid-column: 1 / -1;
+}
+.cr-history {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.cr-history li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.cr-history span,
+.cr-muted {
+  color: var(--muted-foreground);
+}
+.cr-confirm {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.cr-remove {
+  margin-right: auto;
+  color: #be123c;
+}
+
+@media (max-width: 560px) {
+  .cr-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .mg-dashboard .cr-people {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

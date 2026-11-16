@@ -26,6 +26,7 @@ type Context = {
   transfer: Lookup;
   debt: Lookup;
   conversation: Lookup;
+  vehicle: Lookup;
 };
 
 type Col = {
@@ -85,6 +86,23 @@ export const SPECS: Spec[] = [
       { header: 'Comissão (%)', key: 'commission_percentage', kind: 'percent' }, { header: 'Valor da comissão', key: 'commission_rate', kind: 'money' },
       { header: 'Salário base', key: 'base_salary', kind: 'money' }, { header: 'VA', key: 'va_allowance', kind: 'money' }, { header: 'VR', key: 'vr_allowance', kind: 'money' },
       { header: 'Nome no Porto', key: 'porto_name_hint', width: 30 }, created,
+    ],
+  },
+  {
+    table: 'vehicles', sheet: 'Carros', group: 'operation', about: 'Os carros da empresa e com qual técnico cada um está.',
+    columns: [
+      { header: 'Placa', key: 'plate' }, { header: 'Marca', key: 'brand' }, { header: 'Modelo', key: 'model', width: 26 }, { header: 'Ano', key: 'year', kind: 'int' },
+      { header: 'Cor', key: 'color' }, { header: 'Situação', key: 'status', words: { active: 'Em uso', maintenance: 'Na oficina', inactive: 'Parado' } },
+      tech('Com o técnico'), { header: 'Quilometragem', key: 'odometer', kind: 'int' }, { header: 'Licenciamento vence em', key: 'licensing_due', kind: 'date' },
+      { header: 'Seguro vence em', key: 'insurance_due', kind: 'date' }, { header: 'Renavam', key: 'renavam' }, { header: 'Chassi', key: 'chassis', width: 22 },
+      { header: 'Observações', key: 'notes', width: 40 }, created,
+    ],
+  },
+  {
+    table: 'vehicle_assignments', sheet: 'Histórico dos carros', group: 'operation', about: 'Com quem cada carro esteve e por quanto tempo.', newestBy: 'assigned_at',
+    columns: [
+      { header: 'Carro', get: (row, context) => context.vehicle(row.vehicle_id), width: 30 }, tech(), { header: 'Pegou em', key: 'assigned_at', kind: 'datetime' },
+      { header: 'Devolveu em', key: 'released_at', kind: 'datetime' },
     ],
   },
   {
@@ -399,6 +417,7 @@ function lookups(file: BackupFile): Context {
     transfer: index('part_transfers', (row) => `Remessa #${row.number}`),
     debt: index('part_debts', (row) => `Débito #${row.number}`),
     conversation: index('ai_conversations', (row) => String(row.title ?? 'Conversa')),
+    vehicle: index('vehicles', (row) => `${row.plate} ${row.model ?? ''}`.trim()),
   };
 }
 
