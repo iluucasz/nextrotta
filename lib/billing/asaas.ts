@@ -91,8 +91,14 @@ export function createPayment(input: {
   description: string;
   externalReference: string;
   billingType?: AsaasBillingType;
+  /** Splits `value` into this many monthly charges (the first one due on `dueDate`). */
+  installmentCount?: number;
 }) {
-  return request<AsaasPayment>('POST', '/payments', { billingType: 'UNDEFINED', ...input });
+  const { value, installmentCount, ...rest } = input;
+  const body = installmentCount && installmentCount > 1
+    ? { ...rest, installmentCount, totalValue: value }
+    : { ...rest, value };
+  return request<AsaasPayment>('POST', '/payments', { billingType: 'UNDEFINED', ...body });
 }
 
 export function createSubscription(input: {

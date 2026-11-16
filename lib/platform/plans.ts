@@ -83,6 +83,11 @@ function parsePlanInput(input: Record<string, unknown>, partial: boolean, genera
   if (need('annualPrice')) values.annual_price = money(input.annualPrice, 'Preço anual');
   if (has('extraTechnicianPrice')) values.extra_technician_price = money(input.extraTechnicianPrice, 'Técnico extra');
   if (has('setupFee')) values.setup_fee = money(input.setupFee, 'Implantação');
+  if (has('setupInstallments')) {
+    const installments = wholeNumber(input.setupInstallments, 'Parcelas da implantação');
+    if (installments < 1 || installments > 12) throw new PlatformError('Parcelas da implantação: use de 1 a 12.');
+    values.setup_installments = installments;
+  }
   if (has('onRequest')) values.on_request = Boolean(input.onRequest);
   if (has('featured')) values.featured = Boolean(input.featured);
   if (has('visible')) values.visible = Boolean(input.visible);
@@ -115,7 +120,7 @@ function parsePlanInput(input: Record<string, unknown>, partial: boolean, genera
       throw new PlatformError('Há recursos desconhecidos, arquivados ou sob medida na lista.');
     }
     const missingCore = CORE_FEATURES.filter((feature) => !features.includes(feature));
-    if (missingCore.length) throw new PlatformError('Técnicos, OS, horas, escala e folha fazem parte de todos os planos.');
+    if (missingCore.length) throw new PlatformError('Técnicos, OS, escala e folha fazem parte de todos os planos.');
     values.features = Array.from(new Set(features));
   }
 

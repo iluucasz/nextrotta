@@ -26,12 +26,13 @@ function planFields(features: Feature[], isNew: boolean): Field[] {
     ...(isNew ? [{ key: 'key', label: 'Chave (não muda depois)', required: true, hint: 'Letras minúsculas, números e "_". Ex.: premium' }] : []),
     { key: 'name', label: 'Nome', required: true },
     { key: 'description', label: 'Descrição curta' },
-    { key: 'featured', label: 'Mais escolhido', type: 'checkbox' },
+    { key: 'featured', label: 'O melhor (destaque)', type: 'checkbox' },
     { key: 'displayOrder', label: 'Ordem de exibição', type: 'number' },
     { key: 'monthlyPrice', label: 'Preço mensal (R$)', type: 'number', required: true },
     { key: 'annualPrice', label: 'Preço anual (R$)', type: 'number', required: true },
     { key: 'extraTechnicianPrice', label: 'Técnico extra (R$ / mês)', type: 'number' },
     { key: 'setupFee', label: 'Implantação (R$)', type: 'number' },
+    { key: 'setupInstallments', label: 'Parcelas da implantação (até)', type: 'number', hint: '1 = à vista' },
     { key: 'includedTechnicians', label: 'Técnicos incluídos', type: 'number' },
     { key: 'onRequest', label: 'Sob consulta / Fale conosco', type: 'checkbox' },
     { key: 'visible', label: 'Visível no site', type: 'checkbox' },
@@ -57,6 +58,7 @@ function toForm(plan: PlanWithUsage | null, features: Feature[]): FormValues {
       annualPrice: 0,
       extraTechnicianPrice: 0,
       setupFee: 0,
+      setupInstallments: 1,
       includedTechnicians: 5,
       onRequest: false,
       visible: true,
@@ -74,6 +76,7 @@ function toForm(plan: PlanWithUsage | null, features: Feature[]): FormValues {
     annualPrice: plan.annualPrice,
     extraTechnicianPrice: plan.extraTechnicianPrice,
     setupFee: plan.setupFee,
+    setupInstallments: plan.setupInstallments,
     includedTechnicians: plan.includedTechnicians,
     onRequest: plan.onRequest,
     visible: plan.visible,
@@ -95,6 +98,7 @@ function toBody(values: FormValues, features: Feature[]) {
     annualPrice: Number(values.annualPrice || 0),
     extraTechnicianPrice: Number(values.extraTechnicianPrice || 0),
     setupFee: Number(values.setupFee || 0),
+    setupInstallments: Number(values.setupInstallments || 1),
     includedTechnicians: Number(values.includedTechnicians || 0),
     onRequest: Boolean(values.onRequest),
     visible: Boolean(values.visible),
@@ -159,7 +163,7 @@ export function Plans() {
             <Panel key={plan.id} className={`nr-plan ${plan.featured ? 'featured' : ''}`}>
               <div className="flex items-center justify-between">
                 <h3>{plan.name}</h3>
-                {plan.featured && <Badge>Mais escolhido</Badge>}
+                {plan.featured && <Badge>O melhor</Badge>}
               </div>
               <p className="mt-2">{plan.description}</p>
               <div className="nr-price">{plan.onRequest ? 'Sob consulta' : money(plan.monthlyPrice)}</div>

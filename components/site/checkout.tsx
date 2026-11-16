@@ -17,6 +17,7 @@ type PlanOption = {
   annualPrice: number;
   extraTechnicianPrice: number;
   setupFee: number;
+  setupInstallments: number;
   onRequest: boolean;
   featured: boolean;
   includedTechnicians: number;
@@ -41,6 +42,7 @@ type Quote = {
   billingDays: number[];
   modules?: Array<{ key: string; name: string; price: number; setupFee: number }>;
   setupFee: number;
+  setupInstallments?: number;
   recurring: number;
   firstDueDate: string;
 };
@@ -280,6 +282,7 @@ export function MarketingCheckout() {
   const recurring = quote?.recurring ?? price;
   const setupFee = quote?.setupFee ?? chosen?.setupFee ?? 0;
   const per = cycle === 'annual' ? 'ano' : 'mês';
+  const installments = quote?.setupInstallments ?? chosen?.setupInstallments ?? 1;
 
   return (
     <section className="nr-public-section nr-contact">
@@ -306,9 +309,13 @@ export function MarketingCheckout() {
           />
           <SummaryRow
             icon={<CreditCard size={18} />}
-            title="Hoje: implantação"
+            title={installments > 1 && setupFee > 0 ? 'Implantação' : 'Hoje: implantação'}
             value={setupFee > 0 ? money(setupFee) : 'Sem custo'}
-            detail="Pix, boleto ou cartão. Pago uma única vez, no seu primeiro acesso."
+            detail={
+              installments > 1 && setupFee > 0
+                ? `Pix, boleto ou cartão, em até ${installments}x de ${money(setupFee / installments)}. A primeira parcela libera o seu acesso.`
+                : 'Pix, boleto ou cartão. Pago uma única vez, no seu primeiro acesso.'
+            }
           />
           <SummaryRow
             icon={<CalendarClock size={18} />}

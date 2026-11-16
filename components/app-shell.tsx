@@ -151,6 +151,7 @@ const LINK_FEATURES: Record<string, string> = {
   '/dashboard/library': 'library',
   '/admin/pecas': 'parts',
   '/dashboard/pecas': 'parts',
+  '/dashboard/hours': 'hours',
 };
 
 type OrganizationStatusInfo = {

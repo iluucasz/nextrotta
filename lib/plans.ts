@@ -25,7 +25,7 @@ export const PLAN_FEATURES = {
 export type PlanFeature = keyof typeof PLAN_FEATURES;
 
 /** The core of the product: every plan includes these and they are never gated. */
-export const CORE_FEATURES: PlanFeature[] = ['technicians', 'services', 'hours', 'schedule', 'payroll', 'support'];
+export const CORE_FEATURES: PlanFeature[] = ['technicians', 'services', 'schedule', 'payroll', 'support'];
 
 export function isPlanFeature(value: unknown): value is PlanFeature {
   return typeof value === 'string' && value in PLAN_FEATURES;
@@ -60,6 +60,8 @@ export interface Plan {
   annualPrice: number;
   extraTechnicianPrice: number;
   setupFee: number;
+  /** Most instalments the setup fee can be split into (1 = paid at once). */
+  setupInstallments: number;
   onRequest: boolean;
   featured: boolean;
   displayOrder: number;
@@ -97,6 +99,7 @@ export function planFromRow(row: Record<string, unknown>): Plan {
     annualPrice: num(row.annual_price),
     extraTechnicianPrice: num(row.extra_technician_price),
     setupFee: num(row.setup_fee),
+    setupInstallments: Math.max(1, Math.round(num(row.setup_installments)) || 1),
     onRequest: Boolean(row.on_request),
     featured: Boolean(row.featured),
     displayOrder: num(row.display_order),

@@ -88,6 +88,7 @@ type PublicPlan = {
   annualPrice: number;
   extraTechnicianPrice: number;
   setupFee: number;
+  setupInstallments: number;
   onRequest: boolean;
   featured: boolean;
   includedTechnicians: number;
@@ -334,20 +335,18 @@ export function Faq({ content }: { content: SiteContent }) {
 const integer = (value: number) => new Intl.NumberFormat('pt-BR').format(value);
 const unlimited = (value: number | null) =>
   value === null ? 'Ilimitado' : integer(value);
+const setupLabel = (fee: number, installments: number) =>
+  installments > 1
+    ? `Implantação de ${money(fee)} em até ${installments}x`
+    : `Implantação única de ${money(fee)}`;
 const storageLabel = (mb: number | null) =>
   mb === null
     ? 'Ilimitado'
     : mb >= 1024
       ? `${integer(Math.round((mb / 1024) * 10) / 10)} GB`
       : `${integer(mb)} MB`;
-const retentionLabel = (days: number | null) =>
-  days === null
-    ? 'até ilimitado'
-    : days % 30 === 0
-      ? `${days / 30} ${days / 30 === 1 ? 'mês' : 'meses'}`
-      : `${days} dias`;
 
-/** The third card: the company ticks the modules it wants and the price adds up. */
+/** The first card: the company ticks the modules it wants and the price adds up. */
 function BuilderCard({
   builder,
   cycle,
@@ -409,11 +408,11 @@ function BuilderCard({
         </li>
         <li>
           <Check size={16} />
-          Implantação única de {money(setupFee)}
+          {setupLabel(setupFee, builder.setupInstallments)}
         </li>
         <li>
           <Check size={16} />
-          Backup diário: {retentionLabel(builder.backupRetentionDays)}
+          Backup diário
         </li>
         {orderedFeatures.map(({ key, name }) => {
           const module = builder.modules.find(
@@ -527,12 +526,19 @@ export function Pricing({
           } as CSSProperties
         }
       >
+        {builder && (
+          <BuilderCard
+            builder={builder}
+            cycle={cycle}
+            orderedFeatures={orderedFeatures}
+          />
+        )}
         {plans.map((p) => (
           <article
             className={`nr-public-plan ${p.featured ? 'featured' : ''}`}
             key={p.key}
           >
-            {p.featured && <span className="nr-popular">O MAIS ESCOLHIDO</span>}
+            {p.featured && <span className="nr-popular">O MELHOR</span>}
             <h3>{p.name}</h3>
             <p>{p.description}</p>
             <div className="nr-public-price">
@@ -578,11 +584,11 @@ export function Pricing({
                 <Check size={16} />
                 {p.onRequest
                   ? 'Implantação: valor negociado'
-                  : `Implantação única de ${money(p.setupFee)}`}
+                  : setupLabel(p.setupFee, p.setupInstallments)}
               </li>
               <li>
                 <Check size={16} />
-                Backup diário: {retentionLabel(p.backupRetentionDays)}
+                Backup diário
               </li>
               {orderedFeatures.map(({ key, name }) => {
                 const included = p.features.includes(key);
@@ -614,13 +620,6 @@ export function Pricing({
             </div>
           </article>
         ))}
-        {builder && (
-          <BuilderCard
-            builder={builder}
-            cycle={cycle}
-            orderedFeatures={orderedFeatures}
-          />
-        )}
       </div>
       <p className="nr-price-footnote">{content.pricingFootnote}</p>
       {full ? (
@@ -631,25 +630,16 @@ export function Pricing({
               <thead>
                 <tr>
                   <th>Funcionalidade</th>
+                  {builder && <th>{builder.name}</th>}
                   {plans.map((p) => (
                     <th key={p.key}>{p.name}</th>
                   ))}
-                  {builder && <th>{builder.name}</th>}
                 </tr>
               </thead>
               <tbody>
                 {orderedFeatures.map(({ key: f, name }) => (
                   <tr key={f}>
                     <td>{name}</td>
-                    {plans.map((p) => (
-                      <td key={p.key}>
-                        {p.features.includes(f) ? (
-                          <Check aria-label="Incluído" size={17} />
-                        ) : (
-                          <span aria-label="Não incluído">—</span>
-                        )}
-                      </td>
-                    ))}
                     {builder && (
                       <td>
                         {builder.features.includes(f) ? (
@@ -663,16 +653,25 @@ export function Pricing({
                         )}
                       </td>
                     )}
+                    {plans.map((p) => (
+                      <td key={p.key}>
+                        {p.features.includes(f) ? (
+                          <Check aria-label="Incluído" size={17} />
+                        ) : (
+                          <span aria-label="Não incluído">—</span>
+                        )}
+                      </td>
+                    ))}
                   </tr>
                 ))}
                 <tr>
                   <td>Técnicos incluídos</td>
+                  {builder && <td>{builder.includedTechnicians}</td>}
                   {plans.map((p) => (
                     <td key={p.key}>
                       {p.onRequest ? 'Negociado' : p.includedTechnicians}
                     </td>
                   ))}
-                  {builder && <td>{builder.includedTechnicians}</td>}
                 </tr>
                 {(
                   [
@@ -688,20 +687,6 @@ export function Pricing({
                 ).map(([key, label, feature]) => (
                   <tr key={key}>
                     <td>{label}</td>
-                    {plans.map((p) => (
-                      <td key={p.key}>
-                        {/* A limit only means something when the plan has the feature it limits. */}
-                        {feature && !p.features.includes(feature) ? (
-                          <span aria-label="Não incluído">—</span>
-                        ) : p.onRequest ? (
-                          'Negociado'
-                        ) : key === 'storageMb' ? (
-                          storageLabel(p.limits[key])
-                        ) : (
-                          unlimited(p.limits[key])
-                        )}
-                      </td>
-                    ))}
                     {builder && (
                       <td>
                         {feature && !builder.features.includes(feature) ? (
@@ -719,6 +704,20 @@ export function Pricing({
                         )}
                       </td>
                     )}
+                    {plans.map((p) => (
+                      <td key={p.key}>
+                        {/* A limit only means something when the plan has the feature it limits. */}
+                        {feature && !p.features.includes(feature) ? (
+                          <span aria-label="Não incluído">—</span>
+                        ) : p.onRequest ? (
+                          'Negociado'
+                        ) : key === 'storageMb' ? (
+                          storageLabel(p.limits[key])
+                        ) : (
+                          unlimited(p.limits[key])
+                        )}
+                      </td>
+                    ))}
                   </tr>
                 ))}
               </tbody>

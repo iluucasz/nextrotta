@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
       basePrice: quote.basePrice,
       modules: quote.moduleDetails.map((module) => ({ key: module.key, name: module.name, price: module.price, setupFee: module.setupFee })),
       setupFee: quote.setupFee,
+      setupInstallments: quote.plan.setupInstallments,
       recurring: quote.recurring,
       firstDueDate: quote.firstDueDate,
     });

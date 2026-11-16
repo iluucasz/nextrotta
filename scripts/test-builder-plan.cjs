@@ -61,10 +61,15 @@ const hasDatabase = Boolean(process.env.DATABASE_URL);
 
 test('checkout quote for the builder reads the real prices', { skip: !hasDatabase }, async () => {
   const { quoteSignup } = require('../lib/signup.ts');
+  const { listModuleOffers } = require('../lib/platform/modules.ts');
+  const offers = await listModuleOffers();
+  const porto = offers.find((offer) => offer.key === 'porto');
+  const whatsapp = offers.find((offer) => offer.key === 'whatsapp');
   const quote = await quoteSignup('montagem', 'monthly', 10, ['porto', 'whatsapp']);
   assert.equal(quote.plan.kind, 'builder');
-  assert.equal(quote.basePrice, quote.plan.monthlyPrice + 80 + 35);
-  assert.equal(quote.setupFee, quote.plan.setupFee + 200 + 60);
+  // Prices are the owner's (edited in the panel), so they are read, not fixed here.
+  assert.equal(quote.basePrice, Math.round((quote.plan.monthlyPrice + porto.monthlyPrice + whatsapp.monthlyPrice) * 100) / 100);
+  assert.equal(quote.setupFee, quote.plan.setupFee + porto.setupFee + whatsapp.setupFee);
   assert.equal(quote.recurring, quote.basePrice);
   assert.deepEqual(quote.moduleDetails.map((module) => module.name).length, 2);
 

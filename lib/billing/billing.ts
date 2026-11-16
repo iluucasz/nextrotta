@@ -48,7 +48,7 @@ function asPlatformError(error: unknown): never {
 async function loadContext(organizationId: string) {
   const rows = await sql`
     SELECT o.id, o.name, o.legal_name, o.document, o.email, o.phone, o.status, o.status_source, o.unbilled,
-           s.*, p.name AS plan_name,
+           s.*, p.name AS plan_name, p.setup_installments,
            (SELECT COUNT(*)::int FROM technicians t
              WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS active_technicians
     FROM organizations o
@@ -58,6 +58,11 @@ async function loadContext(organizationId: string) {
   `;
   if (!rows[0]) throw new PlatformError('Organização não encontrada.', 404);
   return rows[0];
+}
+
+/** How many instalments the plan lets the setup fee be split into (1 = one charge). */
+function setupInstallments(context: Record<string, unknown>) {
+  return Math.max(1, Math.round(Number(context.setup_installments)) || 1);
 }
 
 function subscriptionValue(context: Record<string, unknown>) {
@@ -249,6 +254,7 @@ export async function activateBilling(organizationId: string, input: { firstDueD
         dueDate: firstDueDate,
         description: 'NextRotta — implantação',
         externalReference: `${organizationId}:setup`,
+        installmentCount: setupInstallments(context),
       });
       await sql`UPDATE subscriptions SET asaas_setup_payment_id = ${setup.id}, updated_at = NOW() WHERE organization_id = ${organizationId}`;
       await upsertCharge(organizationId, setup);
@@ -314,6 +320,7 @@ export async function createSetupCharge(organizationId: string, customerId: stri
     dueDate: addDays(brasiliaToday(), 3),
     description: 'NextRotta — implantação',
     externalReference: `${organizationId}:setup`,
+    installmentCount: setupInstallments(context),
   }).catch(asPlatformError);
   await sql`UPDATE subscriptions SET asaas_setup_payment_id = ${payment.id}, updated_at = NOW() WHERE organization_id = ${organizationId}`;
   await upsertCharge(organizationId, payment);
