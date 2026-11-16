@@ -17,8 +17,9 @@ const ICONS: Record<string, LucideIcon> = {
 function AppCard({ app }: { app: AppEntry }) {
   const Icon = (app.icon && ICONS[app.icon]) || Puzzle;
   const soon = app.status === 'soon' || !app.href;
-  return (
-    <li className="ap-card">
+  // The whole card is the link (only the ones that are ready); the arrow is just a hint, not a button.
+  const body = (
+    <>
       <span className="ap-card-icon">
         <Icon size={22} />
       </span>
@@ -28,14 +29,19 @@ function AppCard({ app }: { app: AppEntry }) {
       </div>
       <div className="ap-card-foot">
         <span className="ap-card-category">{app.category}</span>
-        {soon ? (
-          <span className="ap-soon">Em breve</span>
-        ) : (
-          <Link href={app.href!} className="mg-button ap-open">
-            Abrir <ArrowUpRight size={15} />
-          </Link>
-        )}
+        {soon ? <span className="ap-soon">Em breve</span> : <ArrowUpRight size={18} className="ap-go" aria-hidden />}
       </div>
+    </>
+  );
+  return (
+    <li className={`ap-card${soon ? '' : ' is-link'}`}>
+      {soon ? (
+        <div className="ap-card-body">{body}</div>
+      ) : (
+        <Link href={app.href!} className="ap-card-body">
+          {body}
+        </Link>
+      )}
     </li>
   );
 }

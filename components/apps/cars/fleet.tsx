@@ -136,7 +136,7 @@ function CarDialog({
           <div className={`${MODAL_BODY_CLASS} space-y-7`}>
             <ModalSection title="Carro">
               <div className="cr-grid">
-                <Field label="Placa">
+                <Field label="Placa" wide={!car}>
                   <input className={FIELD} value={form.plate} onChange={set('plate')} placeholder="ABC-1D23" autoCapitalize="characters" required />
                 </Field>
                 {car ? (
