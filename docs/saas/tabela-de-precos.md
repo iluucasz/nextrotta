@@ -19,3 +19,5 @@ Decisão do dono. Os valores moram no banco (`plans`, `features.module_price`) e
 - Backup: os cartões mostram só "Backup diário" (a retenção do plano segue no banco: Essencial 30 dias, Pro 90).
 - Parcelamento da implantação: `plans.setup_installments`. No Asaas vira cobrança parcelada (`installmentCount` + `totalValue`, `createPayment` em `lib/billing/asaas.ts`); a primeira parcela paga libera a conta. **Não testado**: a chave do sandbox respondeu 401 em 16/11.
 - Quem já assinou mantém o preço, os técnicos incluídos e o técnico extra copiados na assinatura; só as funcionalidades do plano seguem o plano ao vivo. Os 11 assinantes do Essencial eram só empresas de teste `zz-*`.
+
+- **1º mês grátis** (destaque no site e no `/contratar`): na contratação só se paga a implantação; a primeira mensalidade/anuidade vence no mês seguinte (`nextMonthDueDate`, `lib/billing/billing.ts`). Já era a regra, agora é anunciada.

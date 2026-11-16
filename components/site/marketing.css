@@ -40,6 +40,9 @@
 .nr-public-plan li.nr-builder-module { padding: 0; }
 .nr-builder-module label { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 0; cursor: pointer; }
 .nr-builder-module input { width: 17px; height: 17px; accent-color: #327b56; flex-shrink: 0; }
+.nr-free-month { display: inline-flex; align-items: center; gap: 10px; margin-top: 18px; padding: 10px 16px; border-radius: 10px; background: #e6f2e4; border: 1px solid #c4dcc0; color: #25603f; font-size: 14px; line-height: 1.5; text-align: left; }
+.nr-free-month svg { flex-shrink: 0; color: #327b56; }
+.nr-free-month strong { font-weight: 650; }
 .nr-builder-stepper { display: flex; align-items: center; gap: 6px; padding: 6px 0 !important; white-space: nowrap; }
 .nr-builder-stepper > span:first-of-type { flex: 1; }
 .nr-builder-stepper > svg { color: #86a274; flex-shrink: 0; }

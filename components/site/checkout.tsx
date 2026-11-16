@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
-import { ArrowLeft, ArrowRight, CalendarClock, Check, CheckCircle2, CreditCard, Loader2, ShieldCheck, Wrench, XCircle } from 'lucide-react';
+import { ArrowLeft, ArrowRight, CalendarClock, Check, CheckCircle2, CreditCard, Gift, Loader2, ShieldCheck, Wrench, XCircle } from 'lucide-react';
 
 /**
  * Self-service checkout: plan and billing day → company → access. Creates the account, sends the
@@ -169,7 +169,7 @@ export function MarketingCheckout() {
 
   const set = (key: keyof typeof values, value: string) => setValues((current) => ({ ...current, [key]: value }));
   const selectable = useMemo(
-    () => [...(plans ?? []).filter((candidate) => !candidate.onRequest), ...(builder ? [{ ...builder, featured: false, onRequest: false }] : [])],
+    () => [...(builder ? [{ ...builder, featured: false, onRequest: false }] : []), ...(plans ?? []).filter((candidate) => !candidate.onRequest)],
     [plans, builder],
   );
   const chosen = selectable.find((candidate) => candidate.key === plan) ?? null;
@@ -297,6 +297,12 @@ export function MarketingCheckout() {
           Crie a conta da sua empresa em poucos minutos. Você paga hoje só a implantação; a primeira {cycle === 'annual' ? 'anuidade' : 'mensalidade'} vem
           no mês seguinte, no dia que você escolher.
         </p>
+        <div className="nr-free-month" style={{ marginTop: 18 }}>
+          <Gift size={18} />
+          <span>
+            <strong>1º mês grátis.</strong> Nada de {cycle === 'annual' ? 'anuidade' : 'mensalidade'} agora: só a implantação.
+          </span>
+        </div>
 
         <div style={{ marginTop: 34, background: '#fff', border: '1px solid #e0e8d6', borderRadius: 14, padding: '6px 22px 6px' }}>
           <SummaryRow
@@ -323,7 +329,7 @@ export function MarketingCheckout() {
           />
           <SummaryRow
             icon={<CalendarClock size={18} />}
-            title={`Primeira ${cycle === 'annual' ? 'anuidade' : 'mensalidade'}`}
+            title={`Primeira ${cycle === 'annual' ? 'anuidade' : 'mensalidade'} (1º mês grátis)`}
             value={quote ? longDate(quote.firstDueDate) : `dia ${billingDay}`}
             detail={`Só no mês seguinte ao pagamento da implantação. Depois, todo dia ${billingDay}${cycle === 'annual' ? ', uma vez por ano' : ''}.`}
           />
@@ -382,7 +388,7 @@ export function MarketingCheckout() {
                       <span style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
                         <span>
                           {candidate.name}
-                          {candidate.featured ? <small style={{ marginLeft: 8, color: GREEN, fontWeight: 600 }}>O mais escolhido</small> : null}
+                          {candidate.featured ? <small style={{ marginLeft: 8, color: GREEN, fontWeight: 600 }}>O melhor</small> : null}
                         </span>
                         <span>
                           {builder && candidate.key === builder.key ? 'a partir de ' : ''}

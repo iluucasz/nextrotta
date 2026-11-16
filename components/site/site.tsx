@@ -11,7 +11,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from 'react';
-import {
+import { Gift,
   ArrowRight,
   ArrowUpRight,
   Check,
@@ -509,6 +509,14 @@ export function Pricing({
             {c.value === 'annual' && <small>2 meses grátis</small>}
           </button>
         ))}
+      </div>
+      <div className="nr-free-month">
+        <Gift size={18} />
+        <span>
+          <strong>1º mês grátis.</strong> Hoje você paga só a implantação; a
+          primeira {cycle === 'annual' ? 'anuidade' : 'mensalidade'} só vem no
+          mês seguinte.
+        </span>
       </div>
     </div>
   );
