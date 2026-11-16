@@ -247,3 +247,15 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* "Mais dados": everything beyond plate, model and technician, closed when adding a car. */
+.cr-more > summary {
+  cursor: pointer;
+  margin-bottom: 14px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+  font-weight: 600;
+}
+.cr-more > summary:hover {
+  color: var(--foreground);
+}

@@ -163,6 +163,23 @@ function CarDialog({
                 <Field label="Modelo">
                   <input className={FIELD} value={form.model} onChange={set('model')} placeholder="Strada" required />
                 </Field>
+              </div>
+            </ModalSection>
+
+            <ModalSection title="Com o técnico" help="Escolha quem está com o carro. Ao trocar, o histórico guarda quem ficou com ele e por quanto tempo.">
+              <select className={FIELD} value={form.technicianId} onChange={set('technicianId')} aria-label="Técnico">
+                <option value="">Sem técnico (no pátio)</option>
+                {options.map((technician) => (
+                  <option key={technician.id} value={technician.id}>
+                    {technician.name}
+                  </option>
+                ))}
+              </select>
+            </ModalSection>
+
+            <details className="cr-more" open={Boolean(car)}>
+              <summary>Mais dados (opcional)</summary>
+              <div className="cr-grid">
                 <Field label="Marca">
                   <input className={FIELD} value={form.brand} onChange={set('brand')} placeholder="Fiat" />
                 </Field>
@@ -187,22 +204,6 @@ function CarDialog({
                     ))}
                   </select>
                 </Field>
-              </div>
-            </ModalSection>
-
-            <ModalSection title="Com o técnico" help="Escolha quem está com o carro. Ao trocar, o histórico guarda quem ficou com ele e por quanto tempo.">
-              <select className={FIELD} value={form.technicianId} onChange={set('technicianId')} aria-label="Técnico">
-                <option value="">Sem técnico (no pátio)</option>
-                {options.map((technician) => (
-                  <option key={technician.id} value={technician.id}>
-                    {technician.name}
-                  </option>
-                ))}
-              </select>
-            </ModalSection>
-
-            <ModalSection title="Documentos" help="Renavam e chassi são opcionais. Com as datas preenchidas, o carro avisa quando o licenciamento ou o seguro estão perto de vencer.">
-              <div className="cr-grid">
                 <Field label="Renavam">
                   <input className={FIELD} value={form.renavam} onChange={set('renavam')} inputMode="numeric" />
                 </Field>
@@ -219,7 +220,7 @@ function CarDialog({
                   <textarea className={`${FIELD} h-20 py-2`} value={form.notes} onChange={set('notes')} maxLength={1000} />
                 </Field>
               </div>
-            </ModalSection>
+            </details>
 
             {car ? (
               <ModalSection title="Histórico">
