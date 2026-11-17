@@ -962,7 +962,7 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
 
   return (
     <>
-      <div className="nr-sticky">
+      <>
         <Title
           title={organization.name}
           description={`${host(organization.slug)} · ${subscription ? `${subscription.plan.name} / ${CYCLE_LABELS[subscription.cycle]}` : 'Sem plano'}`}
@@ -1021,14 +1021,15 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
             </button>
           </div>
         )}
-        <div className="nr-tabs" role="tablist">
+        {/* Only the tabs stay on screen while scrolling: the header above scrolls away. */}
+        <div className="nr-tabs nr-tabs-sticky" role="tablist">
           {tabs.map((name) => (
             <button role="tab" aria-selected={tab === name} key={name} onClick={() => setTab(name)}>
               {name}
             </button>
           ))}
         </div>
-      </div>
+      </>
 
       {access && access.level !== 'full' && (
         <div className="nr-alert">
