@@ -7,6 +7,7 @@ import { calculateSubscriptionValue, splitSetupFee, type BillingCycle } from '..
 import { PlatformError, type Actor } from '../platform/errors';
 import {
   AsaasError,
+  asaasEnvironment,
   cancelSubscription,
   createCustomer,
   createPayment,
@@ -48,7 +49,7 @@ function asPlatformError(error: unknown): never {
 
 async function loadContext(organizationId: string) {
   const rows = await sql`
-    SELECT o.id, o.name, o.legal_name, o.document, o.email, o.phone, o.status, o.status_source, o.unbilled,
+    SELECT o.id, o.name, o.legal_name, o.document, o.email, o.phone, o.status, o.status_source, o.unbilled, o.is_test,
            s.*, p.name AS plan_name, p.setup_installments AS plan_setup_installments,
            (SELECT COUNT(*)::int FROM technicians t
              WHERE t.organization_id = o.id AND t.deleted_at IS NULL AND t.status = 'active') AS active_technicians
@@ -439,10 +440,29 @@ export async function createPaymentLink(
   organizationId: string,
   input: { kind: 'setup' | 'one_off'; value?: number | null; dueDate?: string | null; description?: string | null },
   actor: Actor,
+  options: { allowTest?: boolean } = {},
 ) {
   const context = await loadContext(organizationId);
-  if (context.unbilled) throw new PlatformError('Esta empresa é vitalícia ou de teste: não há cobrança real. Na conta de teste, marque as parcelas como pagas na própria lista.', 409);
-  if (!context.asaas_customer_id) throw new PlatformError('Ative a cobrança da empresa (botão "Ativar cobrança") antes de gerar links.', 409);
+  // A test company may get a real charge only in the gateway's sandbox (never a real charge in production).
+  const sandboxTest = Boolean(options.allowTest) && Boolean(context.is_test) && asaasEnvironment() === 'sandbox';
+  if (context.unbilled && !sandboxTest) throw new PlatformError('Esta empresa é vitalícia ou de teste: não há cobrança real. Na conta de teste, use a cobrança simulada.', 409);
+  if (!context.plan_id) throw new PlatformError('Escolha um plano para a empresa antes de gerar links.', 409);
+
+  // No customer at the gateway yet: it is made now (the subscription is still activated separately).
+  let customerId = context.asaas_customer_id as string | null;
+  if (!customerId) {
+    const cpfCnpj = String(context.document ?? '').replace(/\D/g, '');
+    if (cpfCnpj.length !== 11 && cpfCnpj.length !== 14) throw new PlatformError('Cadastre o CNPJ (ou CPF) da empresa para criar o cliente no Asaas.');
+    const customer = await createCustomer({
+      name: String(context.legal_name || context.name),
+      cpfCnpj,
+      email: (context.email as string | null) ?? null,
+      mobilePhone: String(context.phone ?? '').replace(/\D/g, '') || null,
+      externalReference: organizationId,
+    }).catch(asPlatformError);
+    customerId = customer.id;
+    await sql`UPDATE subscriptions SET asaas_customer_id = ${customerId}, updated_at = NOW() WHERE organization_id = ${organizationId}`;
+  }
 
   const today = brasiliaToday();
   const dueDate = input.dueDate || addDays(today, 3);
@@ -470,7 +490,7 @@ export async function createPaymentLink(
   if (value > 1_000_000) throw new PlatformError('Valor alto demais. Confira.');
 
   const payment = await createPayment({
-    customer: String(context.asaas_customer_id),
+    customer: customerId,
     value,
     dueDate,
     description,

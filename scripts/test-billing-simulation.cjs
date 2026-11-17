@@ -92,12 +92,13 @@ test('flow: a charge of another company cannot be paid', async () => {
   await assert.rejects(simulation.setSimulatedPayment(mine, charge.id, true, null), /não encontrada/);
 });
 
-test('flow: a payment link is refused for a test company and for one whose billing is not active (nothing reaches the gateway)', async () => {
+test('flow: a payment link is refused for a test company, and a company with no CNPJ cannot become a gateway customer (nothing reaches the gateway)', async () => {
   const testOrg = await makeOrg('f');
   const realOrg = await makeOrg('g', { testOrg: false });
   const billing = require('../lib/billing/billing.ts');
   await assert.rejects(billing.createPaymentLink(testOrg, { kind: 'setup' }, { id: null }), /teste/);
-  await assert.rejects(billing.createPaymentLink(realOrg, { kind: 'setup' }, { id: null }), /Ative a cobrança/);
+  await assert.rejects(billing.createPaymentLink(realOrg, { kind: 'setup' }, { id: null }), /CNPJ/);
+  await assert.rejects(billing.createPaymentLink(testOrg, { kind: 'setup' }, { id: null }, { allowTest: true }), /CNPJ/, 'sandbox test company: asks for the CNPJ before any gateway call');
 });
 
 test('flow: making a charge in a test company creates a simulated one; the setup defaults to what is missing', async () => {

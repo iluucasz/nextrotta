@@ -49,8 +49,11 @@ export async function POST(request: NextRequest, context: Context) {
         dueDate: typeof body.dueDate === 'string' && body.dueDate ? body.dueDate : null,
         description: typeof body.description === 'string' ? body.description : null,
       };
-      // A test company gets a simulated charge (no link, nothing at the gateway); a real one gets a gateway link.
-      link = (await isTestOrganization(id)) ? await createSimulatedCharge(id, input, owner.userId) : await createPaymentLink(id, input, { id: owner.userId });
+      // A test company gets a simulated charge (no link, nothing at the gateway) unless the owner asks for the gateway's sandbox
+      // (`gateway: true`); a real one always gets a gateway link.
+      link = (await isTestOrganization(id)) && body.gateway !== true
+        ? await createSimulatedCharge(id, input, owner.userId)
+        : await createPaymentLink(id, input, { id: owner.userId }, { allowTest: body.gateway === true });
     } else if (body.action === 'simulate') {
       if (typeof body.chargeId !== 'string' || typeof body.paid !== 'boolean') throw new PlatformError('Informe a cobrança e se foi paga.');
       await setSimulatedPayment(id, body.chargeId, body.paid, owner.userId);
