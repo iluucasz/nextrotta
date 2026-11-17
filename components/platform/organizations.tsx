@@ -1446,7 +1446,9 @@ function SubscriptionTab({
   const generateLink = () =>
     onEditor({
       title: 'Gerar link de cobrança',
-      description: 'Cria a cobrança no Asaas (Pix, boleto ou cartão) e copia o link para você enviar. A empresa também a vê em Assinatura.',
+      description: test
+        ? 'Conta de teste: cria uma cobrança simulada (sem link e sem Asaas). A empresa a paga, de mentira, na Assinatura dela.'
+        : 'Cria a cobrança no Asaas (Pix, boleto ou cartão) e copia o link para você enviar. A empresa também a vê em Assinatura.',
       fields: [
         {
           key: 'kind',
@@ -1463,7 +1465,7 @@ function SubscriptionTab({
         { key: 'description', label: 'Descrição', hint: 'Opcional.' },
       ],
       initial: { kind: 'setup', value: '', dueDate: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10), description: '' },
-      submit: 'Gerar link',
+      submit: test ? 'Gerar cobrança' : 'Gerar link',
       save: async (values) => {
         const result = await api<{ link: { invoiceUrl: string | null; value: number } | null }>(`/organizations/${organizationId}/billing`, {
           body: { action: 'link', kind: values.kind, value: values.value === '' ? null : values.value, dueDate: values.dueDate, description: values.description },
@@ -1471,7 +1473,9 @@ function SubscriptionTab({
         billing.reload();
         onChanged();
         const url = result.link?.invoiceUrl;
-        if (url) {
+        if (test) {
+          notify(`Cobrança simulada de ${money(result.link?.value ?? 0)} criada.`);
+        } else if (url) {
           await navigator.clipboard.writeText(url).catch(() => undefined);
           notify(`Link de ${money(result.link?.value ?? 0)} gerado e copiado.`);
         } else {
@@ -1604,9 +1608,9 @@ function SubscriptionTab({
         title="Cobranças"
         description={test ? 'Conta de teste: as parcelas são simuladas. Marque como paga e desfaça à vontade.' : 'Espelho das cobranças do Asaas, atualizado pelos avisos de pagamento.'}
         action={
-          !lifetime && billingActive ? (
+          test || (!lifetime && billingActive) ? (
             <button className="nr-btn primary" onClick={generateLink}>
-              Gerar link de cobrança
+              {test ? 'Gerar cobrança' : 'Gerar link de cobrança'}
             </button>
           ) : undefined
         }

@@ -100,6 +100,19 @@ test('flow: a payment link is refused for a test company and for one whose billi
   await assert.rejects(billing.createPaymentLink(realOrg, { kind: 'setup' }, { id: null }), /Ative a cobrança/);
 });
 
+test('flow: making a charge in a test company creates a simulated one; the setup defaults to what is missing', async () => {
+  const org = await makeOrg('h', { setupFee: 600, installments: 2 });
+  await simulation.ensureSimulatedSchedule(org); // both parcels of the fee are already charged
+  await assert.rejects(simulation.createSimulatedCharge(org, { kind: 'setup' }, null), /já está toda cobrada/);
+  const extra = await simulation.createSimulatedCharge(org, { kind: 'one_off', value: 150, description: 'Treinamento' }, null);
+  assert.equal(extra.invoiceUrl, null);
+  const [row] = await sql`SELECT kind, value::float AS value, status, billing_type FROM billing_charges WHERE organization_id = ${org} AND description = 'Treinamento'`;
+  assert.deepEqual([row.kind, row.value, row.status, row.billing_type], ['one_off', 150, 'PENDING', 'SIMULATED']);
+  await assert.rejects(simulation.createSimulatedCharge(org, { kind: 'one_off' }, null), /valor/i);
+  const real = await makeOrg('i', { testOrg: false });
+  await assert.rejects(simulation.createSimulatedCharge(real, { kind: 'one_off', value: 10 }, null), /conta de teste/);
+});
+
 after(() => {
   if (created.length) console.log(`test companies: ${created.length} (zz-teste-simulacao-*-${stamp})`);
 });

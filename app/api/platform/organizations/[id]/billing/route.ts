@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { activateBilling, createPaymentLink, listCharges, refreshCharges, syncSubscriptionValue } from '@/lib/billing/billing';
-import { ensureSimulatedSchedule, setSimulatedPayment } from '@/lib/billing/simulation';
+import { createSimulatedCharge, ensureSimulatedSchedule, isTestOrganization, setSimulatedPayment } from '@/lib/billing/simulation';
 import { getOrganizationDetail, PlatformError } from '@/lib/platform/organizations';
 import { getSubscription } from '@/lib/platform/plans';
 import { readJson, withPlatformOwner } from '@/lib/platform/route';
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest, context: Context) {
     const { id } = await context.params;
     await getOrganizationDetail(id);
     const body = await readJson(request);
-    let link: { invoiceUrl: string | null; value: number; dueDate: string } | null = null;
+    let link: { invoiceUrl: string | null; value: number; dueDate: string; simulated?: boolean } | null = null;
 
     if (body.action === 'activate') {
       await activateBilling(id, { firstDueDate: typeof body.firstDueDate === 'string' ? body.firstDueDate : null }, {
@@ -43,12 +43,14 @@ export async function POST(request: NextRequest, context: Context) {
       await refreshCharges(id);
     } else if (body.action === 'link') {
       if (body.kind !== 'setup' && body.kind !== 'one_off') throw new PlatformError('Escolha o tipo da cobrança.');
-      link = await createPaymentLink(id, {
-        kind: body.kind,
+      const input = {
+        kind: body.kind as 'setup' | 'one_off',
         value: body.value == null || body.value === '' ? null : Number(body.value),
         dueDate: typeof body.dueDate === 'string' && body.dueDate ? body.dueDate : null,
         description: typeof body.description === 'string' ? body.description : null,
-      }, { id: owner.userId });
+      };
+      // A test company gets a simulated charge (no link, nothing at the gateway); a real one gets a gateway link.
+      link = (await isTestOrganization(id)) ? await createSimulatedCharge(id, input, owner.userId) : await createPaymentLink(id, input, { id: owner.userId });
     } else if (body.action === 'simulate') {
       if (typeof body.chargeId !== 'string' || typeof body.paid !== 'boolean') throw new PlatformError('Informe a cobrança e se foi paga.');
       await setSimulatedPayment(id, body.chargeId, body.paid, owner.userId);

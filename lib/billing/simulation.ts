@@ -52,7 +52,7 @@ export function simulatedSchedule(input: { today: string; billingDay: number; va
   return rows;
 }
 
-async function isTestOrganization(organizationId: string) {
+export async function isTestOrganization(organizationId: string) {
   const [row] = await sql`SELECT is_test FROM organizations WHERE id = ${organizationId} AND deleted_at IS NULL`;
   return Boolean(row?.is_test);
 }
@@ -116,4 +116,49 @@ export async function setSimulatedPayment(organizationId: string, chargeId: stri
     targetType: 'billing_charge',
     targetId: chargeId,
   });
+}
+
+/**
+ * The owner "makes a link" in a test company: a simulated charge (setup or one-off) is made, with no link and nothing sent to the gateway;
+ * the company pays it (simulated) in its Assinatura. Setup defaults to what is still missing of the fee.
+ */
+export async function createSimulatedCharge(
+  organizationId: string,
+  input: { kind: 'setup' | 'one_off'; value?: number | null; dueDate?: string | null; description?: string | null },
+  actorId: string | null,
+) {
+  if (!(await isTestOrganization(organizationId))) throw new PlatformError('A cobrança simulada só existe em conta de teste.', 409);
+  await ensureSimulatedSchedule(organizationId);
+
+  const today = brasiliaToday();
+  const dueDate = input.dueDate || addDays(today, 3);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || dueDate < today) throw new PlatformError('Informe um vencimento a partir de hoje.');
+
+  let value = Number(input.value ?? 0);
+  let description = String(input.description ?? '').trim();
+  if (input.kind === 'setup') {
+    const subscription = await getSubscription(organizationId);
+    const [charged] = await sql`
+      SELECT COALESCE(SUM(value), 0)::float AS total FROM billing_charges
+      WHERE organization_id = ${organizationId} AND kind = 'setup' AND status NOT IN ('DELETED', 'CANCELED', 'REFUNDED')
+    `;
+    if (!(value > 0)) value = Math.round(((subscription?.setupFee ?? 0) - Number(charged.total)) * 100) / 100;
+    if (!(value > 0)) throw new PlatformError('A implantação já está toda cobrada. Informe um valor se quiser outra cobrança.');
+    description ||= 'NextRotta — implantação';
+  } else {
+    if (!(value > 0)) throw new PlatformError('Informe o valor da cobrança.');
+    description ||= 'NextRotta — cobrança avulsa';
+  }
+  if (value > 1_000_000) throw new PlatformError('Valor alto demais. Confira.');
+
+  const id = `sim_${organizationId}_${Date.now()}`;
+  await sql`
+    INSERT INTO billing_charges (organization_id, asaas_payment_id, kind, description, value, due_date, status, billing_type)
+    VALUES (${organizationId}, ${id}, ${input.kind}, ${description}, ${value}, ${dueDate}, 'PENDING', ${SIMULATED})
+  `;
+  if (input.kind === 'setup') {
+    await sql`UPDATE subscriptions SET setup_fee_status = 'pending', updated_at = NOW() WHERE organization_id = ${organizationId} AND setup_fee_status IN ('none', 'paid')`;
+  }
+  await recordAudit({ organizationId, actorId, actorRole: 'platform_owner', action: 'billing.simulated_charge_created', targetType: 'billing_charge', targetId: id, details: { kind: input.kind, value, dueDate } });
+  return { invoiceUrl: null, value, dueDate, simulated: true };
 }
