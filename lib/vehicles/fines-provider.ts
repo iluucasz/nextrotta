@@ -37,13 +37,13 @@ export type FineSource = {
 const API_BASE = 'https://api.infosimples.com/api/v2/consultas';
 
 /**
- * How long the provider may wait for the agency's site before giving up (code 605). MEASURED on 16/11/2026: a PRF query takes about
- * 100 s even to refuse a made-up Renavam (99 s), so 100 s was right at the edge and many real ones timed out. 120 s is the longest wait
- * that came back as a clean answer (605); with 240 s the provider's own gateway answered HTTP 502 first. A momentary failure is asked
- * once more (`MAX_ATTEMPTS`), and both attempts fit in the 300 s that "Verificar agora" has. A failed or timed-out lookup is not billed.
+ * How long the provider may wait for the agency's site before giving up (code 605). MEASURED on 17/11/2026 with real cars: asked ONE AT A
+ * TIME the PRF answers in 3 to 13 s; asked several at once, some never answer (605 at 120 s), and waiting longer does not help (240 s
+ * got HTTP 502 from the provider's gateway). So the fix is not a longer wait but one call at a time per agency (`serializePerSource` in
+ * fines-sync.ts); the wait only has to cover a slow answer, and a momentary failure is asked once more (`MAX_ATTEMPTS`).
  */
-export const PROVIDER_TIMEOUT_SECONDS = 120;
-export const MAX_ATTEMPTS = 2;
+export const PROVIDER_TIMEOUT_SECONDS = 45;
+export const MAX_ATTEMPTS = 3;
 
 const text = (value: unknown): string => String(value ?? '').trim();
 const textOrNull = (value: unknown): string | null => text(value) || null;
@@ -143,7 +143,8 @@ export function sourcesFor(state: string): { sources: FineSource[]; detranCovere
   return { sources: detran ? [detran, PRF] : [PRF], detranCovered: Boolean(detran) };
 }
 
-export type LookupResult = { ok: true; fines: ExternalFine[] } | { ok: false; message: string };
+/** `deferred`: not asked at all because the time budget of this lookup ran out; the next lookup does it. */
+export type LookupResult = { ok: true; fines: ExternalFine[] } | { ok: false; message: string; deferred?: boolean };
 
 /** One query: asks the provider and reads the answer. Never throws; a failure comes back as a message (the token is never put in it). */
 export type Fetcher = (source: FineSource, car: CarToLookUp) => Promise<LookupResult>;
@@ -180,6 +181,11 @@ async function attempt(token: string, source: FineSource, car: CarToLookUp, fetc
         console.error(`[carros] ${source.key}: o provedor recusou o acesso (603): ${first || text(body.code_message)}`);
         return { transient: false, result: { ok: false, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` } };
       }
+      // 608: the agency's site refused the data we sent: the plate and the Renavam do not match a car there. Nothing to ask again.
+      if (body.code === 608) {
+        const why = (first || text(body.code_message)).replace(/\.$/, '');
+        return { transient: false, result: { ok: false, message: `${source.label}: o órgão recusou os dados deste carro (${why}). Confira a placa e o Renavam no documento.` } };
+      }
       // 605: the agency took too long to answer. Nothing is wrong with the car or the data; worth asking again.
       if (body.code === 605) {
         return { transient: true, result: { ok: false, message: `${source.label}: o órgão demorou para responder. O sistema tenta de novo na próxima verificação.` } };
@@ -196,10 +202,11 @@ async function attempt(token: string, source: FineSource, car: CarToLookUp, fetc
 }
 
 /** The real fetcher: the provider's API with the platform's token. A momentary failure is asked again once; the last message is the one kept. */
-export function createProviderFetcher(token: string, fetchImpl: typeof fetch = fetch): Fetcher {
+export function createProviderFetcher(token: string, fetchImpl: typeof fetch = fetch, options: { attempts?: number } = {}): Fetcher {
+  const attempts = options.attempts ?? MAX_ATTEMPTS;
   return async (source, car) => {
     let last: Attempt | null = null;
-    for (let tries = 1; tries <= MAX_ATTEMPTS; tries += 1) {
+    for (let tries = 1; tries <= attempts; tries += 1) {
       last = await attempt(token, source, car, fetchImpl);
       if (last.result.ok || !last.transient) break;
     }

@@ -94,8 +94,8 @@ test('the provider call sends the token and the car, reads the answer and never 
   assert.deepEqual([sent.get('token'), sent.get('placa'), sent.get('renavam')], ['SEGREDO', 'ABC1D23', '12345678900']);
 
   assert.equal(sent.get('timeout'), String(provider.PROVIDER_TIMEOUT_SECONDS), 'it asks the provider to wait for the agency up to the configured time');
-  assert.ok(provider.PROVIDER_TIMEOUT_SECONDS >= 110 && provider.PROVIDER_TIMEOUT_SECONDS <= 130, 'a PRF query takes about 100 s: wait a little more, but no more than the 120 s that came back clean (240 s got HTTP 502)');
-  assert.ok(provider.MAX_ATTEMPTS * (provider.PROVIDER_TIMEOUT_SECONDS + 25) < 300, 'every attempt fits in the 300 s of the screen');
+  assert.ok(provider.PROVIDER_TIMEOUT_SECONDS >= 30 && provider.PROVIDER_TIMEOUT_SECONDS <= 60, 'a good answer takes 3-13 s one at a time: a short wait is enough (longer never helped)');
+  assert.ok(sync.MANUAL_BUDGET_MS / 1000 + sync.MANUAL_ATTEMPTS * (provider.PROVIDER_TIMEOUT_SECONDS + 25) <= 300, 'the budget that stops new calls plus the call still in flight fits in the 300 s of the screen');
 
   const timedOut = await provider.createProviderFetcher('SEGREDO', answer({ code: 605, code_message: 'A consulta não foi realizada dentro do tempo de limite de timeout especificado.' }))(source, car);
   assert.equal(timedOut.ok, false);
@@ -109,6 +109,10 @@ test('the provider call sends the token and the car, reads the answer and never 
 
   const invalid = await provider.createProviderFetcher('SEGREDO', answer({ code: 607, code_message: 'Parâmetro(s) inválido(s).: placa, renavam.', errors: ['RENAVAM inválido'] }))(source, car);
   assert.match(invalid.message, /inválido\(s\).*RENAVAM inválido.*607/);
+
+  const mismatch = await provider.createProviderFetcher('SEGREDO', answer({ code: 608, code_message: 'Os parâmetros foram recusados pelo site ou aplicativo de origem.', errors: ['Renavam incorreto.'] }))(source, car);
+  assert.equal(mismatch.ok, false);
+  assert.match(mismatch.message, /o órgão recusou os dados deste carro \(Renavam incorreto\)\. Confira a placa e o Renavam/);
 
   const refused = await provider.createProviderFetcher('SEGREDO', answer({ code: 612, code_message: 'Renavam não encontrado' }))(source, car);
   assert.equal(refused.ok, false);
@@ -124,6 +128,9 @@ test('the provider call sends the token and the car, reads the answer and never 
   const gateway = await provider.createProviderFetcher('SEGREDO', async () => { tries += 1; return { status: 502, json: async () => { throw new Error('html'); } }; })(source, car);
   assert.equal(gateway.ok, false);
   assert.equal(tries, provider.MAX_ATTEMPTS, 'it asked again');
+  let triesScreen = 0;
+  await provider.createProviderFetcher('SEGREDO', async () => { triesScreen += 1; return { status: 502, json: async () => { throw new Error('html'); } }; }, { attempts: 2 })(source, car);
+  assert.equal(triesScreen, 2, 'the screen asks fewer times than the worker');
   assert.match(gateway.message, /o provedor não respondeu \(erro 502\)/);
 
   // A timeout (605) that works on the second try is a success; a refusal is not asked again.
@@ -257,6 +264,48 @@ test('a car never looked up is asked right away, not left waiting for Sunday', {
   assert.equal(result.cars, 1);
   assert.deepEqual(calls, ['prf:JKL4M56'], 'RJ has no Detran integrated: only the federal highways');
   assert.equal((await car(fresh)).fines_check_status, 'partial');
+});
+
+test('the agencies are asked one car at a time (the PRF times out when several cars are asked together), and the time budget leaves cars for the next lookup', { skip: !hasDatabase }, async () => {
+  for (const plate of ['PQR1S23', 'PQR2S34', 'PQR3S45']) {
+    await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate, renavam: '12345678900', state: 'RJ' }).value, null);
+  }
+  await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId} AND plate LIKE 'PQR%'`;
+  const inFlight = {};
+  const most = {};
+  let total = 0;
+  const slow = async (source, target) => {
+    inFlight[source.key] = (inFlight[source.key] ?? 0) + 1;
+    most[source.key] = Math.max(most[source.key] ?? 0, inFlight[source.key]);
+    total += 1;
+    await new Promise((resolve) => setTimeout(resolve, 15));
+    inFlight[source.key] -= 1;
+    return { ok: true, fines: [] };
+  };
+  const summary = await sync.lookupOrganization(actor.organizationId, slow, { today, mode: 'weekly' });
+  assert.equal(summary.cars, 3, 'the three new cars were asked (the other ones were looked up this week already)');
+  assert.equal(total, 3, 'one call each (RJ has only the PRF)');
+  assert.equal(most.prf, 1, 'the PRF was never asked by two cars at the same time');
+
+  // The same fake asked without the queue does overlap: proof that this test can see the problem it guards against.
+  inFlight.prf = 0;
+  most.prf = 0;
+  await Promise.all([slow({ key: 'prf' }, {}), slow({ key: 'prf' }, {}), slow({ key: 'prf' }, {})]);
+  assert.equal(most.prf, 3, 'without the queue the three calls overlap');
+
+  // Out of time: new cars are not started; they keep their old mark and wait for the next lookup.
+  await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId} AND plate LIKE 'PQR%'`;
+  calls = [];
+  answers = {};
+  const runId = await sync.beginRun(actor.organizationId, 'manual', null, today);
+  const late = await sync.lookupOrganization(actor.organizationId, fetcher, { today, mode: 'manual', runId, deadlineMs: Date.now() - 1000 });
+  assert.deepEqual([late.cars, late.deferred > 0, calls.length], [0, true, 0], 'nothing was started and nothing was asked');
+  const line = (await runs()).at(-1);
+  assert.equal(line.status, 'partial');
+  assert.match(line.message, /para a próxima verificação \(acabou o tempo desta\)/);
+  assert.equal(await sql`SELECT 1 FROM vehicles WHERE organization_id = ${actor.organizationId} AND fines_checked_at IS NOT NULL AND plate LIKE 'PQR%'`.then((rows) => rows.length), 0, 'a deferred car stays unmarked');
+  // These three cars were only for this test: they step aside so the next tests count what they always counted.
+  await sql`UPDATE vehicles SET status = 'inactive' WHERE organization_id = ${actor.organizationId} AND plate LIKE 'PQR%'`;
 });
 
 test('a failed lookup is recorded and tried again next round; a partial one is kept', { skip: !hasDatabase }, async () => {

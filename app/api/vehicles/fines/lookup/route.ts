@@ -3,7 +3,7 @@ import { organizationHasFeature } from '@/lib/billing/entitlements';
 import { brasiliaDateKey } from '@/lib/formatters';
 import { vehiclesRoute } from '@/lib/vehicles/api';
 import { createProviderFetcher, providerToken } from '@/lib/vehicles/fines-provider';
-import { beginRun, FINES_LOOKUP_FEATURE, lookupOrganization, MANUAL_ONCE_A_DAY } from '@/lib/vehicles/fines-sync';
+import { beginRun, FINES_LOOKUP_FEATURE, lookupOrganization, MANUAL_ATTEMPTS, MANUAL_BUDGET_MS, MANUAL_ONCE_A_DAY } from '@/lib/vehicles/fines-sync';
 import { VehicleError } from '@/lib/vehicles/store';
 
 export const runtime = 'nodejs';
@@ -35,7 +35,8 @@ export async function POST(request: NextRequest) {
 
     after(async () => {
       try {
-        await lookupOrganization(actor.organizationId, createProviderFetcher(token), { today, mode: 'manual', runId });
+        // One car at a time per agency, so a big fleet does not fit in the 300 s of this route: see MANUAL_BUDGET_MS.
+        await lookupOrganization(actor.organizationId, createProviderFetcher(token, fetch, { attempts: MANUAL_ATTEMPTS }), { today, mode: 'manual', runId, deadlineMs: Date.now() + MANUAL_BUDGET_MS });
       } catch (error) {
         console.error('[carros] manual lookup failed:', error);
       }

@@ -12,6 +12,14 @@ import { formatPlate, isValidRenavam } from './rules';
 /** The feature (granted by the owner, company by company) that turns the automatic lookup on. */
 export const FINES_LOOKUP_FEATURE = 'fines_lookup';
 
+/**
+ * "Verificar agora" runs inside a 300 s function. A PRF answer takes 12-60 s and the agency is asked one car at a time, so a big fleet does
+ * not fit: new calls stop this long after the start, and the call already in flight (at worst 2 attempts of PROVIDER_TIMEOUT_SECONDS + 25 s)
+ * still ends before the 300 s. What was left waits for the next lookup (the weekly one in the worker has no such limit).
+ */
+export const MANUAL_BUDGET_MS = 160_000;
+export const MANUAL_ATTEMPTS = 2;
+
 /** Cars asked about at the same time (each answer waits for an agency, so many at once keeps a fleet inside the time limit of "Verificar agora"). */
 const PARALLEL_CARS = 8;
 
@@ -41,7 +49,8 @@ export type LookupRun = {
   message: string | null;
 };
 
-export type LookupSummary = { cars: number; created: number; failed: number; runId: string | null };
+/** `deferred`: cars left for the next lookup because the time budget of this one ran out ("Verificar agora" has 300 s). */
+export type LookupSummary = { cars: number; created: number; failed: number; deferred: number; runId: string | null };
 
 type Car = { id: string; plate: string; renavam: string | null; state: string | null; fines_checked_at: string | null };
 
@@ -174,6 +183,20 @@ async function markCar(carId: string, status: 'ok' | 'partial' | 'error' | 'miss
   `;
 }
 
+/**
+ * One call at a time per agency. MEASURED with real cars: the PRF answers in 3 to 13 s when asked one at a time, and when several
+ * cars are asked together some never answer (timeout at 120 s). The two agencies of a car (and different agencies) still go together.
+ */
+export function serializePerSource(fetcher: Fetcher): Fetcher {
+  const tails = new Map<string, Promise<unknown>>();
+  return (source, car) => {
+    const previous = tails.get(source.key) ?? Promise.resolve();
+    const run = previous.then(() => fetcher(source, car));
+    tails.set(source.key, run.catch(() => undefined));
+    return run;
+  };
+}
+
 async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise<void>) {
   let next = 0;
   await Promise.all(
@@ -192,9 +215,9 @@ async function mapLimit<T>(items: T[], limit: number, work: (item: T) => Promise
 export async function lookupOrganization(
   organizationId: string,
   fetcher: Fetcher,
-  options: { today: string; mode: RunKind; runId?: string },
+  options: { today: string; mode: RunKind; runId?: string; /** Stop starting new cars after this moment (epoch ms). */ deadlineMs?: number },
 ): Promise<LookupSummary> {
-  const summary: LookupSummary = { cars: 0, created: 0, failed: 0, runId: options.runId ?? null };
+  const summary: LookupSummary = { cars: 0, created: 0, failed: 0, deferred: 0, runId: options.runId ?? null };
   try {
     const cars = (await sql`
       SELECT id, plate, renavam, state, fines_checked_at FROM vehicles
@@ -224,14 +247,25 @@ export async function lookupOrganization(
     const found: Array<{ plate: string; fine: ExternalFine }> = [];
     const problems = new Set<string>();
 
+    // The time budget is checked when a call's turn in the agency's queue comes (every car is picked up at once, but the calls wait in line):
+    // out of time, the call is not made and the car is left for the next lookup, keeping its old mark so it is the first one asked next time.
+    const bounded: Fetcher = async (source, car) =>
+      options.deadlineMs && Date.now() > options.deadlineMs
+        ? { ok: false, deferred: true, message: `${source.label}: ficou para a próxima verificação (acabou o tempo desta).` }
+        : fetcher(source, car);
+    const queued = serializePerSource(bounded);
     await mapLimit(toLookUp, PARALLEL_CARS, async (car) => {
-      summary.cars += 1;
       const { sources, detranCovered } = sourcesFor(car.state as string);
       const target = { plate: car.plate, renavam: car.renavam as string, state: car.state as string };
       const errors: string[] = [];
       let succeeded = 0;
       // Both agencies of a car are asked at the same time; what they answered is then handled one by one.
-      const answers = await Promise.all(sources.map((source) => fetcher(source, target)));
+      const answers = await Promise.all(sources.map((source) => queued(source, target)));
+      if (answers.every((answer) => !answer.ok && answer.deferred)) {
+        summary.deferred += 1;
+        return;
+      }
+      summary.cars += 1;
       for (const result of answers) {
         if (!result.ok) {
           errors.push(result.message);
@@ -276,8 +310,13 @@ export async function lookupOrganization(
     }
 
     if (runId) {
-      const status: RunStatus = summary.cars > 0 && summary.failed === summary.cars ? 'error' : summary.failed > 0 ? 'partial' : 'ok';
-      const message = problems.size ? Array.from(problems).join(' ').slice(0, 500) : summary.cars === 0 ? 'Nenhum carro com Renavam e estado para consultar.' : null;
+      const status: RunStatus = summary.cars > 0 && summary.failed === summary.cars ? 'error' : summary.failed > 0 || summary.deferred > 0 ? 'partial' : 'ok';
+      const notes = [
+        problems.size ? Array.from(problems).join(' ') : '',
+        summary.deferred ? `${summary.deferred} ${summary.deferred === 1 ? 'carro ficou' : 'carros ficaram'} para a próxima verificação (acabou o tempo desta).` : '',
+        !problems.size && !summary.deferred && summary.cars === 0 ? 'Nenhum carro com Renavam e estado para consultar.' : '',
+      ].filter(Boolean);
+      const message = notes.length ? notes.join(' ').slice(0, 500) : null;
       await finishRun(runId, summary, status, message);
     }
     return summary;
