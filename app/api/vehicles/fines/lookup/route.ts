@@ -1,18 +1,19 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { organizationHasFeature } from '@/lib/billing/entitlements';
 import { brasiliaDateKey } from '@/lib/formatters';
 import { vehiclesRoute } from '@/lib/vehicles/api';
 import { createProviderFetcher, providerToken } from '@/lib/vehicles/fines-provider';
-import { FINES_LOOKUP_FEATURE, lookupOrganization, MANUAL_INTERVAL_MINUTES } from '@/lib/vehicles/fines-sync';
+import { beginRun, FINES_LOOKUP_FEATURE, lookupOrganization } from '@/lib/vehicles/fines-sync';
 import { VehicleError } from '@/lib/vehicles/store';
 
 export const runtime = 'nodejs';
-// A lookup waits for the Detran through the provider: a few cars per click.
+// The answer of a Detran can take a while: the lookup finishes after the response, still inside this limit.
 export const maxDuration = 300;
 
-const CARS_PER_CLICK = 5;
-
-/** "Consultar agora": looks the cars' fines up right away (the weekly round does it on its own). */
+/**
+ * "Verificar agora": once a day per company. It opens its line in the history (that is what locks the rest of the day),
+ * answers right away, and looks the cars up in the background; the screen follows the history.
+ */
 export async function POST(request: NextRequest) {
   return vehiclesRoute(request, async (actor) => {
     if (!(await organizationHasFeature(actor.organizationId, FINES_LOOKUP_FEATURE))) {
@@ -20,11 +21,18 @@ export async function POST(request: NextRequest) {
     }
     const token = providerToken();
     if (!token) throw new VehicleError('A consulta automática ainda não foi configurada pelo NextRotta. Tente mais tarde.', 503);
-    const summary = await lookupOrganization(actor.organizationId, createProviderFetcher(token), {
-      today: brasiliaDateKey(),
-      minIntervalMinutes: MANUAL_INTERVAL_MINUTES,
-      maxCars: CARS_PER_CLICK,
+
+    const today = brasiliaDateKey();
+    const runId = await beginRun(actor.organizationId, 'manual', actor.userId, today);
+    if (!runId) throw new VehicleError('Você já verificou hoje. A verificação manual volta amanhã; a automática roda todo domingo.', 429);
+
+    after(async () => {
+      try {
+        await lookupOrganization(actor.organizationId, createProviderFetcher(token), { today, mode: 'manual', runId });
+      } catch (error) {
+        console.error('[carros] manual lookup failed:', error);
+      }
     });
-    return NextResponse.json(summary);
+    return NextResponse.json({ runId }, { status: 202 });
   });
 }

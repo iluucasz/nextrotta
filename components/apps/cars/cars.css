@@ -631,3 +631,61 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* the history of the fines lookups */
+.mg-dashboard .cr-note {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.mg-dashboard .cr-note.is-warning {
+  background: #fffaf0;
+  color: #8a5a00;
+}
+.mg-dashboard .cr-runs {
+  display: grid;
+  gap: 0;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mg-dashboard .cr-run {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+.mg-dashboard .cr-run:first-child {
+  border-top: 0;
+}
+.mg-dashboard .cr-run > div {
+  display: grid;
+  gap: 1px;
+  font-size: 14px;
+}
+.mg-dashboard .cr-run strong {
+  font-size: 14px;
+}
+.mg-dashboard .cr-run span:not(.cr-run-dot) {
+  color: var(--muted-foreground);
+}
+.mg-dashboard .cr-run-dot {
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 999px;
+  background: #94a3b8;
+}
+.mg-dashboard .cr-run.is-success .cr-run-dot {
+  background: #059669;
+}
+.mg-dashboard .cr-run.is-warning .cr-run-dot {
+  background: #d97706;
+}
+.mg-dashboard .cr-run.is-danger .cr-run-dot {
+  background: #dc2626;
+}

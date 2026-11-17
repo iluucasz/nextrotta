@@ -77,6 +77,16 @@ export function addDaysToKey(dateKey: string, days: number): string {
   return date.toISOString().slice(0, 10);
 }
 
+/** The Sunday on or before a date (YYYY-MM-DD): the weekly lookup counts the week from Sunday. */
+export function sundayOnOrBefore(dateKey: string): string {
+  return addDaysToKey(dateKey, -new Date(`${dateKey}T00:00:00Z`).getUTCDay());
+}
+
+/** The next Sunday after a date: when the weekly automatic lookup runs next. */
+export function nextSunday(dateKey: string): string {
+  return addDaysToKey(sundayOnOrBefore(dateKey), 7);
+}
+
 /** The Monday of the week of a date (YYYY-MM-DD): the reminder to look up the fines comes once per week. */
 export function weekStart(dateKey: string): string {
   const weekday = new Date(`${dateKey}T00:00:00Z`).getUTCDay(); // 0 = Sunday

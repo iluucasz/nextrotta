@@ -20,6 +20,7 @@ import {
 } from '@/lib/vehicles/fines-rules';
 import { formatPlate } from '@/lib/vehicles/rules';
 import type { FineRow } from '@/lib/vehicles/fines-store';
+import type { LookupRun } from '@/lib/vehicles/fines-sync';
 import type { AssignmentRow, VehicleRow } from '@/lib/vehicles/store';
 import { brDate, brDateTime, call, money, toLocalInput } from './call';
 import { AREA, Field, FIELD, type Technician } from './kit';
@@ -28,8 +29,11 @@ export type FinesData = {
   today: string;
   fines: FineRow[];
   summary: { open: number; urgent: number; toPay: number; toPayAmount: number };
-  /** The weekly automatic lookup: granted to this company, and the platform has its provider set up. */
-  lookup: { enabled: boolean; configured: boolean };
+  /**
+   * The weekly automatic lookup: granted to this company, the platform has its provider set up, the history of the lookups, whether
+   * today's manual one was already used, and the next Sunday.
+   */
+  lookup: { enabled: boolean; configured: boolean; runs: LookupRun[]; lockedToday: boolean; nextAutomatic: string };
 };
 
 
@@ -456,7 +460,7 @@ function DeadlineBadge({ fine, today }: { fine: FineRow; today: string }) {
   );
 }
 
-/** "Consultar agora": looks the cars' fines up right away through the provider and says what came of it. */
+/** "Verificar agora": starts the lookup (once a day); it finishes in the background and the history shows how it went. */
 export function useFinesLookup(reload: () => Promise<void>) {
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
@@ -465,17 +469,12 @@ export function useFinesLookup(reload: () => Promise<void>) {
     setBusy(true);
     setNote(null);
     try {
-      const result = await call<{ cars: number; skipped: number; created: number; failed: number; limited: boolean }>('/api/vehicles/fines/lookup', { method: 'POST' });
-      setNote({
-        tone: 'success',
-        text:
-          result.cars === 0
-            ? 'Nada a consultar agora: os carros foram consultados há pouco ou faltam Renavam e estado.'
-            : `${result.cars} ${result.cars === 1 ? 'carro consultado' : 'carros consultados'}: ${result.created === 0 ? 'nenhuma multa nova' : `${result.created} ${result.created === 1 ? 'multa nova registrada' : 'multas novas registradas'}`}${result.failed ? `, ${result.failed} com falha` : ''}.${result.limited ? ' Ainda há carros esperando: consulte de novo.' : ''}`,
-      });
+      await call('/api/vehicles/fines/lookup', { method: 'POST' });
+      setNote({ tone: 'success', text: 'Verificação iniciada. Pode levar alguns minutos: o resultado aparece no histórico.' });
       await reload();
     } catch (failure) {
-      setNote({ tone: 'error', text: failure instanceof Error ? failure.message : 'Não foi possível consultar agora.' });
+      setNote({ tone: 'error', text: failure instanceof Error ? failure.message : 'Não foi possível verificar agora.' });
+      await reload();
     } finally {
       setBusy(false);
     }

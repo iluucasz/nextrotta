@@ -11,6 +11,7 @@ import { CarDialog } from './car-dialog';
 import { brDate, brDay, call, money } from './call';
 import { FineDialog, FinesList, useFinesLookup, type FinesData } from './fines';
 import { carName, Dues, type Technician } from './kit';
+import { LookupPanel } from './lookup-panel';
 import { Problems, StatusHero } from './status';
 import './cars.css';
 
@@ -60,6 +61,13 @@ export function FleetApp() {
   }, []);
 
   const lookup = useFinesLookup(load);
+  // A lookup runs in the background: while the history says "consultando", ask again every few seconds.
+  const running = fines?.lookup.runs[0]?.status === 'running';
+  useEffect(() => {
+    if (!running) return;
+    const timer = setInterval(() => void load(), 4000);
+    return () => clearInterval(timer);
+  }, [running, load]);
 
   async function give(car: VehicleRow, technicianId: string) {
     setBusy(car.id);
@@ -162,8 +170,14 @@ export function FleetApp() {
         <div className="mg-header-actions cr-header-actions">
           {tab === 'fines' && ready ? (
             fines?.lookup.enabled && fines.lookup.configured ? (
-              <button type="button" className="mg-button" disabled={lookup.busy} onClick={() => void lookup.run()}>
-                {lookup.busy ? 'Consultando…' : 'Consultar agora'}
+              <button
+                type="button"
+                className="mg-button"
+                disabled={lookup.busy || running || fines.lookup.lockedToday}
+                title={fines.lookup.lockedToday ? 'Você já verificou hoje. Libera amanhã.' : undefined}
+                onClick={() => void lookup.run()}
+              >
+                {lookup.busy || running ? 'Verificando…' : fines.lookup.lockedToday ? 'Verificado hoje' : 'Verificar agora'}
               </button>
             ) : (
               <button type="button" className="mg-button" disabled={checked} onClick={() => void markChecked()}>
@@ -197,9 +211,6 @@ export function FleetApp() {
 
       {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
       {lookup.note ? <ModalNotice tone={lookup.note.tone}>{lookup.note.text}</ModalNotice> : null}
-      {fines?.lookup.enabled && !fines.lookup.configured ? (
-        <ModalNotice tone="warning">A consulta automática ainda não foi configurada pelo NextRotta. Até lá, consulte à mão e registre aqui.</ModalNotice>
-      ) : null}
 
       {!ready ? (
         error ? null : <p className="cr-muted">Carregando…</p>
@@ -208,16 +219,21 @@ export function FleetApp() {
           {finesCard ? <StatusHero card={finesCard} onAction={act} /> : null}
           <Problems problems={fineProblems} onAction={act} />
           {cars.length === 0 ? null : (
-            <Panel
-              title="Multas"
-              help={
-                lookupEnabled
-                  ? 'Toda semana o sistema consulta as multas dos carros que têm Renavam e estado preenchidos e registra as novas sozinho: ele sugere quem estava com o carro e avisa você no sino. Confira o prazo na notificação e avise o prestador. A indicação do condutor continua sendo feita no site oficial.'
-                  : 'Uma vez por semana o sino lembra de consultar as multas dos carros no Detran ou na Carteira Digital de Trânsito. Quando achar uma, registre aqui: o sistema sugere quem estava com o carro, avisa o prestador e conta o prazo para indicar o condutor.'
-              }
-            >
-              <FinesList data={fines!} cars={cars} technicians={fleet!.technicians} onOpen={(fineId) => setFineDialog({ fineId })} />
-            </Panel>
+            <div className="cr-layout">
+              <Panel
+                title="Multas"
+                help={
+                  lookupEnabled
+                    ? 'Toda semana o sistema consulta as multas dos carros que têm Renavam e estado preenchidos e registra as novas sozinho: ele sugere quem estava com o carro e avisa você no sino. Confira o prazo na notificação e avise o prestador. A indicação do condutor continua sendo feita no site oficial.'
+                    : 'Uma vez por semana o sino lembra de consultar as multas dos carros no Detran ou na Carteira Digital de Trânsito. Quando achar uma, registre aqui: o sistema sugere quem estava com o carro, avisa o prestador e conta o prazo para indicar o condutor.'
+                }
+              >
+                <FinesList data={fines!} cars={cars} technicians={fleet!.technicians} onOpen={(fineId) => setFineDialog({ fineId })} />
+              </Panel>
+              <div className="cr-side">
+                <LookupPanel lookup={fines!.lookup} />
+              </div>
+            </div>
           )}
         </>
       ) : (

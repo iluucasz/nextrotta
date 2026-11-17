@@ -147,6 +147,25 @@ export function nextDues(cars: CarLite[], today: string, limit = 6): DueItem[] {
   return items.sort((a, b) => a.date.localeCompare(b.date)).slice(0, limit);
 }
 
+export type RunLite = { kind: 'weekly' | 'manual'; status: 'running' | 'ok' | 'partial' | 'error'; startedAt: string; cars: number; created: number; failed: number; message: string | null };
+
+/** "16/11 08:05" in Brasília time. */
+export function shortDateTime(iso: string): string {
+  const local = new Date(Date.parse(iso) - 3 * 3_600_000).toISOString();
+  return `${local.slice(8, 10)}/${local.slice(5, 7)} ${local.slice(11, 16)}`;
+}
+
+/** One line of the history of lookups, in words: who started it, when, and what came of it. */
+export function describeRun(run: RunLite): { title: string; detail: string; tone: 'neutral' | 'success' | 'warning' | 'danger' } {
+  const title = `${run.kind === 'weekly' ? 'Automática (domingo)' : 'Manual'} · ${shortDateTime(run.startedAt)}`;
+  if (run.status === 'running') return { title, detail: 'Consultando…', tone: 'neutral' };
+  if (run.status === 'error') return { title, detail: run.message || 'Não foi possível consultar.', tone: 'danger' };
+  if (run.cars === 0) return { title, detail: run.message || 'Nenhum carro para consultar.', tone: 'neutral' };
+  const found = run.created ? `${run.created} ${plural(run.created, 'multa nova', 'multas novas')}` : 'nenhuma multa nova';
+  const failed = run.failed ? ` · ${run.failed} sem resposta` : '';
+  return { title, detail: `${run.cars} ${plural(run.cars, 'carro consultado', 'carros consultados')} · ${found}${failed}`, tone: run.status === 'partial' ? 'warning' : 'success' };
+}
+
 /** The latest time any car had its fines looked up, for "Última consulta". */
 export function lastLookup(cars: Array<{ finesCheckedAt: string | null }>): string | null {
   return cars.reduce<string | null>((latest, car) => (car.finesCheckedAt && (!latest || car.finesCheckedAt > latest) ? car.finesCheckedAt : latest), null);
