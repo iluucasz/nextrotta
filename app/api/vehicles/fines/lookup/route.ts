@@ -3,7 +3,7 @@ import { organizationHasFeature } from '@/lib/billing/entitlements';
 import { brasiliaDateKey } from '@/lib/formatters';
 import { vehiclesRoute } from '@/lib/vehicles/api';
 import { createProviderFetcher, providerToken } from '@/lib/vehicles/fines-provider';
-import { beginRun, FINES_LOOKUP_FEATURE, lookupOrganization } from '@/lib/vehicles/fines-sync';
+import { beginRun, FINES_LOOKUP_FEATURE, lookupOrganization, MANUAL_ONCE_A_DAY } from '@/lib/vehicles/fines-sync';
 import { VehicleError } from '@/lib/vehicles/store';
 
 export const runtime = 'nodejs';
@@ -24,7 +24,14 @@ export async function POST(request: NextRequest) {
 
     const today = brasiliaDateKey();
     const runId = await beginRun(actor.organizationId, 'manual', actor.userId, today);
-    if (!runId) throw new VehicleError('Você já verificou hoje. A verificação manual volta amanhã; a automática roda todo domingo.', 429);
+    if (!runId) {
+      throw new VehicleError(
+        MANUAL_ONCE_A_DAY
+          ? 'Você já verificou hoje. A verificação manual volta amanhã; a automática roda todo domingo.'
+          : 'Já existe uma verificação em andamento. Espere terminar para pedir outra.',
+        429,
+      );
+    }
 
     after(async () => {
       try {

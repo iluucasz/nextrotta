@@ -247,7 +247,7 @@ test('a failed lookup is recorded and tried again next round; a partial one is k
   assert.equal((await car(carMs)).fines_check_status, 'partial');
 });
 
-test('"Verificar agora" works once a day: the second click is refused, and the day is not spent by a failure or a dead run', { skip: !hasDatabase }, async () => {
+test('"Verificar agora" works once a day: the second click is refused, and the day is not spent by a failure or a dead run', { skip: !hasDatabase || !sync.MANUAL_ONCE_A_DAY }, async () => {
   const wipe = () => sql`DELETE FROM fines_lookup_runs WHERE organization_id = ${actor.organizationId}`;
   await wipe();
   answers = {};
@@ -297,6 +297,28 @@ test('"Verificar agora" works once a day: the second click is refused, and the d
   await wipe();
   await sync.beginRun(actor.organizationId, 'weekly', null, today);
   assert.equal(await sync.manualLockedToday(actor.organizationId, today), false);
+});
+
+test('with the daily rule off, "Verificar agora" can be asked again once the last one finished, but never twice at the same time', { skip: !hasDatabase || sync.MANUAL_ONCE_A_DAY }, async () => {
+  const wipe = () => sql`DELETE FROM fines_lookup_runs WHERE organization_id = ${actor.organizationId}`;
+  await wipe();
+  answers = {};
+  const first = await manual();
+  assert.ok(first, 'the first click goes through');
+  assert.equal(await sync.manualLockedToday(actor.organizationId, today), false, 'a finished lookup does not hold the day');
+  const second = await manual();
+  assert.ok(second, 'and it can be asked again right after');
+  assert.equal((await runs()).filter((run) => run.kind === 'manual').length, 2);
+
+  // Two clicks at the same moment: only one runs; the other is told one is in progress.
+  await wipe();
+  const both = await Promise.all([sync.beginRun(actor.organizationId, 'manual', null, today), sync.beginRun(actor.organizationId, 'manual', null, today)]);
+  assert.equal(both.filter(Boolean).length, 1, 'never two at once');
+  assert.equal(await sync.manualLockedToday(actor.organizationId, today), true, 'while one is running, the button is held');
+  // A run that died on the way lets go.
+  await sql`UPDATE fines_lookup_runs SET started_at = NOW() - INTERVAL '30 minutes' WHERE organization_id = ${actor.organizationId}`;
+  assert.equal(await sync.manualLockedToday(actor.organizationId, today), false);
+  assert.ok(await sync.beginRun(actor.organizationId, 'manual', null, today));
 });
 
 test('the history lists the latest lookups, newest first, weekly and manual together', { skip: !hasDatabase }, async () => {

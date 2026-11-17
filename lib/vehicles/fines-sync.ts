@@ -15,6 +15,14 @@ export const FINES_LOOKUP_FEATURE = 'fines_lookup';
 /** Cars asked about at the same time (each answer waits for a Detran, so a few at once keeps a big fleet inside the time limit). */
 const PARALLEL_CARS = 4;
 
+/**
+ * The manual "Verificar agora" is meant to work once a day per company (the line of the day holds a lock until the next day).
+ * TEMPORARILY OFF (owner's decision, 16/11/2026, while the lookup is being tried out): while it is false, a manual lookup can be
+ * started again as soon as the previous one finishes, and only a lookup still running blocks another (no double click, no double
+ * cost). Set it to true to bring the daily rule back; nothing else has to change.
+ */
+export const MANUAL_ONCE_A_DAY = false;
+
 /** A run that says "running" for longer than this died on the way (a restart, a timeout): it neither counts nor locks. */
 const STALE_RUN_MINUTES = 15;
 
@@ -70,12 +78,12 @@ async function finishRun(runId: string, summary: { cars: number; created: number
   await sql`
     UPDATE fines_lookup_runs SET
       status = ${status}, finished_at = NOW(), cars = ${summary.cars}, created = ${summary.created}, failed = ${summary.failed}, message = ${message},
-      lock_day = CASE WHEN ${status === 'error'} THEN NULL ELSE lock_day END
+      lock_day = CASE WHEN ${status === 'error' || !MANUAL_ONCE_A_DAY} THEN NULL ELSE lock_day END
     WHERE id = ${runId}
   `;
 }
 
-/** Whether today's manual lookup was already used. */
+/** Whether today's manual lookup was already used (with the daily rule off: whether one is running right now). */
 export async function manualLockedToday(organizationId: string, today: string): Promise<boolean> {
   const rows = await sql`
     SELECT 1 FROM fines_lookup_runs
