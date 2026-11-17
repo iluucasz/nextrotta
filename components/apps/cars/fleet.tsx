@@ -1,22 +1,25 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pencil, Plus } from 'lucide-react';
+import { CarFront, History as HistoryIcon, Pencil, Plus, TriangleAlert } from 'lucide-react';
 import { ModalNotice, SegmentedControl } from '@/components/modal-kit';
 import { Panel } from '@/components/management-ui';
 import { formatPlate, VEHICLE_STATUS_LABELS } from '@/lib/vehicles/rules';
 import { carsStatus, finesStatus, fleetProblems, lastLookup, nextDues, type StatusAction } from '@/lib/vehicles/status';
 import type { VehicleRow } from '@/lib/vehicles/store';
+import { CarDetail } from './car-detail';
 import { CarDialog } from './car-dialog';
 import { brDate, brDay, call, money } from './call';
 import { FineDialog, FinesList, useFinesLookup, type FinesData } from './fines';
 import { carName, Dues, type Technician } from './kit';
-import { LookupPanel } from './lookup-panel';
+import { HistoryTab } from './history-tab';
+import { LookupSummary } from './lookup-panel';
 import { Problems, StatusHero } from './status';
+import { BigTabs } from './tabs';
 import './cars.css';
 
 type Fleet = { today: string; vehicles: VehicleRow[]; technicians: Technician[] };
-type Tab = 'cars' | 'fines';
+type Tab = 'cars' | 'fines' | 'history';
 type View = 'technicians' | 'cars';
 
 /** A button for one car: its plate, its name and its paper dates. */
@@ -38,6 +41,7 @@ export function FleetApp() {
   const [tab, setTab] = useState<Tab>('cars');
   const [view, setView] = useState<View>('technicians');
   const [carDialog, setCarDialog] = useState<{ car: VehicleRow | null } | null>(null);
+  const [detailCar, setDetailCar] = useState<VehicleRow | null>(null);
   const [fineDialog, setFineDialog] = useState<{ fineId: string | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [checked, setChecked] = useState(false);
@@ -79,6 +83,16 @@ export function FleetApp() {
       setError(failure instanceof Error ? failure.message : 'Não foi possível trocar o técnico.');
     } finally {
       setBusy(null);
+    }
+  }
+
+  async function toggleAuto(enabled: boolean) {
+    setError('');
+    try {
+      await call('/api/vehicles/fines/lookup', { method: 'PATCH', body: JSON.stringify({ autoEnabled: enabled }) });
+      await load();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Não foi possível mudar a verificação semanal.');
     }
   }
 
@@ -189,22 +203,23 @@ export function FleetApp() {
             <button type="button" className="mg-button mg-button-dark" onClick={() => act({ kind: 'add-car' })}>
               <Plus size={16} /> Adicionar carro
             </button>
-          ) : (
+          ) : tab === 'fines' ? (
             <button type="button" className="mg-button mg-button-dark" onClick={() => act({ kind: 'add-fine' })}>
               <Plus size={16} /> Registrar multa
             </button>
-          )}
+          ) : null}
         </div>
       </header>
 
       <div className="cr-tabs">
-        <SegmentedControl
-          label="Área"
+        <BigTabs
+          label="Áreas dos carros"
           value={tab}
           onChange={setTab}
-          options={[
-            { value: 'cars', label: 'Carros' },
-            { value: 'fines', label: 'Multas' },
+          items={[
+            { value: 'cars', label: 'Carros', icon: CarFront, badge: cars.length },
+            { value: 'fines', label: 'Multas', icon: TriangleAlert, badge: fines?.summary.open ?? 0, urgent: Boolean(fines?.summary.urgent) },
+            { value: 'history', label: 'Histórico', icon: HistoryIcon },
           ]}
         />
       </div>
@@ -214,6 +229,16 @@ export function FleetApp() {
 
       {!ready ? (
         error ? null : <p className="cr-muted">Carregando…</p>
+      ) : tab === 'history' ? (
+        <HistoryTab
+          lookup={fines!.lookup}
+          cars={cars}
+          running={running}
+          busy={lookup.busy}
+          onToggle={(enabled) => void toggleAuto(enabled)}
+          onRun={() => void lookup.run()}
+          onOpenCar={(car) => setDetailCar(car)}
+        />
       ) : tab === 'fines' ? (
         <>
           {finesCard ? <StatusHero card={finesCard} onAction={act} /> : null}
@@ -231,7 +256,7 @@ export function FleetApp() {
                 <FinesList data={fines!} cars={cars} technicians={fleet!.technicians} onOpen={(fineId) => setFineDialog({ fineId })} />
               </Panel>
               <div className="cr-side">
-                <LookupPanel lookup={fines!.lookup} />
+                <LookupSummary lookup={fines!.lookup} onOpenHistory={() => setTab('history')} />
               </div>
             </div>
           )}
@@ -276,7 +301,9 @@ export function FleetApp() {
                         {cars.map((car) => (
                           <tr key={car.id}>
                             <td>
-                              <span className="cr-plate">{formatPlate(car.plate)}</span>
+                              <button type="button" className="cr-plate-button" aria-label={`Ver a situação do carro ${formatPlate(car.plate)}`} onClick={() => setDetailCar(car)}>
+                                <span className="cr-plate">{formatPlate(car.plate)}</span>
+                              </button>
                             </td>
                             <td>{carName(car) || <span className="cr-muted">—</span>}</td>
                             <td>
@@ -323,7 +350,7 @@ export function FleetApp() {
                           <span className="cr-row-name">{group.name}</span>
                           <div className="cr-row-cars">
                             {group.cars.map((car) => (
-                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setCarDialog({ car: item })} />
+                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setDetailCar(item)} />
                             ))}
                           </div>
                         </li>
@@ -333,7 +360,7 @@ export function FleetApp() {
                           <span className="cr-row-name">No pátio</span>
                           <div className="cr-row-cars">
                             {yard.map((car) => (
-                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setCarDialog({ car: item })} />
+                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setDetailCar(item)} />
                             ))}
                           </div>
                         </li>
@@ -427,6 +454,26 @@ export function FleetApp() {
           ) : null}
         </>
       )}
+
+      {detailCar && fleet && fines ? (
+        <CarDetail
+          key={detailCar.id}
+          car={cars.find((item) => item.id === detailCar.id) ?? detailCar}
+          today={fleet.today}
+          fines={fines.fines.filter((fine) => fine.vehicleId === detailCar.id)}
+          lookupEnabled={lookupEnabled}
+          onClose={() => setDetailCar(null)}
+          onEdit={(car) => {
+            setDetailCar(null);
+            setCarDialog({ car });
+          }}
+          onOpenFine={(fineId) => {
+            setDetailCar(null);
+            setTab('fines');
+            setFineDialog({ fineId });
+          }}
+        />
+      ) : null}
 
       {carDialog && fleet ? (
         <CarDialog

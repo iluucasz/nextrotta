@@ -2,16 +2,18 @@
    (the hero, the problem rows and the two columns follow Config. Porto). */
 .mg-dashboard.cr {
   display: grid;
+  /* minmax(0, ...): a wide child (the tabs, a table) scrolls inside itself instead of widening the whole page */
+  grid-template-columns: minmax(0, 1fr);
   align-content: start;
   gap: 14px;
 }
 
-.mg-dashboard .cr-muted {
+.cr-muted {
   margin: 0;
   color: var(--muted-foreground);
   font-size: 15px;
 }
-.mg-dashboard .cr-empty-line {
+.cr-empty-line {
   margin: 0;
   padding: 6px 0 2px;
   color: var(--muted-foreground);
@@ -153,7 +155,7 @@
 }
 
 /* Plate: the way it looks on the car. */
-.mg-dashboard .cr-plate {
+.cr-plate {
   display: inline-block;
   padding: 2px 9px;
   border: 1.5px solid #1e293b;
@@ -171,22 +173,22 @@
   flex-wrap: wrap;
   gap: 6px;
 }
-.mg-dashboard .cr-due {
+.cr-due {
   padding: 2px 9px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
 }
-.mg-dashboard .cr-due.is-ok {
+.cr-due.is-ok {
   background: #ecfdf5;
   color: #047857;
 }
-.mg-dashboard .cr-due.is-soon {
+.cr-due.is-soon {
   background: #fef3c7;
   color: #b45309;
 }
-.mg-dashboard .cr-due.is-overdue {
+.cr-due.is-overdue {
   background: #ffe4e8;
   color: #be123c;
 }
@@ -250,7 +252,7 @@
 .mg-dashboard .cr-table tr:last-child td {
   border-bottom: 0;
 }
-.mg-dashboard .cr-num {
+.cr-num {
   font-variant-numeric: tabular-nums;
   text-align: right;
 }
@@ -328,12 +330,12 @@
 }
 
 /* side panels */
-.mg-dashboard .cr-kv {
+.cr-kv {
   display: grid;
   gap: 0;
   margin: 0 0 14px;
 }
-.mg-dashboard .cr-kv > div {
+.cr-kv > div {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -341,21 +343,21 @@
   padding: 9px 0;
   border-top: 1px solid var(--border);
 }
-.mg-dashboard .cr-kv > div:first-child {
+.cr-kv > div:first-child {
   border-top: 0;
   padding-top: 0;
 }
-.mg-dashboard .cr-kv dt {
+.cr-kv dt {
   color: var(--muted-foreground);
   font-size: 15px;
 }
-.mg-dashboard .cr-kv dd {
+.cr-kv dd {
   margin: 0;
   font-size: 16px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
 }
-.mg-dashboard .cr-kv dd.is-bad {
+.cr-kv dd.is-bad {
   color: #b42318;
 }
 .mg-dashboard .cr-dues-list {
@@ -364,7 +366,7 @@
   padding: 0;
   list-style: none;
 }
-.mg-dashboard .cr-due-row {
+.cr-due-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
@@ -380,7 +382,7 @@
   border-top: 0;
   padding-top: 0;
 }
-.mg-dashboard .cr-due-label {
+.cr-due-label {
   color: var(--muted-foreground);
   font-size: 15px;
 }
@@ -399,7 +401,7 @@
 .mg-dashboard .cr-fine-what {
   font-weight: 600;
 }
-.mg-dashboard .cr-stage {
+.cr-stage {
   display: inline-block;
   padding: 3px 10px;
   border-radius: 999px;
@@ -409,32 +411,32 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.mg-dashboard .cr-stage.is-to_identify,
-.mg-dashboard .cr-stage.is-to_notify,
-.mg-dashboard .cr-stage.is-to_indicate {
+.cr-stage.is-to_identify,
+.cr-stage.is-to_notify,
+.cr-stage.is-to_indicate {
   background: #fef3c7;
   color: #b45309;
 }
-.mg-dashboard .cr-stage.is-to_pay {
+.cr-stage.is-to_pay {
   background: #ffe4e8;
   color: #be123c;
 }
-.mg-dashboard .cr-stage.is-appeal {
+.cr-stage.is-appeal {
   background: #ede9fe;
   color: #6d28d9;
 }
-.mg-dashboard .cr-stage.is-resolved {
+.cr-stage.is-resolved {
   background: #ecfdf5;
   color: #047857;
 }
-.mg-dashboard .cr-flag {
+.cr-flag {
   display: block;
   margin-top: 4px;
   color: #be123c;
   font-size: 13px;
   font-weight: 600;
 }
-.mg-dashboard .cr-auto-tag {
+.cr-auto-tag {
   margin-left: 8px;
   padding: 1px 8px;
   border-radius: 999px;
@@ -673,7 +675,7 @@
 .mg-dashboard .cr-run span:not(.cr-run-dot) {
   color: var(--muted-foreground);
 }
-.mg-dashboard .cr-run-dot {
+.cr-run-dot {
   width: 9px;
   height: 9px;
   margin-top: 6px;
@@ -688,4 +690,261 @@
 }
 .mg-dashboard .cr-run.is-danger .cr-run-dot {
   background: #dc2626;
+}
+
+/* the big tabs: readable and easy to touch */
+.mg-dashboard .cr-tabs {
+  justify-self: stretch;
+  min-width: 0;
+  margin-top: -4px;
+  border-bottom: 1px solid var(--border);
+}
+.mg-dashboard .cr-bigtabs {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+}
+.mg-dashboard .cr-bigtab {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 52px;
+  padding: 0 22px;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  background: none;
+  color: var(--muted-foreground);
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+.mg-dashboard .cr-bigtab:hover {
+  color: var(--foreground);
+}
+.mg-dashboard .cr-bigtab.is-active {
+  border-bottom-color: var(--primary);
+  color: var(--foreground);
+}
+.mg-dashboard .cr-bigtab-badge {
+  min-width: 24px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 650;
+  text-align: center;
+}
+.mg-dashboard .cr-bigtab-badge.is-urgent {
+  background: #fde4e1;
+  color: #b42318;
+}
+.cr-plate-button {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.cr-plate-button:hover .cr-plate {
+  border-color: var(--primary);
+}
+
+/* the History tab */
+.mg-dashboard .cr-auto-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px 18px;
+}
+.mg-dashboard .cr-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 16px;
+  font-weight: 600;
+}
+.mg-dashboard .cr-runs-table {
+  min-width: 520px;
+}
+.mg-dashboard .cr-nowrap {
+  white-space: nowrap;
+}
+.mg-dashboard .cr-run-message {
+  margin-top: 2px;
+  font-size: 13px;
+}
+.mg-dashboard .cr-run-status {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mg-dashboard .cr-run-status.is-ok {
+  background: #ecfdf5;
+  color: #047857;
+}
+.mg-dashboard .cr-run-status.is-partial {
+  background: #fef3c7;
+  color: #b45309;
+}
+.mg-dashboard .cr-run-status.is-error {
+  background: #ffe4e8;
+  color: #be123c;
+}
+.mg-dashboard .cr-car-status {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mg-dashboard .cr-car-status-row {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  text-align: left;
+}
+.mg-dashboard .cr-car-status li:first-child .cr-car-status-row {
+  border-top: 0;
+  padding-top: 0;
+}
+.mg-dashboard .cr-car-status-row .cr-run-dot {
+  margin-top: 8px;
+}
+.mg-dashboard .cr-car-status-text {
+  color: var(--muted-foreground);
+  font-size: 14px;
+}
+.cr-run-dot.is-neutral,
+.cr-run-dot.is-neutral {
+  background: #94a3b8;
+}
+.cr-run-dot.is-success,
+.cr-run-dot.is-success {
+  background: #059669;
+}
+.cr-run-dot.is-warning,
+.cr-run-dot.is-warning {
+  background: #d97706;
+}
+.cr-run-dot.is-danger,
+.cr-run-dot.is-danger {
+  background: #dc2626;
+}
+.cr-run-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+/* the Multas side card */
+.mg-dashboard .cr-auto-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 4px;
+}
+.mg-dashboard .cr-auto-line .cr-run-dot {
+  margin-top: 0;
+}
+.mg-dashboard .cr-auto-detail {
+  margin: 0 0 14px;
+  font-size: 14px;
+}
+.mg-dashboard .cr-last-run {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+  font-size: 14px;
+}
+
+/* the page of one car */
+.cr-car-lookup {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: var(--secondary);
+}
+.cr-car-lookup > div {
+  display: grid;
+  gap: 2px;
+  font-size: 14px;
+}
+.cr-car-lookup .cr-run-dot {
+  margin-top: 6px;
+}
+.cr-car-fines {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cr-car-fine {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+  width: 100%;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  text-align: left;
+  font-size: 15px;
+}
+.cr-car-fines li:first-child .cr-car-fine {
+  border-top: 0;
+  padding-top: 0;
+}
+.cr-car-fine > span:first-child {
+  display: grid;
+  gap: 1px;
+}
+.cr-car-fine-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+@media (max-width: 700px) {
+  .mg-dashboard .cr-bigtab {
+    padding: 0 14px;
+    font-size: 17px;
+  }
+}
+@media (max-width: 480px) {
+  .mg-dashboard .cr-bigtabs {
+    gap: 0;
+  }
+  .mg-dashboard .cr-bigtab {
+    gap: 6px;
+    padding: 0 9px;
+    font-size: 16px;
+  }
+  .mg-dashboard .cr-bigtab-badge {
+    min-width: 20px;
+    padding: 0 6px;
+    font-size: 13px;
+  }
+  /* on a phone the label and the count are enough; the three tabs fit without scrolling */
+  .mg-dashboard .cr-bigtab > svg {
+    display: none;
+  }
 }

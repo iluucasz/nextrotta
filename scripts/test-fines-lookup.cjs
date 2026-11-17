@@ -325,12 +325,28 @@ test('the round only reaches companies the owner granted the lookup to, and does
   const granted = await sync.runFineLookups(today, fetcher);
   assert.ok(granted.companies >= 1);
   assert.ok(calls.length > 0, 'a granted company is looked up');
+
+  // The company can pause the Sunday lookup; the manual one is not affected, and resuming brings it back.
+  assert.equal(await sync.getAutoEnabled(actor.organizationId), true, 'on unless paused');
+  await sync.setAutoEnabled(actor.organizationId, false, null);
+  assert.equal(await sync.getAutoEnabled(actor.organizationId), false);
+  await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId}`;
+  calls = [];
+  await sync.runFineLookups(today, fetcher);
+  assert.equal(calls.length, 0, 'a paused company is not looked up by the weekly round');
+  const manualRun = await manual();
+  assert.ok(manualRun && manualRun.cars >= 1, 'the manual lookup still works while paused');
+  await sync.setAutoEnabled(actor.organizationId, true, null);
+  await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId}`;
+  calls = [];
+  await sync.runFineLookups(today, fetcher);
+  assert.ok(calls.length > 0, 'resumed: it is looked up again');
   if (before) process.env.INFOSIMPLES_TOKEN = before;
 });
 
 after(async () => {
   if (!orgs.length) return;
-  for (const table of ['audit_events', 'notifications', 'organization_features', 'fines_lookup_runs', 'vehicle_fines', 'vehicle_assignments', 'vehicles', 'technicians']) {
+  for (const table of ['audit_events', 'notifications', 'organization_features', 'fines_lookup_settings', 'fines_lookup_runs', 'vehicle_fines', 'vehicle_assignments', 'vehicles', 'technicians']) {
     await sql.query(`DELETE FROM ${table} WHERE organization_id = ANY($1::uuid[])`, [orgs]);
   }
   await sql`DELETE FROM organizations WHERE id = ANY(${orgs}::uuid[])`;

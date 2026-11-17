@@ -1,7 +1,7 @@
 // What the Carros screen says first: where the fleet (or the fines) stands in a sentence, and each thing that needs a look with the
 // move that fixes it. Dependency-free: read by the screen and the tests (the screen only draws).
 import { fineStage, indicationState, type FineState } from './fines-rules';
-import { dueState, formatPlate, type DueState } from './rules';
+import { dueState, formatPlate, isValidRenavam, type DueState } from './rules';
 
 export type Tone = 'neutral' | 'success' | 'warning' | 'danger';
 
@@ -147,6 +147,8 @@ export function nextDues(cars: CarLite[], today: string, limit = 6): DueItem[] {
   return items.sort((a, b) => a.date.localeCompare(b.date)).slice(0, limit);
 }
 
+export const RUN_STATUS_LABEL = { running: 'Em andamento', ok: 'Concluída', partial: 'Com falhas', error: 'Falhou' } as const;
+
 export type RunLite = { kind: 'weekly' | 'manual'; status: 'running' | 'ok' | 'partial' | 'error'; startedAt: string; cars: number; created: number; failed: number; message: string | null };
 
 /** "16/11 08:05" in Brasília time. */
@@ -164,6 +166,55 @@ export function describeRun(run: RunLite): { title: string; detail: string; tone
   const found = run.created ? `${run.created} ${plural(run.created, 'multa nova', 'multas novas')}` : 'nenhuma multa nova';
   const failed = run.failed ? ` · ${run.failed} sem resposta` : '';
   return { title, detail: `${run.cars} ${plural(run.cars, 'carro consultado', 'carros consultados')} · ${found}${failed}`, tone: run.status === 'partial' ? 'warning' : 'success' };
+}
+
+export type LookupLite = { enabled: boolean; configured: boolean; autoEnabled: boolean; nextAutomatic: string };
+
+/** Where the weekly automatic lookup stands, in a sentence: not granted, not set up, paused by the company, or on. */
+export function automationState(lookup: LookupLite): { tone: Tone; headline: string; detail: string } {
+  if (!lookup.enabled) {
+    return { tone: 'neutral', headline: 'Consulta automática desligada', detail: 'Peça ao suporte do NextRotta para ligar na sua empresa. Até lá, as multas são registradas à mão.' };
+  }
+  if (!lookup.configured) {
+    return { tone: 'warning', headline: 'Consulta automática ainda não configurada', detail: 'O NextRotta ainda está preparando a conexão. Tente de novo mais tarde.' };
+  }
+  if (!lookup.autoEnabled) {
+    return { tone: 'warning', headline: 'Verificação semanal pausada', detail: 'Ligue para o sistema consultar as multas todo domingo. A verificação manual continua disponível.' };
+  }
+  return { tone: 'success', headline: 'Verificação semanal ligada', detail: `Todo domingo, sozinha. Próxima: domingo, ${lookup.nextAutomatic.slice(8, 10)}/${lookup.nextAutomatic.slice(5, 7)}.` };
+}
+
+export type CarLookupLite = {
+  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | null;
+  finesCheckMessage: string | null;
+  finesCheckedAt: string | null;
+  renavam?: string | null;
+  state?: string | null;
+};
+
+/** How the automatic lookup is doing for one car (its last result), for the car's page. */
+export function carLookupSituation(car: CarLookupLite, lookupEnabled: boolean): { tone: Tone; text: string } {
+  if (!lookupEnabled) return { tone: 'neutral', text: 'Consulta automática desligada para a empresa.' };
+  const when = car.finesCheckedAt ? shortDateTime(car.finesCheckedAt).slice(0, 5) : null;
+  // What is missing is known before any lookup ran: say it now, so the data gets filled in.
+  if ('renavam' in car && (!car.renavam || !car.state)) {
+    return { tone: 'warning', text: 'Falta o Renavam e o estado do carro. Abra o carro e preencha: ele entra na próxima verificação.' };
+  }
+  if (car.renavam && !isValidRenavam(car.renavam)) {
+    return { tone: 'warning', text: 'O Renavam parece errado (o dígito verificador não confere). Confira no documento do carro.' };
+  }
+  switch (car.finesCheckStatus) {
+    case 'ok':
+      return { tone: 'success', text: `Consultado em ${when}. Sem pendência.` };
+    case 'partial':
+      return { tone: 'warning', text: `${car.finesCheckMessage ?? 'Consulta incompleta.'}${when ? ` (${when})` : ''}` };
+    case 'error':
+      return { tone: 'danger', text: car.finesCheckMessage ?? 'A consulta não funcionou. O sistema tenta de novo no próximo ciclo.' };
+    case 'missing_data':
+      return { tone: 'warning', text: car.finesCheckMessage ?? 'Faltam o Renavam e o estado do carro.' };
+    default:
+      return { tone: 'neutral', text: 'Ainda não consultado. A primeira consulta sai no próximo ciclo.' };
+  }
 }
 
 /** The latest time any car had its fines looked up, for "Última consulta". */

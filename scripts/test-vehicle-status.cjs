@@ -110,3 +110,29 @@ test('the side panel lists the papers soonest first, expired ones included, and 
   assert.equal(status.lastLookup([{ finesCheckedAt: null }, { finesCheckedAt: '2026-11-10T10:00:00.000Z' }, { finesCheckedAt: '2026-11-12T10:00:00.000Z' }]), '2026-11-12T10:00:00.000Z');
   assert.equal(status.lastLookup([{ finesCheckedAt: null }]), null);
 });
+
+test('the automation says where the weekly lookup stands: not granted, not set up, paused or on', () => {
+  const lookup = (extra) => status.automationState({ enabled: true, configured: true, autoEnabled: true, nextAutomatic: '2026-11-22', ...extra });
+  assert.deepEqual([lookup({ enabled: false }).tone, lookup({ enabled: false }).headline], ['neutral', 'Consulta automática desligada']);
+  assert.deepEqual([lookup({ configured: false }).tone, lookup({ configured: false }).headline], ['warning', 'Consulta automática ainda não configurada']);
+  assert.deepEqual([lookup({ autoEnabled: false }).tone, lookup({ autoEnabled: false }).headline], ['warning', 'Verificação semanal pausada']);
+  const on = lookup({});
+  assert.deepEqual([on.tone, on.headline, on.detail], ['success', 'Verificação semanal ligada', 'Todo domingo, sozinha. Próxima: domingo, 22/11.']);
+  assert.equal(lookup({ enabled: false, autoEnabled: true }).tone, 'neutral', 'not granted wins over everything');
+});
+
+test('a car says how its own lookup is doing', () => {
+  const car = (extra) => ({ finesCheckStatus: null, finesCheckMessage: null, finesCheckedAt: null, ...extra });
+  assert.equal(status.carLookupSituation(car({ finesCheckStatus: 'ok' }), false).text, 'Consulta automática desligada para a empresa.');
+  assert.deepEqual(status.carLookupSituation(car({ finesCheckStatus: 'ok', finesCheckedAt: '2026-11-15T11:00:00.000Z' }), true), { tone: 'success', text: 'Consultado em 15/11. Sem pendência.' });
+  assert.equal(status.carLookupSituation(car({ finesCheckStatus: 'missing_data', finesCheckMessage: 'Informe o Renavam.' }), true).text, 'Informe o Renavam.');
+  assert.equal(status.carLookupSituation(car({ finesCheckStatus: 'error', finesCheckMessage: 'Detran fora do ar.' }), true).tone, 'danger');
+  assert.equal(status.carLookupSituation(car({ finesCheckStatus: 'partial', finesCheckMessage: 'Só a PRF.', finesCheckedAt: '2026-11-15T11:00:00.000Z' }), true).text, 'Só a PRF. (15/11)');
+  assert.equal(status.carLookupSituation(car(), true).tone, 'neutral');
+  // Data that is missing is said at once, before any lookup ran.
+  const noData = status.carLookupSituation(car({ renavam: null, state: null }), true);
+  assert.deepEqual([noData.tone, /Falta o Renavam e o estado/.test(noData.text)], ['warning', true]);
+  assert.match(status.carLookupSituation(car({ renavam: '12345678901', state: 'MS' }), true).text, /parece errado/);
+  assert.equal(status.carLookupSituation(car({ renavam: '12345678900', state: 'MS' }), true).tone, 'neutral', 'good data and nothing looked up yet');
+  assert.equal(status.carLookupSituation(car({ renavam: null, state: null }), false).tone, 'neutral', 'with the lookup off nobody is asked for data');
+});

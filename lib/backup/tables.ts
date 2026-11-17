@@ -24,6 +24,8 @@ export const BACKUP_EXCLUDED = [
   'organization_notes', 'organization_provisioning', 'worker_runs', 'organization_backups',
   // The log of the fines lookups through the paid provider: a record of what was asked and when, never rolled back with a restore.
   'fines_lookup_runs',
+  // The company's switch for the weekly lookup (on/off): a choice of the moment, not something a restore should bring back.
+  'fines_lookup_settings',
   // Legal evidence: what was accepted and what was asked must never roll back with a restore.
   'legal_acceptances', 'data_subject_requests',
   // The platform's support inbox (live chat, WhatsApp): records of the platform, never rolled back with a company's restore.

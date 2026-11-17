@@ -40,6 +40,31 @@ type Car = { id: string; plate: string; renavam: string | null; state: string | 
 const brDay = (iso: string) => new Date(Date.parse(iso) - 3 * 3_600_000).toISOString().slice(0, 10).split('-').reverse().join('/');
 const dayStart = (dateKey: string) => `${dateKey}T00:00:00-03:00`;
 
+// ---------------------------------------------------------------------------------------------------------------- the switch
+
+/** Whether the company wants the Sunday lookup (on unless it paused it). The owner's grant (the feature) is checked apart. */
+export async function getAutoEnabled(organizationId: string): Promise<boolean> {
+  const rows = await sql`SELECT auto_enabled FROM fines_lookup_settings WHERE organization_id = ${organizationId}`;
+  return rows[0] ? Boolean(rows[0].auto_enabled) : true;
+}
+
+export async function setAutoEnabled(organizationId: string, enabled: boolean, userId: string | null) {
+  await sql`
+    INSERT INTO fines_lookup_settings (organization_id, auto_enabled, updated_by) VALUES (${organizationId}, ${enabled}, ${userId})
+    ON CONFLICT (organization_id) DO UPDATE SET auto_enabled = ${enabled}, updated_at = NOW(), updated_by = ${userId}
+  `;
+  await recordAudit({
+    organizationId,
+    actorId: userId,
+    actorRole: 'admin',
+    impersonationId: null,
+    action: enabled ? 'fines_lookup.resumed' : 'fines_lookup.paused',
+    targetType: 'organization',
+    targetId: organizationId,
+    details: {},
+  });
+}
+
 // ---------------------------------------------------------------------------------------------------------------- the history
 
 /**
@@ -292,6 +317,7 @@ export async function runFineLookups(today: string, fetcher?: Fetcher): Promise<
     const organizationId = String(company.id);
     try {
       if (!(await organizationHasFeature(organizationId, FINES_LOOKUP_FEATURE))) continue;
+      if (!(await getAutoEnabled(organizationId))) continue;
       const result = await lookupOrganization(organizationId, use, { today, mode: 'weekly' });
       round.companies += 1;
       round.created += result.created;

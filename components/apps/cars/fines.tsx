@@ -33,7 +33,7 @@ export type FinesData = {
    * The weekly automatic lookup: granted to this company, the platform has its provider set up, the history of the lookups, whether
    * today's manual one was already used, and the next Sunday.
    */
-  lookup: { enabled: boolean; configured: boolean; runs: LookupRun[]; lockedToday: boolean; nextAutomatic: string };
+  lookup: { enabled: boolean; configured: boolean; autoEnabled: boolean; runs: LookupRun[]; lockedToday: boolean; nextAutomatic: string };
 };
 
 
@@ -445,7 +445,7 @@ export function FineDialog({
 }
 
 /** What a fine needs from the admin now, as a badge. */
-function StageBadge({ stage }: { stage: FineStage }) {
+export function StageBadge({ stage }: { stage: FineStage }) {
   return <span className={`cr-stage is-${stage}`}>{FINE_STAGE_LABELS[stage]}</span>;
 }
 

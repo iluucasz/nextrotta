@@ -1,65 +1,30 @@
 'use client';
 
 import { Panel } from '@/components/management-ui';
-import { describeRun } from '@/lib/vehicles/status';
-import { brDate } from './call';
+import { automationState, describeRun } from '@/lib/vehicles/status';
 import type { FinesData } from './fines';
 
-const WEEKDAY = 'domingo';
-
-/** The weekly automatic lookup of the fines: when it runs, whether today's manual one is spent, and what each lookup found. */
-export function LookupPanel({ lookup }: { lookup: FinesData['lookup'] }) {
-  if (!lookup.enabled) {
-    return (
-      <Panel
-        title="Verificação das multas"
-        help="Com a consulta automática ligada, todo domingo o sistema consulta as multas das placas cadastradas e registra as novas sozinho; e dá para verificar na hora, uma vez por dia. Peça ao suporte do NextRotta para ligar na sua empresa. Até lá, o sino lembra toda semana de consultar à mão."
-      >
-        <p className="cr-empty-line">Consulta automática desligada. As multas são registradas à mão.</p>
-      </Panel>
-    );
-  }
-
-  const running = lookup.runs[0]?.status === 'running';
+/** A short card for the Multas tab: where the automation stands and the last lookup, with the way to the History tab. */
+export function LookupSummary({ lookup, onOpenHistory }: { lookup: FinesData['lookup']; onOpenHistory: () => void }) {
+  const state = automationState(lookup);
+  const last = lookup.runs[0] ? describeRun(lookup.runs[0]) : null;
   return (
-    <Panel
-      title="Verificação das multas"
-      help="Todo domingo o sistema consulta as multas de todas as placas cadastradas (com Renavam e estado) e registra as novas. Se o sistema estava fora do ar no domingo, ele faz na segunda. O botão Verificar agora pode ser usado uma vez por dia."
-    >
-      <dl className="cr-kv">
-        <div>
-          <dt>Automática</dt>
-          <dd>Todo {WEEKDAY}</dd>
+    <Panel title="Verificação das multas" help="Todo domingo o sistema consulta as multas das placas cadastradas e registra as novas. O histórico completo, o botão Verificar agora e o interruptor ficam na aba Histórico.">
+      <p className="cr-auto-line">
+        <span className={`cr-run-dot is-${state.tone}`} aria-hidden="true" />
+        <strong>{state.headline}</strong>
+      </p>
+      <p className="cr-muted cr-auto-detail">{state.detail}</p>
+      {last ? (
+        <div className="cr-last-run">
+          <span className="cr-muted">Última verificação</span>
+          <strong>{last.title}</strong>
+          <span className="cr-muted">{last.detail}</span>
         </div>
-        <div>
-          <dt>Próxima</dt>
-          <dd>
-            {WEEKDAY}, {brDate(lookup.nextAutomatic).slice(0, 5)}
-          </dd>
-        </div>
-      </dl>
-      {!lookup.configured ? <p className="cr-note is-warning">Ainda não foi configurada pelo NextRotta.</p> : null}
-      {lookup.lockedToday && !running ? <p className="cr-note">Você já verificou hoje. Libera amanhã.</p> : null}
-
-      <h4 className="cr-group-title">Histórico</h4>
-      {lookup.runs.length === 0 ? (
-        <p className="cr-empty-line">Nenhuma verificação ainda.</p>
-      ) : (
-        <ul className="cr-runs">
-          {lookup.runs.map((run) => {
-            const line = describeRun(run);
-            return (
-              <li key={run.id} className={`cr-run is-${line.tone}`}>
-                <span className="cr-run-dot" aria-hidden="true" />
-                <div>
-                  <strong>{line.title}</strong>
-                  <span>{line.detail}</span>
-                </div>
-              </li>
-            );
-          })}
-        </ul>
-      )}
+      ) : null}
+      <button type="button" className="mg-button cr-side-button" onClick={onOpenHistory}>
+        Ver histórico
+      </button>
     </Panel>
   );
 }
