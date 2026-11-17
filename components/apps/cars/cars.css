@@ -956,3 +956,22 @@
 .mg-dashboard .cr-row-click:hover td {
   background: var(--secondary);
 }
+
+/* a problem row with a body: the text, and the plates of the cars it speaks for */
+.mg-dashboard .cr-problem-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.mg-dashboard .cr-problem-cars {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.mg-dashboard .cr-alert-groups {
+  display: grid;
+  gap: 18px;
+}
+.mg-dashboard .cr-alert-groups .cr-problems {
+  margin: 0;
+}

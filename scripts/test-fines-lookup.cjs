@@ -93,6 +93,14 @@ test('the provider call sends the token and the car, reads the answer and never 
   const sent = new URLSearchParams(calls[0].body);
   assert.deepEqual([sent.get('token'), sent.get('placa'), sent.get('renavam')], ['SEGREDO', 'ABC1D23', '12345678900']);
 
+  assert.equal(sent.get('timeout'), String(provider.PROVIDER_TIMEOUT_SECONDS), 'it asks the provider to wait for the agency up to the configured time');
+  assert.ok(provider.PROVIDER_TIMEOUT_SECONDS > 120 && provider.PROVIDER_TIMEOUT_SECONDS < 300, 'longer than the 120 s that timed out, shorter than the 300 s of the screen');
+
+  const timedOut = await provider.createProviderFetcher('SEGREDO', answer({ code: 605, code_message: 'A consulta não foi realizada dentro do tempo de limite de timeout especificado.' }))(source, car);
+  assert.equal(timedOut.ok, false);
+  assert.match(timedOut.message, /o órgão demorou para responder/);
+  assert.doesNotMatch(timedOut.message, /605|timeout/, 'in plain words, without the provider\'s jargon');
+
   const notEnabled = await provider.createProviderFetcher('SEGREDO', answer({ code: 603, code_message: 'O token informado não tem autorização', errors: ["Consulta 'detran/ms/multas' não habilitada para a sua conta."] }))(source, car);
   assert.equal(notEnabled.ok, false);
   assert.match(notEnabled.message, /ainda não foi habilitada pelo NextRotta/);
@@ -341,20 +349,32 @@ test('the round only reaches companies the owner granted the lookup to, and does
   calls = [];
   const before = process.env.INFOSIMPLES_TOKEN;
   delete process.env.INFOSIMPLES_TOKEN;
-  assert.equal((await sync.runFineLookups(today)).configured, false, 'no token, no provider');
+  const mine = { organizationIds: [actor.organizationId] }; // a test never writes into a real company
+  assert.equal((await sync.runFineLookups(today, undefined, mine)).configured, false, 'no token, no provider');
 
-  const notGranted = await sync.runFineLookups(today, fetcher);
+  const notGranted = await sync.runFineLookups(today, fetcher, mine);
   assert.equal(notGranted.configured, true);
   assert.equal(calls.length, 0, 'the company has no grant: nothing is asked (and nothing is paid)');
 
   const [{ ok }] = await sql`SELECT COUNT(*)::int AS ok FROM features WHERE key = ${sync.FINES_LOOKUP_FEATURE} AND scope = 'custom'`;
   assert.equal(ok, 1, 'the feature exists as a custom one');
   await sql`INSERT INTO organization_features (organization_id, feature_key) VALUES (${actor.organizationId}, ${sync.FINES_LOOKUP_FEATURE})`;
-  const granted = await sync.runFineLookups(today, fetcher);
+  const granted = await sync.runFineLookups(today, fetcher, mine);
   assert.ok(granted.companies >= 1);
   assert.ok(calls.length > 0, 'a granted company is looked up');
 
   if (before) process.env.INFOSIMPLES_TOKEN = before;
+});
+
+test('filling in the Renavam and the state clears the old "missing data" mark at once', { skip: !hasDatabase }, async () => {
+  const id = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'MNO7P89' }).value, null);
+  await weekly();
+  assert.equal((await car(id)).fines_check_status, 'missing_data', 'the lookup flagged it');
+  await vehicles.updateVehicle(actor, id, { plate: 'MNO7P89', color: 'Branco' }, undefined);
+  assert.equal((await car(id)).fines_check_status, 'missing_data', 'an edit that does not touch the data leaves the mark');
+  await vehicles.updateVehicle(actor, id, { renavam: '12345678900', state: 'MS' }, undefined);
+  const row = await car(id);
+  assert.deepEqual([row.fines_check_status, row.fines_check_message], [null, null], 'saving the data clears it, with no wait for the next lookup');
 });
 
 test('the owner sees and switches the lookup of a company in its Integrações tab (the detail and the feature route)', { skip: !hasDatabase }, async () => {

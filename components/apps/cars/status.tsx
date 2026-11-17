@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
 import { AlertTriangle, ArrowRight, CarFront, CheckCircle2, XCircle, type LucideIcon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { formatPlate } from '@/lib/vehicles/rules';
 import type { Problem, StatusAction, StatusCard, Tone } from '@/lib/vehicles/status';
 import { cn } from '@/lib/utils';
 
@@ -30,32 +30,34 @@ export function StatusHero({ card, onAction }: { card: StatusCard; onAction: (ac
   );
 }
 
-const VISIBLE = 3;
-
-/** Everything else that needs a look, most serious first, each with the button that fixes it. */
+/** Each thing that needs a look, most serious first, with the button that fixes it. A row that speaks for several cars lists them. */
 export function Problems({ problems, onAction }: { problems: Problem[]; onAction: (action: StatusAction) => void }) {
-  const [all, setAll] = useState(false);
   if (!problems.length) return null;
-  const shown = all ? problems : problems.slice(0, VISIBLE);
 
   return (
     <section className="cr-problems" aria-label="O que precisa de atenção">
-      {shown.map((problem) => (
+      {problems.map((problem) => (
         <div key={problem.key} className={cn('cr-problem', problem.tone)}>
           <span className="cr-problem-icon" aria-hidden="true">
             {problem.tone === 'danger' ? <XCircle size={18} /> : <AlertTriangle size={18} />}
           </span>
-          <strong className="cr-problem-text">{problem.title}</strong>
+          <div className="cr-problem-body">
+            <strong className="cr-problem-text">{problem.title}</strong>
+            {problem.cars && problem.cars.length > 1 ? (
+              <span className="cr-problem-cars">
+                {problem.cars.map((car) => (
+                  <button key={car.id} type="button" className="cr-plate-button" aria-label={`Completar o carro ${formatPlate(car.plate)}`} onClick={() => onAction({ kind: 'car', carId: car.id })}>
+                    <span className="cr-plate">{formatPlate(car.plate)}</span>
+                  </button>
+                ))}
+              </span>
+            ) : null}
+          </div>
           <Button type="button" size="sm" variant="outline" onClick={() => onAction(problem.action)}>
-            {problem.actionLabel}
+            {problem.cars && problem.cars.length > 1 ? 'Completar o primeiro' : problem.actionLabel}
           </Button>
         </div>
       ))}
-      {problems.length > VISIBLE ? (
-        <button type="button" className="cr-link cr-problems-more" onClick={() => setAll((current) => !current)}>
-          {all ? 'Mostrar menos' : `Mostrar mais ${problems.length - VISIBLE}`}
-        </button>
-      ) : null}
     </section>
   );
 }

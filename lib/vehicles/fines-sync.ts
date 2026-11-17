@@ -12,8 +12,8 @@ import { formatPlate, isValidRenavam } from './rules';
 /** The feature (granted by the owner, company by company) that turns the automatic lookup on. */
 export const FINES_LOOKUP_FEATURE = 'fines_lookup';
 
-/** Cars asked about at the same time (each answer waits for a Detran, so a few at once keeps a big fleet inside the time limit). */
-const PARALLEL_CARS = 4;
+/** Cars asked about at the same time (each answer waits for an agency, so many at once keeps a fleet inside the time limit of "Verificar agora"). */
+const PARALLEL_CARS = 8;
 
 /**
  * The manual "Verificar agora" is meant to work once a day per company (the line of the day holds a lock until the next day).
@@ -230,8 +230,9 @@ export async function lookupOrganization(
       const target = { plate: car.plate, renavam: car.renavam as string, state: car.state as string };
       const errors: string[] = [];
       let succeeded = 0;
-      for (const source of sources) {
-        const result = await fetcher(source, target);
+      // Both agencies of a car are asked at the same time; what they answered is then handled one by one.
+      const answers = await Promise.all(sources.map((source) => fetcher(source, target)));
+      for (const result of answers) {
         if (!result.ok) {
           errors.push(result.message);
           continue;
@@ -288,8 +289,11 @@ export async function lookupOrganization(
 
 export type RoundSummary = { configured: boolean; companies: number; created: number; failed: number };
 
-/** The worker's round: every active company the owner granted the lookup to. Runs daily, but only does what the week asks for. */
-export async function runFineLookups(today: string, fetcher?: Fetcher): Promise<RoundSummary> {
+/**
+ * The worker's round: every active company the owner granted the lookup to. Runs daily, but only does what the week asks for.
+ * `organizationIds` narrows it to those companies (the tests use it: a test must never write into a real company).
+ */
+export async function runFineLookups(today: string, fetcher?: Fetcher, options: { organizationIds?: string[] } = {}): Promise<RoundSummary> {
   const token = providerToken();
   const use = fetcher ?? (token ? createProviderFetcher(token) : null);
   if (!use) return { configured: false, companies: 0, created: 0, failed: 0 };
@@ -299,6 +303,7 @@ export async function runFineLookups(today: string, fetcher?: Fetcher): Promise<
     FROM organizations o
     JOIN vehicles v ON v.organization_id = o.id AND v.deleted_at IS NULL
     WHERE o.deleted_at IS NULL AND o.status IN ('active', 'past_due')
+      AND (${options.organizationIds ?? null}::uuid[] IS NULL OR o.id = ANY(${options.organizationIds ?? null}::uuid[]))
   `;
   const round: RoundSummary = { configured: true, companies: 0, created: 0, failed: 0 };
   for (const company of companies) {

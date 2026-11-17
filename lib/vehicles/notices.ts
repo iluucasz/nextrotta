@@ -11,13 +11,15 @@ const daysBetween = (from: string, to: string) => Math.round((Date.parse(`${to}T
  * The worker's daily round (08:00 Brasília): runs checkFleet for every company that has cars and is not blocked, so the weekly
  * reminder (every Monday), the deadlines and the licensing dates reach the admin without anyone opening the system.
  * One company failing never stops the others. Safe to run again: each notice says a thing once.
+ * `organizationIds` narrows it to those companies (the tests use it: a test must never write into a real company).
  */
-export async function runFleetChecks(today: string): Promise<{ checked: number; failed: number }> {
+export async function runFleetChecks(today: string, options: { organizationIds?: string[] } = {}): Promise<{ checked: number; failed: number }> {
   const companies = await sql`
     SELECT DISTINCT o.id
     FROM organizations o
     JOIN vehicles v ON v.organization_id = o.id AND v.deleted_at IS NULL
     WHERE o.deleted_at IS NULL AND o.status IN ('active', 'past_due')
+      AND (${options.organizationIds ?? null}::uuid[] IS NULL OR o.id = ANY(${options.organizationIds ?? null}::uuid[]))
   `;
   let failed = 0;
   for (const company of companies) {

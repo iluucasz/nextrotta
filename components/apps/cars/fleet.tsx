@@ -1,12 +1,13 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { CarFront, History as HistoryIcon, Pencil, Plus, TriangleAlert } from 'lucide-react';
+import { Bell, CarFront, History as HistoryIcon, Pencil, Plus, TriangleAlert } from 'lucide-react';
 import { ModalNotice, SegmentedControl } from '@/components/modal-kit';
 import { Panel } from '@/components/management-ui';
 import { formatPlate, VEHICLE_STATUS_LABELS } from '@/lib/vehicles/rules';
-import { carsStatus, finesStatus, fleetProblems, lastLookup, nextDues, type StatusAction } from '@/lib/vehicles/status';
+import { carsStatus, finesStatus, fleetProblems, lastLookup, nextDues, type StatusAction, type StatusCard } from '@/lib/vehicles/status';
 import type { VehicleRow } from '@/lib/vehicles/store';
+import { AlertsTab } from './alerts-tab';
 import { CarDetail } from './car-detail';
 import { CarDialog } from './car-dialog';
 import { brDate, brDay, call, money } from './call';
@@ -14,12 +15,12 @@ import { FineDialog, FinesList, useFinesLookup, type FinesData } from './fines';
 import { carName, Dues, type Technician } from './kit';
 import { HistoryTab } from './history-tab';
 import { LookupSummary } from './lookup-panel';
-import { Problems, StatusHero } from './status';
+import { StatusHero } from './status';
 import { BigTabs } from './tabs';
 import './cars.css';
 
 type Fleet = { today: string; vehicles: VehicleRow[]; technicians: Technician[] };
-type Tab = 'cars' | 'fines' | 'history';
+type Tab = 'cars' | 'fines' | 'alerts' | 'history';
 type View = 'technicians' | 'cars';
 
 /** A button for one car: its plate, its name and its paper dates. */
@@ -103,7 +104,10 @@ export function FleetApp() {
     () => (fleet && fines ? fleetProblems({ cars, fines: fines.fines, today: fleet.today, lookupEnabled }) : []),
     [fleet, fines, cars, lookupEnabled],
   );
-  const fineProblems = useMemo(() => problems.filter((problem) => /^(indicate|disputes|lookup):/.test(problem.key)), [problems]);
+  const fineProblems = useMemo(() => problems.filter((problem) => problem.group === 'deadlines'), [problems]);
+  // The status cards only sum things up; the rows live in the Avisos tab, so the first screen stays quiet.
+  const withAlerts = (card: StatusCard, count: number): StatusCard =>
+    count > 0 && !card.cta ? { ...card, cta: { label: `Ver avisos (${count})`, action: { kind: 'alerts' } } } : card;
 
   /** A button on the status card or on a problem row: open the car or the fine, or move to the other tab. */
   function act(action: StatusAction) {
@@ -135,6 +139,9 @@ export function FleetApp() {
         setTab('cars');
         setView('cars');
         break;
+      case 'alerts':
+        setTab('alerts');
+        break;
     }
   }
 
@@ -153,8 +160,8 @@ export function FleetApp() {
   const yard = cars.filter((car) => !car.technicianId);
   const withoutCar = (fleet?.technicians ?? []).filter((technician) => !cars.some((car) => car.technicianId === technician.id));
 
-  const carsCard = useMemo(() => carsStatus(cars, problems), [cars, problems]);
-  const finesCard = useMemo(() => (fines && fleet ? finesStatus(fines.fines, fleet.today, lookupEnabled) : null), [fines, fleet, lookupEnabled]);
+  const carsCard = useMemo(() => withAlerts(carsStatus(cars, problems), problems.length), [cars, problems]);
+  const finesCard = useMemo(() => (fines && fleet ? withAlerts(finesStatus(fines.fines, fleet.today, lookupEnabled), fineProblems.length) : null), [fines, fleet, lookupEnabled, fineProblems]);
   const dues = useMemo(() => nextDues(cars, today, 5), [cars, today]);
   const lastChecked = lastLookup(cars);
   const ready = Boolean(fleet && fines);
@@ -207,6 +214,7 @@ export function FleetApp() {
           items={[
             { value: 'cars', label: 'Carros', icon: CarFront, badge: cars.length },
             { value: 'fines', label: 'Multas', icon: TriangleAlert, badge: fines?.summary.open ?? 0, urgent: Boolean(fines?.summary.urgent) },
+            { value: 'alerts', label: 'Avisos', icon: Bell, badge: problems.length, urgent: problems.some((problem) => problem.tone === 'danger') },
             { value: 'history', label: 'Histórico', icon: HistoryIcon },
           ]}
         />
@@ -217,6 +225,8 @@ export function FleetApp() {
 
       {!ready ? (
         error ? null : <p className="cr-muted">Carregando…</p>
+      ) : tab === 'alerts' ? (
+        <AlertsTab problems={problems} onAction={act} />
       ) : tab === 'history' ? (
         <HistoryTab
           lookup={fines!.lookup}
@@ -227,7 +237,6 @@ export function FleetApp() {
       ) : tab === 'fines' ? (
         <>
           {finesCard ? <StatusHero card={finesCard} onAction={act} /> : null}
-          <Problems problems={fineProblems} onAction={act} />
           {cars.length === 0 ? null : (
             <div className="cr-layout">
               <Panel
@@ -249,7 +258,6 @@ export function FleetApp() {
       ) : (
         <>
           <StatusHero card={carsCard} onAction={act} />
-          <Problems problems={problems} onAction={act} />
 
           {cars.length > 0 ? (
             <div className="cr-layout">

@@ -64,11 +64,37 @@ test('a fine whose time to name the driver runs out is a problem, and a driver w
   ]);
 });
 
-test('the automatic lookup only complains about cars when the company has it on', () => {
-  const cars = [car({ finesCheckStatus: 'missing_data', finesCheckMessage: 'Informe o Renavam e o estado (UF) do carro.' }), car({ id: 'c2', plate: 'XYZ9K88', finesCheckStatus: 'partial', finesCheckMessage: 'Só a PRF.' })];
-  assert.deepEqual(problems(cars, [], false), []);
+test('the automatic lookup only complains about cars when the company has it on, and reads what is missing from the car, not from an old result', () => {
+  const data = (extra) => car({ renavam: '12345678900', state: 'MS', ...extra });
+  const cars = [
+    data({ id: 'a', plate: 'AAA1A11', renavam: null }),
+    data({ id: 'b', plate: 'BBB2B22', state: null }),
+    data({ id: 'c', plate: 'CCC3C33', renavam: '12345678901' }),
+    // An old "missing data" mark on a car that has its data now is not a problem any more.
+    data({ id: 'd', plate: 'DDD4D44', finesCheckStatus: 'missing_data', finesCheckMessage: 'Informe o Renavam.' }),
+    data({ id: 'e', plate: 'EEE5E55', finesCheckStatus: 'partial', finesCheckMessage: 'Só a PRF.' }),
+    data({ id: 'f', plate: 'FFF6F66', finesCheckStatus: 'error', finesCheckMessage: 'PRF: o órgão demorou para responder.' }),
+  ];
+  assert.deepEqual(problems(cars, [], false), [], 'lookup off: nothing to complain about');
   const on = problems(cars, [], true);
-  assert.deepEqual(on.map((problem) => [problem.title, problem.actionLabel]), [['ABC-1D23: Informe o Renavam e o estado (UF) do carro.', 'Completar']], 'a partial lookup is only information');
+  assert.deepEqual(on.map((problem) => [problem.group, problem.title]), [
+    ['lookup', '2 carros sem Renavam ou estado: a consulta automática não os alcança'],
+    ['lookup', 'O Renavam de CCC-3C33 parece errado: confira no documento do carro'],
+    ['lookup', 'FFF-6F66: PRF: o órgão demorou para responder.'],
+  ], 'the missing ones share one row; a partial lookup is only information');
+  assert.deepEqual(on[0].cars.map((item) => item.id), ['a', 'b'], 'and the row lists its cars to open one by one');
+  assert.deepEqual([on[0].actionLabel, on[0].action], ['Completar', { kind: 'car', carId: 'a' }]);
+  assert.equal(problems([data({ id: 'x', plate: 'XXX9X99', renavam: null })], [], true)[0].title, 'XXX-9X99 está sem Renavam ou estado: a consulta automática não o alcança');
+});
+
+test('every problem belongs to a section of the Avisos tab', () => {
+  const list = problems(
+    [car({ licensingDue: '2026-10-01' }), car({ id: 'c2', plate: 'XYZ9K88', renavam: null, state: null })],
+    [fine({ id: 'late', indicationDeadline: '2026-11-10' })],
+    true,
+  );
+  assert.deepEqual([...new Set(list.map((problem) => problem.group))].sort(), ['deadlines', 'lookup', 'papers']);
+  assert.deepEqual(Object.keys(status.PROBLEM_GROUP_LABEL).sort(), ['deadlines', 'lookup', 'papers']);
 });
 
 test('the Multas card: empty, resolved, open, and urgent', () => {
@@ -128,6 +154,9 @@ test('a car says how its own lookup is doing', () => {
   assert.equal(status.carLookupSituation(car({ finesCheckStatus: 'error', finesCheckMessage: 'Detran fora do ar.' }), true).tone, 'danger');
   assert.equal(status.carLookupSituation(car({ finesCheckStatus: 'partial', finesCheckMessage: 'Só a PRF.', finesCheckedAt: '2026-11-15T11:00:00.000Z' }), true).text, 'Só a PRF. (15/11)');
   assert.equal(status.carLookupSituation(car(), true).tone, 'neutral');
+  // An old "missing data" mark does not outlive the data that was filled in.
+  const stale = status.carLookupSituation(car({ renavam: '12345678900', state: 'MS', finesCheckStatus: 'missing_data', finesCheckMessage: 'Informe o Renavam.' }), true);
+  assert.deepEqual([stale.tone, stale.text], ['neutral', 'Dados completos. O carro entra na próxima verificação.']);
   // Data that is missing is said at once, before any lookup ran.
   const noData = status.carLookupSituation(car({ renavam: null, state: null }), true);
   assert.deepEqual([noData.tone, /Falta o Renavam e o estado/.test(noData.text)], ['warning', true]);

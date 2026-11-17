@@ -36,6 +36,12 @@ export type FineSource = {
 
 const API_BASE = 'https://api.infosimples.com/api/v2/consultas';
 
+/**
+ * How long the provider may wait for the agency's site before giving up (code 605). The PRF answered "timeout" at 120 s in production,
+ * so it waits longer now; it stays under the 300 s the screen's "Verificar agora" has to finish in. A lookup that times out is not billed.
+ */
+export const PROVIDER_TIMEOUT_SECONDS = 240;
+
 const text = (value: unknown): string => String(value ?? '').trim();
 const textOrNull = (value: unknown): string | null => text(value) || null;
 const list = (value: unknown): Record<string, unknown>[] => (Array.isArray(value) ? (value as Record<string, unknown>[]) : []);
@@ -150,8 +156,8 @@ export function createProviderFetcher(token: string, fetchImpl: typeof fetch = f
       const response = await fetchImpl(`${API_BASE}/${source.path}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ token, timeout: '120', ...source.params(car) }),
-        signal: AbortSignal.timeout(150_000),
+        body: new URLSearchParams({ token, timeout: String(PROVIDER_TIMEOUT_SECONDS), ...source.params(car) }),
+        signal: AbortSignal.timeout((PROVIDER_TIMEOUT_SECONDS + 30) * 1000),
       });
       const body = (await response.json().catch(() => null)) as { code?: number; code_message?: string; errors?: unknown; data?: unknown } | null;
       if (!body || typeof body.code !== 'number') return { ok: false, message: `${source.label}: resposta inesperada do provedor (HTTP ${response.status}).` };
@@ -163,6 +169,8 @@ export function createProviderFetcher(token: string, fetchImpl: typeof fetch = f
           console.error(`[carros] ${source.key}: o provedor recusou o acesso (603): ${first || text(body.code_message)}`);
           return { ok: false, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` };
         }
+        // 605: the agency took too long to answer. Nothing is wrong with the car or the data; it is tried again at the next lookup.
+        if (body.code === 605) return { ok: false, message: `${source.label}: o órgão demorou para responder. O sistema tenta de novo na próxima verificação.` };
         const detail = [text(body.code_message), first].filter((part, index, all) => part && !all.slice(0, index).some((other) => other.includes(part))).join(' ');
         return { ok: false, message: `${source.label}: ${detail || 'o provedor não conseguiu consultar'} (código ${body.code}).` };
       }

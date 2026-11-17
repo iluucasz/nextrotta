@@ -12,9 +12,28 @@ export type StatusAction =
   | { kind: 'car'; carId: string }
   | { kind: 'fine'; fineId: string }
   | { kind: 'fines' }
-  | { kind: 'cars' };
+  | { kind: 'cars' }
+  | { kind: 'alerts' };
 
-export type Problem = { key: string; tone: 'warning' | 'danger'; title: string; actionLabel: string; action: StatusAction };
+/** What a problem is about: it decides the section of the Avisos tab. */
+export type ProblemGroup = 'deadlines' | 'papers' | 'lookup';
+
+export const PROBLEM_GROUP_LABEL: Record<ProblemGroup, string> = {
+  deadlines: 'Multas e prazos',
+  papers: 'Documentos dos carros',
+  lookup: 'Consulta automática de multas',
+};
+
+export type Problem = {
+  key: string;
+  group: ProblemGroup;
+  tone: 'warning' | 'danger';
+  title: string;
+  actionLabel: string;
+  action: StatusAction;
+  /** When one row speaks for several cars (the ones missing their Renavam), each of them, to open one by one. */
+  cars?: Array<{ id: string; plate: string }>;
+};
 
 export type StatusCard = { tone: Tone; headline: string; detail: string; cta: { label: string; action: StatusAction } | null };
 
@@ -26,6 +45,9 @@ export type CarLite = {
   insuranceDue: string | null;
   finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | null;
   finesCheckMessage: string | null;
+  /** The data the lookup needs. When these keys are present, what is missing is read from them, never from an old lookup result. */
+  renavam?: string | null;
+  state?: string | null;
 };
 
 export type FineLite = FineState & {
@@ -50,12 +72,12 @@ export function fleetProblems(input: { cars: CarLite[]; fines: FineLite[]; today
     const state = indicationState(fine, today);
     const plate = formatPlate(fine.plate);
     if (state === 'overdue') {
-      found.push({ key: `indicate:${fine.id}`, tone: 'danger', title: `Prazo vencido para indicar o condutor da multa do ${plate}`, actionLabel: 'Abrir a multa', action: { kind: 'fine', fineId: fine.id } });
+      found.push({ key: `indicate:${fine.id}`, group: 'deadlines', tone: 'danger', title: `Prazo vencido para indicar o condutor da multa do ${plate}`, actionLabel: 'Abrir a multa', action: { kind: 'fine', fineId: fine.id } });
     } else if (state === 'soon') {
-      found.push({ key: `indicate:${fine.id}`, tone: 'warning', title: `Indique o condutor da multa do ${plate} até ${brDay(fine.indicationDeadline as string)}`, actionLabel: 'Abrir a multa', action: { kind: 'fine', fineId: fine.id } });
+      found.push({ key: `indicate:${fine.id}`, group: 'deadlines', tone: 'warning', title: `Indique o condutor da multa do ${plate} até ${brDay(fine.indicationDeadline as string)}`, actionLabel: 'Abrir a multa', action: { kind: 'fine', fineId: fine.id } });
     }
     if (fine.driverStance === 'disputes') {
-      found.push({ key: `disputes:${fine.id}`, tone: 'warning', title: `${fine.technicianName ?? 'O prestador'} não concorda com a multa do ${plate}`, actionLabel: 'Ver o motivo', action: { kind: 'fine', fineId: fine.id } });
+      found.push({ key: `disputes:${fine.id}`, group: 'deadlines', tone: 'warning', title: `${fine.technicianName ?? 'O prestador'} não concorda com a multa do ${plate}`, actionLabel: 'Ver o motivo', action: { kind: 'fine', fineId: fine.id } });
     }
   }
 
@@ -63,11 +85,44 @@ export function fleetProblems(input: { cars: CarLite[]; fines: FineLite[]; today
     const plate = formatPlate(car.plate);
     for (const [label, due] of [['Licenciamento', car.licensingDue], ['Seguro', car.insuranceDue]] as const) {
       const state: DueState = dueState(due, today);
-      if (state === 'overdue') found.push({ key: `due:${car.id}:${label}`, tone: 'danger', title: `${label} vencido: ${plate}`, actionLabel: 'Abrir o carro', action: { kind: 'car', carId: car.id } });
-      else if (state === 'soon') found.push({ key: `due:${car.id}:${label}`, tone: 'warning', title: `${label} do ${plate} vence em ${brDay(due as string)}`, actionLabel: 'Abrir o carro', action: { kind: 'car', carId: car.id } });
+      if (state === 'overdue') found.push({ key: `due:${car.id}:${label}`, group: 'papers', tone: 'danger', title: `${label} vencido: ${plate}`, actionLabel: 'Abrir o carro', action: { kind: 'car', carId: car.id } });
+      else if (state === 'soon') found.push({ key: `due:${car.id}:${label}`, group: 'papers', tone: 'warning', title: `${label} do ${plate} vence em ${brDay(due as string)}`, actionLabel: 'Abrir o carro', action: { kind: 'car', carId: car.id } });
     }
-    if (lookupEnabled && (car.finesCheckStatus === 'missing_data' || car.finesCheckStatus === 'error')) {
-      found.push({ key: `lookup:${car.id}`, tone: 'warning', title: `${plate}: ${car.finesCheckMessage ?? 'a consulta de multas não funcionou'}`, actionLabel: 'Completar', action: { kind: 'car', carId: car.id } });
+  }
+
+  if (lookupEnabled) {
+    // What is missing is read from the car's data now, not from the result of the last lookup (which only changes at the next one).
+    const knowsData = (car: CarLite) => 'renavam' in car || 'state' in car;
+    const missing = cars.filter((car) => knowsData(car) && (!car.renavam || !car.state));
+    const wrong = cars.filter((car) => knowsData(car) && car.renavam && car.state && !isValidRenavam(car.renavam));
+    const failed = cars.filter((car) => car.finesCheckStatus === 'error' && !missing.includes(car) && !wrong.includes(car));
+
+    const group = (list: CarLite[], key: string, one: (plate: string) => string, many: (count: number) => string): Problem | null =>
+      list.length
+        ? {
+            key,
+            group: 'lookup',
+            tone: 'warning',
+            title: list.length === 1 ? one(formatPlate(list[0].plate)) : many(list.length),
+            actionLabel: 'Completar',
+            action: { kind: 'car', carId: list[0].id },
+            cars: list.map((car) => ({ id: car.id, plate: car.plate })),
+          }
+        : null;
+
+    const missingRow = group(missing, 'lookup:missing', (plate) => `${plate} está sem Renavam ou estado: a consulta automática não o alcança`, (count) => `${count} carros sem Renavam ou estado: a consulta automática não os alcança`);
+    const wrongRow = group(wrong, 'lookup:wrong', (plate) => `O Renavam de ${plate} parece errado: confira no documento do carro`, (count) => `${count} carros com Renavam que parece errado: confira nos documentos`);
+    if (missingRow) found.push(missingRow);
+    if (wrongRow) found.push(wrongRow);
+    for (const car of failed) {
+      found.push({
+        key: `lookup:${car.id}`,
+        group: 'lookup',
+        tone: 'warning',
+        title: `${formatPlate(car.plate)}: ${car.finesCheckMessage ?? 'a consulta de multas não funcionou'}`,
+        actionLabel: 'Abrir o carro',
+        action: { kind: 'car', carId: car.id },
+      });
     }
   }
 
@@ -200,6 +255,8 @@ export function carLookupSituation(car: CarLookupLite, lookupEnabled: boolean): 
   if (car.renavam && !isValidRenavam(car.renavam)) {
     return { tone: 'warning', text: 'O Renavam parece errado (o dígito verificador não confere). Confira no documento do carro.' };
   }
+  // The data is complete now: a "missing data" mark left by an earlier lookup is old news; the next lookup takes the car in.
+  if (car.finesCheckStatus === 'missing_data' && 'renavam' in car) return { tone: 'neutral', text: 'Dados completos. O carro entra na próxima verificação.' };
   switch (car.finesCheckStatus) {
     case 'ok':
       return { tone: 'success', text: `Consultado em ${when}. Sem pendência.` };

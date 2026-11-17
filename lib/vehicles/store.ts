@@ -191,6 +191,9 @@ export async function updateVehicle(actor: Actor, id: string, patch: Partial<Veh
         insurance_due = CASE WHEN ${has('insuranceDue')} THEN ${keep('insuranceDue')}::date ELSE insurance_due END,
         notes = CASE WHEN ${has('notes')} THEN ${keep('notes')} ELSE notes END,
         status = CASE WHEN ${has('status')} THEN ${keep('status')} ELSE status END,
+        -- New Renavam or state: the "missing data" mark of an earlier lookup no longer applies (the next lookup decides again).
+        fines_check_message = CASE WHEN fines_check_status = 'missing_data' AND (${has('renavam')} OR ${has('state')}) THEN NULL ELSE fines_check_message END,
+        fines_check_status = CASE WHEN fines_check_status = 'missing_data' AND (${has('renavam')} OR ${has('state')}) THEN NULL ELSE fines_check_status END,
         updated_at = NOW()
       WHERE id = ${id} AND organization_id = ${actor.organizationId} AND deleted_at IS NULL
     `;
