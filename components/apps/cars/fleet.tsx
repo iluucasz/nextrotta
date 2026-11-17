@@ -1,282 +1,51 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Car, Loader2, Pencil, Plus } from 'lucide-react';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { HelpDot, ModalNotice, ModalSection, SegmentedControl, SummaryBand } from '@/components/modal-kit';
-import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS } from '@/components/modal-kit';
-import { BRAZIL_STATES, dueState, formatPlate, VEHICLE_STATUS_LABELS, VEHICLE_STATUSES, type DueState } from '@/lib/vehicles/rules';
-import type { AssignmentRow, VehicleRow } from '@/lib/vehicles/store';
-import { FinesPanel } from './fines';
-import { brDate, brDay, call } from './call';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Pencil, Plus } from 'lucide-react';
+import { ModalNotice, SegmentedControl } from '@/components/modal-kit';
+import { Panel } from '@/components/management-ui';
+import { formatPlate, VEHICLE_STATUS_LABELS } from '@/lib/vehicles/rules';
+import { carsStatus, finesStatus, fleetProblems, lastLookup, nextDues, type StatusAction } from '@/lib/vehicles/status';
+import type { VehicleRow } from '@/lib/vehicles/store';
+import { CarDialog } from './car-dialog';
+import { brDate, brDay, call, money } from './call';
+import { FineDialog, FinesList, useFinesLookup, type FinesData } from './fines';
+import { carName, Dues, type Technician } from './kit';
+import { Problems, StatusHero } from './status';
 import './cars.css';
 
-type Technician = { id: string; name: string };
 type Fleet = { today: string; vehicles: VehicleRow[]; technicians: Technician[] };
+type Tab = 'cars' | 'fines';
+type View = 'technicians' | 'cars';
 
-const FIELD = 'h-10 w-full rounded-md border border-input bg-background px-3 text-[15px]';
-
-const brDateTime = brDay;
-const carName = (car: VehicleRow) => [car.brand, car.model, car.year].filter(Boolean).join(' ');
-
-function DueBadge({ label, state, date }: { label: string; state: DueState; date: string | null }) {
-  if (state === 'none') return null;
-  const text = state === 'overdue' ? 'vencido' : state === 'soon' ? 'vence em breve' : 'em dia';
+/** A button for one car: its plate, its name and its paper dates. */
+function CarChip({ car, today, onOpen }: { car: VehicleRow; today: string; onOpen: (car: VehicleRow) => void }) {
   return (
-    <span className={`cr-due is-${state}`} title={`${label}: ${brDate(date)} (${text})`}>
-      {label} {brDate(date)}
-    </span>
+    <button type="button" className="cr-car" onClick={() => onOpen(car)}>
+      <span className="cr-plate">{formatPlate(car.plate)}</span>
+      {carName(car) ? <span className="cr-muted">{carName(car)}</span> : null}
+      <Dues car={car} today={today} />
+    </button>
   );
 }
 
-function Dues({ car, today }: { car: VehicleRow; today: string }) {
-  const licensing = dueState(car.licensingDue, today);
-  const insurance = dueState(car.insuranceDue, today);
-  if (licensing === 'none' && insurance === 'none') return <span className="cr-muted">—</span>;
-  return (
-    <span className="cr-dues">
-      <DueBadge label="Licenc." state={licensing} date={car.licensingDue} />
-      <DueBadge label="Seguro" state={insurance} date={car.insuranceDue} />
-    </span>
-  );
-}
-
-// The rest of a car's data (model, year, Renavam, due dates...) comes back from the plate lookup, never typed here.
-// Only the due dates of licensing and insurance are typed (when the car is edited): the alerts of the bell depend on them.
-type Form = { plate: string; status: string; technicianId: string; licensingDue: string; insuranceDue: string; renavam: string; state: string };
-
-const emptyForm: Form = { plate: '', status: 'active', technicianId: '', licensingDue: '', insuranceDue: '', renavam: '', state: '' };
-
-const toForm = (car: VehicleRow): Form => ({
-  plate: formatPlate(car.plate),
-  status: car.status,
-  technicianId: car.technicianId ?? '',
-  licensingDue: car.licensingDue ?? '',
-  insuranceDue: car.insuranceDue ?? '',
-  renavam: car.renavam ?? '',
-  state: car.state ?? '',
-});
-
-function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <label className={`cr-field${wide ? ' is-wide' : ''}`}>
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
-
-/** Add (car = null) or edit a car: its data, who has it, and its history. */
-function CarDialog({
-  car,
-  technicians,
-  onClose,
-  onSaved,
-}: {
-  car: VehicleRow | null;
-  technicians: Technician[];
-  onClose: () => void;
-  onSaved: () => void;
-}) {
-  const [form, setForm] = useState<Form>(car ? toForm(car) : emptyForm);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-  const [confirmRemove, setConfirmRemove] = useState(false);
-  const [history, setHistory] = useState<AssignmentRow[] | null>(null);
-  const confirmRef = useRef<HTMLDivElement>(null);
-  const set = (key: keyof Form) => (event: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
-    setForm((current) => ({ ...current, [key]: event.target.value }));
-
-  // The confirmation sits at the end of a scrolling dialog: bring it into view when it opens.
-  useEffect(() => {
-    if (confirmRemove) confirmRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  }, [confirmRemove]);
-
-  useEffect(() => {
-    if (!car) return;
-    let active = true;
-    call<{ history: AssignmentRow[] }>(`/api/vehicles/${car.id}`)
-      .then((data) => active && setHistory(data.history))
-      .catch(() => active && setHistory([]));
-    return () => {
-      active = false;
-    };
-  }, [car]);
-
-  async function run(action: () => Promise<unknown>) {
-    setSaving(true);
-    setError('');
-    try {
-      await action();
-      onSaved();
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível concluir.');
-      setSaving(false);
-    }
-  }
-
-  const save = (event: React.FormEvent) => {
-    event.preventDefault();
-    void run(() =>
-      call(car ? `/api/vehicles/${car.id}` : '/api/vehicles', { method: car ? 'PATCH' : 'POST', body: JSON.stringify(car ? form : { plate: form.plate, technicianId: form.technicianId }) }),
-    );
-  };
-
-  // The technician who has the car now may have been deactivated since: keep him in the list so the select is not blank.
-  const options = car?.technicianId && !technicians.some((technician) => technician.id === car.technicianId)
-    ? [...technicians, { id: car.technicianId, name: `${car.technicianName ?? 'Técnico'} (inativo)` }]
-    : technicians;
-
-  return (
-    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
-      <DialogContent className="flex max-h-[92vh] flex-col gap-0 p-0 sm:max-w-2xl">
-        <DialogHeader className={MODAL_HEADER_CLASS}>
-          <DialogTitle className={MODAL_TITLE_CLASS}>{car ? `Carro ${formatPlate(car.plate)}` : 'Adicionar carro'}</DialogTitle>
-          <DialogDescription className={MODAL_DESCRIPTION_CLASS}>{car ? carName(car) : 'Informe a placa e com qual técnico o carro fica.'}</DialogDescription>
-        </DialogHeader>
-        <form onSubmit={save} className="flex min-h-0 flex-1 flex-col">
-          <div className={`${MODAL_BODY_CLASS} space-y-7`}>
-            <ModalSection title="Carro">
-              <div className="cr-grid">
-                <Field label="Placa" wide={!car}>
-                  <input className={FIELD} value={form.plate} onChange={set('plate')} placeholder="ABC-1D23" autoCapitalize="characters" required />
-                </Field>
-                {car ? (
-                  <Field label="Situação">
-                    <select className={FIELD} value={form.status} onChange={set('status')}>
-                      {VEHICLE_STATUSES.map((status) => (
-                        <option key={status} value={status}>
-                          {VEHICLE_STATUS_LABELS[status]}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                ) : null}
-              </div>
-            </ModalSection>
-
-            <ModalSection title="Com o técnico" help="Escolha quem está com o carro. Ao trocar, o histórico guarda quem ficou com ele e por quanto tempo.">
-              <select className={FIELD} value={form.technicianId} onChange={set('technicianId')} aria-label="Técnico">
-                <option value="">Sem técnico (no pátio)</option>
-                {options.map((technician) => (
-                  <option key={technician.id} value={technician.id}>
-                    {technician.name}
-                  </option>
-                ))}
-              </select>
-            </ModalSection>
-
-            {car ? (
-              <ModalSection
-                title="Consulta de multas"
-                help="Para o sistema consultar as multas deste carro toda semana, ele precisa do Renavam e do estado onde o carro é emplacado (UF). Está no documento do carro (CRLV)."
-              >
-                <div className="cr-grid">
-                  <Field label="Renavam">
-                    <input className={FIELD} inputMode="numeric" value={form.renavam} onChange={set('renavam')} />
-                  </Field>
-                  <Field label="Estado (UF)">
-                    <select className={FIELD} value={form.state} onChange={set('state')}>
-                      <option value="">Escolha</option>
-                      {BRAZIL_STATES.map((uf) => (
-                        <option key={uf} value={uf}>
-                          {uf}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                </div>
-              </ModalSection>
-            ) : null}
-
-            {car ? (
-              <ModalSection
-                title="Documentos"
-                help="Quando o licenciamento ou o seguro estiver para vencer, o sino avisa. Depois de regularizar, é só colocar aqui o novo vencimento e o aviso some. Guarde os papéis do carro na Biblioteca."
-              >
-                <div className="cr-grid">
-                  <Field label="Licenciamento vence em">
-                    <input className={FIELD} type="date" value={form.licensingDue} onChange={set('licensingDue')} />
-                  </Field>
-                  <Field label="Seguro vence em">
-                    <input className={FIELD} type="date" value={form.insuranceDue} onChange={set('insuranceDue')} />
-                  </Field>
-                </div>
-                <a className="cr-link" href="/admin/library">
-                  Guardar documentos do carro na Biblioteca
-                </a>
-              </ModalSection>
-            ) : null}
-
-            {car ? (
-              <ModalSection title="Histórico">
-                {history === null ? (
-                  <p className="cr-muted">Carregando…</p>
-                ) : history.length === 0 ? (
-                  <p className="cr-muted">Ainda não ficou com nenhum técnico.</p>
-                ) : (
-                  <ul className="cr-history">
-                    {history.map((row) => (
-                      <li key={row.id}>
-                        <strong>{row.technicianName ?? 'Técnico removido'}</strong>
-                        <span>
-                          {brDateTime(row.assignedAt)} → {row.releasedAt ? brDateTime(row.releasedAt) : 'até hoje'}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </ModalSection>
-            ) : null}
-
-            {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
-            {confirmRemove && car ? (
-              <div ref={confirmRef}>
-              <ModalNotice tone="warning">
-                Remover o carro {formatPlate(car.plate)}? Ele sai da lista e a placa fica livre; o histórico é mantido.
-                <span className="cr-confirm">
-                  <button type="button" className="mg-button" disabled={saving} onClick={() => setConfirmRemove(false)}>
-                    Voltar
-                  </button>
-                  <button type="button" className="mg-button mg-button-dark" disabled={saving} onClick={() => void run(() => call(`/api/vehicles/${car.id}`, { method: 'DELETE' }))}>
-                    Remover
-                  </button>
-                </span>
-              </ModalNotice>
-              </div>
-            ) : null}
-          </div>
-          <DialogFooter className={MODAL_FOOTER_CLASS}>
-            {car && !confirmRemove ? (
-              <button type="button" className="mg-button cr-remove" disabled={saving} onClick={() => setConfirmRemove(true)}>
-                Remover carro
-              </button>
-            ) : null}
-            <button type="button" className="mg-button" disabled={saving} onClick={onClose}>
-              Cancelar
-            </button>
-            <button type="submit" className="mg-button mg-button-dark" disabled={saving}>
-              {saving ? <Loader2 size={16} className="animate-spin" /> : null} {car ? 'Salvar' : 'Adicionar'}
-            </button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-/** /admin/apps/carros: the cars, who has each one, and their paperwork dates. */
+/** /admin/apps/carros: who has each car, what is about to expire, and the fines. */
 export function FleetApp() {
   const [fleet, setFleet] = useState<Fleet | null>(null);
+  const [fines, setFines] = useState<FinesData | null>(null);
   const [error, setError] = useState('');
-  const [view, setView] = useState<'technicians' | 'cars'>('technicians');
-  const [tab, setTab] = useState<'cars' | 'fines'>('cars');
-  const [dialog, setDialog] = useState<{ car: VehicleRow | null } | null>(null);
+  const [tab, setTab] = useState<Tab>('cars');
+  const [view, setView] = useState<View>('technicians');
+  const [carDialog, setCarDialog] = useState<{ car: VehicleRow | null } | null>(null);
+  const [fineDialog, setFineDialog] = useState<{ fineId: string | null } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [checked, setChecked] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setFleet(await call<Fleet>('/api/vehicles'));
+      const [cars, list] = await Promise.all([call<Fleet>('/api/vehicles'), call<FinesData>('/api/vehicles/fines')]);
+      setFleet(cars);
+      setFines(list);
       setError('');
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : 'Não foi possível carregar os carros.');
@@ -289,6 +58,8 @@ export function FleetApp() {
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get('tab') === 'multas') setTab('fines');
   }, []);
+
+  const lookup = useFinesLookup(load);
 
   async function give(car: VehicleRow, technicianId: string) {
     setBusy(car.id);
@@ -303,14 +74,78 @@ export function FleetApp() {
     }
   }
 
-  const summary = useMemo(() => {
-    if (!fleet) return null;
-    const withTechnician = fleet.vehicles.filter((car) => car.technicianId).length;
-    const attention = fleet.vehicles.filter((car) => [dueState(car.licensingDue, fleet.today), dueState(car.insuranceDue, fleet.today)].some((state) => state === 'overdue' || state === 'soon')).length;
-    return { total: fleet.vehicles.length, withTechnician, free: fleet.vehicles.length - withTechnician, attention };
-  }, [fleet]);
+  async function markChecked() {
+    try {
+      await call('/api/vehicles/fines/checked', { method: 'POST' });
+      setChecked(true);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'Não foi possível concluir.');
+    }
+  }
 
-  const freeCars = fleet?.vehicles.filter((car) => !car.technicianId) ?? [];
+  const cars = useMemo(() => fleet?.vehicles ?? [], [fleet]);
+  const today = fleet?.today ?? '';
+  const lookupEnabled = Boolean(fines?.lookup.enabled);
+
+  const problems = useMemo(
+    () => (fleet && fines ? fleetProblems({ cars, fines: fines.fines, today: fleet.today, lookupEnabled }) : []),
+    [fleet, fines, cars, lookupEnabled],
+  );
+  const fineProblems = useMemo(() => problems.filter((problem) => /^(indicate|disputes|lookup):/.test(problem.key)), [problems]);
+
+  /** A button on the status card or on a problem row: open the car or the fine, or move to the other tab. */
+  function act(action: StatusAction) {
+    switch (action.kind) {
+      case 'add-car':
+        setCarDialog({ car: null });
+        break;
+      case 'add-fine':
+        // A fine belongs to a car: with none yet, the first thing to do is add one.
+        if (cars.length === 0) setCarDialog({ car: null });
+        else {
+          setTab('fines');
+          setFineDialog({ fineId: null });
+        }
+        break;
+      case 'car': {
+        const car = cars.find((item) => item.id === action.carId);
+        if (car) setCarDialog({ car });
+        break;
+      }
+      case 'fine':
+        setTab('fines');
+        setFineDialog({ fineId: action.fineId });
+        break;
+      case 'fines':
+        setTab('fines');
+        break;
+      case 'cars':
+        setTab('cars');
+        setView('cars');
+        break;
+    }
+  }
+
+  // Cars grouped by who has them (a technician who was deactivated still shows, with his cars), the yard apart.
+  const groups = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; cars: VehicleRow[] }>();
+    for (const car of cars) {
+      if (!car.technicianId) continue;
+      const known = fleet?.technicians.find((technician) => technician.id === car.technicianId);
+      const entry = map.get(car.technicianId) ?? { id: car.technicianId, name: known ? known.name : `${car.technicianName ?? 'Técnico'} (inativo)`, cars: [] };
+      entry.cars.push(car);
+      map.set(car.technicianId, entry);
+    }
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
+  }, [cars, fleet]);
+  const yard = cars.filter((car) => !car.technicianId);
+  const withoutCar = (fleet?.technicians ?? []).filter((technician) => !cars.some((car) => car.technicianId === technician.id));
+
+  const carsCard = useMemo(() => carsStatus(cars, problems), [cars, problems]);
+  const finesCard = useMemo(() => (fines && fleet ? finesStatus(fines.fines, fleet.today, lookupEnabled) : null), [fines, fleet, lookupEnabled]);
+  const dues = useMemo(() => nextDues(cars, today, 5), [cars, today]);
+  const lastChecked = lastLookup(cars);
+  const ready = Boolean(fleet && fines);
 
   return (
     <div className="mg-dashboard cr">
@@ -324,203 +159,281 @@ export function FleetApp() {
           </h1>
           <p>Quem está com cada carro e as multas da frota.</p>
         </div>
-        <div className="mg-header-actions">
+        <div className="mg-header-actions cr-header-actions">
+          {tab === 'fines' && ready ? (
+            fines?.lookup.enabled && fines.lookup.configured ? (
+              <button type="button" className="mg-button" disabled={lookup.busy} onClick={() => void lookup.run()}>
+                {lookup.busy ? 'Consultando…' : 'Consultar agora'}
+              </button>
+            ) : (
+              <button type="button" className="mg-button" disabled={checked} onClick={() => void markChecked()}>
+                {checked ? 'Consulta da semana feita' : 'Já consultei esta semana'}
+              </button>
+            )
+          ) : null}
           {tab === 'cars' ? (
-            <button type="button" className="mg-button mg-button-dark" onClick={() => setDialog({ car: null })}>
+            <button type="button" className="mg-button mg-button-dark" onClick={() => act({ kind: 'add-car' })}>
               <Plus size={16} /> Adicionar carro
             </button>
-          ) : null}
+          ) : (
+            <button type="button" className="mg-button mg-button-dark" onClick={() => act({ kind: 'add-fine' })}>
+              <Plus size={16} /> Registrar multa
+            </button>
+          )}
         </div>
       </header>
 
-      <SegmentedControl
-        label="Área"
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: 'cars', label: 'Carros' },
-          { value: 'fines', label: 'Multas' },
-        ]}
-      />
+      <div className="cr-tabs">
+        <SegmentedControl
+          label="Área"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'cars', label: 'Carros' },
+            { value: 'fines', label: 'Multas' },
+          ]}
+        />
+      </div>
 
       {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
+      {lookup.note ? <ModalNotice tone={lookup.note.tone}>{lookup.note.text}</ModalNotice> : null}
+      {fines?.lookup.enabled && !fines.lookup.configured ? (
+        <ModalNotice tone="warning">A consulta automática ainda não foi configurada pelo NextRotta. Até lá, consulte à mão e registre aqui.</ModalNotice>
+      ) : null}
 
-      {tab === 'fines' ? (
-        fleet ? (
-          <FinesPanel cars={fleet.vehicles} technicians={fleet.technicians} onCarsChanged={load} />
-        ) : error ? null : (
-          <p className="cr-muted">Carregando…</p>
-        )
-      ) : !fleet ? (
+      {!ready ? (
         error ? null : <p className="cr-muted">Carregando…</p>
-      ) : fleet.vehicles.length === 0 ? (
-        <div className="cr-empty">
-          <Car size={28} aria-hidden />
-          <p>Nenhum carro cadastrado.</p>
-          <button type="button" className="mg-button mg-button-dark" onClick={() => setDialog({ car: null })}>
-            <Plus size={16} /> Adicionar o primeiro carro
-          </button>
-        </div>
+      ) : tab === 'fines' ? (
+        <>
+          {finesCard ? <StatusHero card={finesCard} onAction={act} /> : null}
+          <Problems problems={fineProblems} onAction={act} />
+          {cars.length === 0 ? null : (
+            <Panel
+              title="Multas"
+              help={
+                lookupEnabled
+                  ? 'Toda semana o sistema consulta as multas dos carros que têm Renavam e estado preenchidos e registra as novas sozinho: ele sugere quem estava com o carro e avisa você no sino. Confira o prazo na notificação e avise o prestador. A indicação do condutor continua sendo feita no site oficial.'
+                  : 'Uma vez por semana o sino lembra de consultar as multas dos carros no Detran ou na Carteira Digital de Trânsito. Quando achar uma, registre aqui: o sistema sugere quem estava com o carro, avisa o prestador e conta o prazo para indicar o condutor.'
+              }
+            >
+              <FinesList data={fines!} cars={cars} technicians={fleet!.technicians} onOpen={(fineId) => setFineDialog({ fineId })} />
+            </Panel>
+          )}
+        </>
       ) : (
         <>
-          {summary ? (
-            <SummaryBand
-              items={[
-                { label: 'Carros', value: summary.total },
-                { label: 'Com técnico', value: summary.withTechnician },
-                { label: 'No pátio', value: summary.free },
-                { label: 'Documentos a vencer', value: summary.attention, tone: summary.attention ? 'bad' : 'default' },
-              ]}
-            />
-          ) : null}
+          <StatusHero card={carsCard} onAction={act} />
+          <Problems problems={problems} onAction={act} />
 
-          <div className="cr-toolbar">
-            <SegmentedControl
-              label="Ver por"
-              value={view}
-              onChange={setView}
-              options={[
-                { value: 'technicians', label: 'Por técnico' },
-                { value: 'cars', label: 'Todos os carros' },
-              ]}
-            />
-            <HelpDot label="Carros" text="Em 'Por técnico' você vê quem está com cada carro e entrega um carro do pátio. Em 'Todos os carros' dá para trocar o técnico direto na lista. Clique no lápis para editar os dados e ver o histórico." />
-          </div>
-
-          {view === 'cars' ? (
-            <div className="cr-table-wrap">
-              <table className="cr-table">
-                <thead>
-                  <tr>
-                    <th>Placa</th>
-                    <th>Carro</th>
-                    <th>Técnico</th>
-                    <th>Km</th>
-                    <th>Documentos</th>
-                    <th>Situação</th>
-                    <th aria-label="Editar" />
-                  </tr>
-                </thead>
-                <tbody>
-                  {fleet.vehicles.map((car) => (
-                    <tr key={car.id}>
-                      <td>
-                        <span className="cr-plate">{formatPlate(car.plate)}</span>
-                      </td>
-                      <td>{carName(car) || '—'}</td>
-                      <td>
-                        <select
-                          className="cr-inline-select"
-                          value={car.technicianId ?? ''}
-                          disabled={busy === car.id}
-                          aria-label={`Técnico do carro ${formatPlate(car.plate)}`}
-                          onChange={(event) => void give(car, event.target.value)}
-                        >
-                          <option value="">No pátio</option>
-                          {fleet.technicians.map((technician) => (
-                            <option key={technician.id} value={technician.id}>
-                              {technician.name}
-                            </option>
-                          ))}
-                          {car.technicianId && !fleet.technicians.some((technician) => technician.id === car.technicianId) ? (
-                            <option value={car.technicianId}>{car.technicianName} (inativo)</option>
-                          ) : null}
-                        </select>
-                      </td>
-                      <td className="cr-num">{car.odometer === null ? '—' : car.odometer.toLocaleString('pt-BR')}</td>
-                      <td>
-                        <Dues car={car} today={fleet.today} />
-                      </td>
-                      <td>
-                        <span className={`cr-status is-${car.status}`}>{VEHICLE_STATUS_LABELS[car.status as keyof typeof VEHICLE_STATUS_LABELS] ?? car.status}</span>
-                      </td>
-                      <td>
-                        <button type="button" className="mg-button mg-button-icon" aria-label={`Editar ${formatPlate(car.plate)}`} onClick={() => setDialog({ car })}>
-                          <Pencil size={15} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="cr-people">
-              {fleet.technicians.map((technician) => {
-                const cars = fleet.vehicles.filter((car) => car.technicianId === technician.id);
-                return (
-                  <section key={technician.id} className="cr-person">
-                    <header>
-                      <h3>{technician.name}</h3>
-                      {freeCars.length ? (
-                        <select
-                          className="cr-inline-select"
-                          value=""
-                          aria-label={`Dar um carro do pátio a ${technician.name}`}
-                          onChange={(event) => {
-                            const car = freeCars.find((item) => item.id === event.target.value);
-                            if (car) void give(car, technician.id);
-                          }}
-                        >
-                          <option value="">Dar um carro…</option>
-                          {freeCars.map((car) => (
-                            <option key={car.id} value={car.id}>
-                              {formatPlate(car.plate)} · {car.model}
-                            </option>
-                          ))}
-                        </select>
-                      ) : null}
-                    </header>
-                    {cars.length === 0 ? (
-                      <p className="cr-muted">Sem carro.</p>
-                    ) : (
-                      <ul>
+          {cars.length > 0 ? (
+            <div className="cr-layout">
+              <Panel
+                title="Carros"
+                help="Em 'Por técnico' você vê quem está com cada carro e entrega um carro do pátio. Em 'Todos' dá para trocar o técnico direto na lista. Clique em um carro para editar os dados e ver o histórico."
+                badge={
+                  <SegmentedControl
+                    label="Ver por"
+                    value={view}
+                    onChange={setView}
+                    options={[
+                      { value: 'technicians', label: 'Por técnico' },
+                      { value: 'cars', label: 'Todos' },
+                    ]}
+                  />
+                }
+              >
+                {view === 'cars' ? (
+                  <div className="cr-table-wrap">
+                    <table className="cr-table">
+                      <thead>
+                        <tr>
+                          <th>Placa</th>
+                          <th>Carro</th>
+                          <th>Técnico</th>
+                          <th>Km</th>
+                          <th>Documentos</th>
+                          <th>Situação</th>
+                          <th aria-label="Editar" />
+                        </tr>
+                      </thead>
+                      <tbody>
                         {cars.map((car) => (
-                          <li key={car.id}>
-                            <button type="button" className="cr-car" onClick={() => setDialog({ car })}>
+                          <tr key={car.id}>
+                            <td>
                               <span className="cr-plate">{formatPlate(car.plate)}</span>
-                              <span className="cr-muted">{carName(car)}</span>
-                              <Dues car={car} today={fleet.today} />
+                            </td>
+                            <td>{carName(car) || <span className="cr-muted">—</span>}</td>
+                            <td>
+                              <select
+                                className="cr-inline-select"
+                                value={car.technicianId ?? ''}
+                                disabled={busy === car.id}
+                                aria-label={`Técnico do carro ${formatPlate(car.plate)}`}
+                                onChange={(event) => void give(car, event.target.value)}
+                              >
+                                <option value="">No pátio</option>
+                                {fleet!.technicians.map((technician) => (
+                                  <option key={technician.id} value={technician.id}>
+                                    {technician.name}
+                                  </option>
+                                ))}
+                                {car.technicianId && !fleet!.technicians.some((technician) => technician.id === car.technicianId) ? (
+                                  <option value={car.technicianId}>{car.technicianName} (inativo)</option>
+                                ) : null}
+                              </select>
+                            </td>
+                            <td className="cr-num">{car.odometer === null ? '—' : car.odometer.toLocaleString('pt-BR')}</td>
+                            <td>
+                              <Dues car={car} today={today} empty />
+                            </td>
+                            <td>
+                              <span className={`cr-status is-${car.status}`}>{VEHICLE_STATUS_LABELS[car.status as keyof typeof VEHICLE_STATUS_LABELS] ?? car.status}</span>
+                            </td>
+                            <td>
+                              <button type="button" className="mg-button mg-button-icon" aria-label={`Editar ${formatPlate(car.plate)}`} onClick={() => setCarDialog({ car })}>
+                                <Pencil size={15} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="cr-groups">
+                    <ul className="cr-rows">
+                      {groups.map((group) => (
+                        <li key={group.id} className="cr-row">
+                          <span className="cr-row-name">{group.name}</span>
+                          <div className="cr-row-cars">
+                            {group.cars.map((car) => (
+                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setCarDialog({ car: item })} />
+                            ))}
+                          </div>
+                        </li>
+                      ))}
+                      {yard.length ? (
+                        <li className="cr-row is-yard">
+                          <span className="cr-row-name">No pátio</span>
+                          <div className="cr-row-cars">
+                            {yard.map((car) => (
+                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setCarDialog({ car: item })} />
+                            ))}
+                          </div>
+                        </li>
+                      ) : null}
+                    </ul>
+
+                    {withoutCar.length ? (
+                      <>
+                        <h4 className="cr-group-title">Sem carro</h4>
+                        <ul className="cr-rows">
+                          {withoutCar.map((technician) => (
+                            <li key={technician.id} className="cr-row is-quiet">
+                              <span className="cr-row-name">{technician.name}</span>
+                              {yard.length ? (
+                                <select
+                                  className="cr-inline-select"
+                                  value=""
+                                  aria-label={`Dar um carro do pátio a ${technician.name}`}
+                                  onChange={(event) => {
+                                    const car = yard.find((item) => item.id === event.target.value);
+                                    if (car) void give(car, technician.id);
+                                  }}
+                                >
+                                  <option value="">Dar um carro…</option>
+                                  {yard.map((car) => (
+                                    <option key={car.id} value={car.id}>
+                                      {formatPlate(car.plate)}
+                                      {car.model ? ` · ${car.model}` : ''}
+                                    </option>
+                                  ))}
+                                </select>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    ) : null}
+                  </div>
+                )}
+              </Panel>
+
+              <div className="cr-side">
+                <Panel title="Multas">
+                  <dl className="cr-kv">
+                    <div>
+                      <dt>Em aberto</dt>
+                      <dd>{fines!.summary.open}</dd>
+                    </div>
+                    <div>
+                      <dt>Prazo perto de vencer</dt>
+                      <dd className={fines!.summary.urgent ? 'is-bad' : undefined}>{fines!.summary.urgent}</dd>
+                    </div>
+                    <div>
+                      <dt>A pagar</dt>
+                      <dd>{fines!.summary.toPay ? money(fines!.summary.toPayAmount) : '—'}</dd>
+                    </div>
+                    {lookupEnabled ? (
+                      <div>
+                        <dt>Última consulta</dt>
+                        <dd>{lastChecked ? brDay(lastChecked) : 'ainda não'}</dd>
+                      </div>
+                    ) : null}
+                  </dl>
+                  <button type="button" className="mg-button cr-side-button" onClick={() => act({ kind: 'fines' })}>
+                    Ver multas
+                  </button>
+                </Panel>
+
+                <Panel title="Próximos vencimentos" help="Informe o vencimento do licenciamento e do seguro dentro de cada carro. Quando faltar 30 dias, o sino avisa.">
+                  {dues.length === 0 ? (
+                    <p className="cr-empty-line">Nenhum vencimento informado.</p>
+                  ) : (
+                    <ul className="cr-dues-list">
+                      {dues.map((item) => {
+                        const car = cars.find((candidate) => candidate.id === item.carId);
+                        return (
+                          <li key={`${item.carId}:${item.label}`}>
+                            <button type="button" className="cr-due-row" onClick={() => car && setCarDialog({ car })}>
+                              <span className="cr-plate">{formatPlate(item.plate)}</span>
+                              <span className="cr-due-label">{item.label}</span>
+                              <span className={`cr-due is-${item.state}`}>{brDate(item.date)}</span>
                             </button>
                           </li>
-                        ))}
-                      </ul>
-                    )}
-                  </section>
-                );
-              })}
-              {freeCars.length ? (
-                <section className="cr-person is-yard">
-                  <header>
-                    <h3>No pátio (sem técnico)</h3>
-                  </header>
-                  <ul>
-                    {freeCars.map((car) => (
-                      <li key={car.id}>
-                        <button type="button" className="cr-car" onClick={() => setDialog({ car })}>
-                          <span className="cr-plate">{formatPlate(car.plate)}</span>
-                          <span className="cr-muted">{carName(car)}</span>
-                          <Dues car={car} today={fleet.today} />
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
+                        );
+                      })}
+                    </ul>
+                  )}
+                </Panel>
+              </div>
             </div>
-          )}
+          ) : null}
         </>
       )}
 
-      {dialog && fleet ? (
+      {carDialog && fleet ? (
         <CarDialog
-          car={dialog.car}
+          car={carDialog.car}
           technicians={fleet.technicians}
-          onClose={() => setDialog(null)}
+          onClose={() => setCarDialog(null)}
           onSaved={() => {
-            setDialog(null);
+            setCarDialog(null);
             void load();
           }}
+        />
+      ) : null}
+
+      {fineDialog && fleet && fines ? (
+        <FineDialog
+          key={fineDialog.fineId ?? 'new'}
+          fineId={fineDialog.fineId}
+          data={fines}
+          cars={cars}
+          technicians={fleet.technicians}
+          onClose={() => setFineDialog(null)}
+          onChanged={load}
+          onCreated={(id) => setFineDialog({ fineId: id })}
         />
       ) : null}
     </div>

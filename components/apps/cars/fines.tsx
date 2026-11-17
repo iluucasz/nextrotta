@@ -1,9 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CircleCheck, Loader2, Pencil, Plus } from 'lucide-react';
+import { CircleCheck, Loader2, Pencil } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { HelpDot, ModalNotice, ModalSection, SegmentedControl, SummaryBand } from '@/components/modal-kit';
+import { ModalNotice, ModalSection, SegmentedControl } from '@/components/modal-kit';
 import { MODAL_BODY_CLASS, MODAL_DESCRIPTION_CLASS, MODAL_FOOTER_CLASS, MODAL_HEADER_CLASS, MODAL_TITLE_CLASS } from '@/components/modal-kit';
 import {
   addDaysToKey,
@@ -22,9 +22,9 @@ import { formatPlate } from '@/lib/vehicles/rules';
 import type { FineRow } from '@/lib/vehicles/fines-store';
 import type { AssignmentRow, VehicleRow } from '@/lib/vehicles/store';
 import { brDate, brDateTime, call, money, toLocalInput } from './call';
+import { AREA, Field, FIELD, type Technician } from './kit';
 
-type Technician = { id: string; name: string };
-type FinesData = {
+export type FinesData = {
   today: string;
   fines: FineRow[];
   summary: { open: number; urgent: number; toPay: number; toPayAmount: number };
@@ -32,17 +32,6 @@ type FinesData = {
   lookup: { enabled: boolean; configured: boolean };
 };
 
-const FIELD = 'h-10 w-full rounded-md border border-input bg-background px-3 text-[15px]';
-const AREA = 'w-full rounded-md border border-input bg-background px-3 py-2 text-[15px]';
-
-function Field({ label, children, wide = false }: { label: string; children: React.ReactNode; wide?: boolean }) {
-  return (
-    <label className={`cr-field${wide ? ' is-wide' : ''}`}>
-      <span>{label}</span>
-      {children}
-    </label>
-  );
-}
 
 type Form = {
   vehicleId: string;
@@ -107,7 +96,7 @@ function Step({ done, title, children }: { done: boolean; title: string; childre
 }
 
 /** Register (fineId = null) or follow a fine: its data, the driver, the deadlines and each step until it is resolved. */
-function FineDialog({
+export function FineDialog({
   fineId,
   data,
   cars,
@@ -459,141 +448,67 @@ function StageBadge({ stage }: { stage: FineStage }) {
 function DeadlineBadge({ fine, today }: { fine: FineRow; today: string }) {
   const state = indicationState(fine, today);
   if (state === 'none' || state === 'ok') return <span className="cr-muted">{fine.indicatedAt ? '—' : brDate(fine.indicationDeadline)}</span>;
-  return <span className={`cr-due is-${state}`}>{state === 'overdue' ? 'Vencido ' : 'Até '}{brDate(fine.indicationDeadline)}</span>;
+  return (
+    <span className={`cr-due is-${state}`}>
+      {state === 'overdue' ? 'Vencido ' : 'Até '}
+      {brDate(fine.indicationDeadline)}
+    </span>
+  );
+}
+
+/** "Consultar agora": looks the cars' fines up right away through the provider and says what came of it. */
+export function useFinesLookup(reload: () => Promise<void>) {
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
+
+  const run = useCallback(async () => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const result = await call<{ cars: number; skipped: number; created: number; failed: number; limited: boolean }>('/api/vehicles/fines/lookup', { method: 'POST' });
+      setNote({
+        tone: 'success',
+        text:
+          result.cars === 0
+            ? 'Nada a consultar agora: os carros foram consultados há pouco ou faltam Renavam e estado.'
+            : `${result.cars} ${result.cars === 1 ? 'carro consultado' : 'carros consultados'}: ${result.created === 0 ? 'nenhuma multa nova' : `${result.created} ${result.created === 1 ? 'multa nova registrada' : 'multas novas registradas'}`}${result.failed ? `, ${result.failed} com falha` : ''}.${result.limited ? ' Ainda há carros esperando: consulte de novo.' : ''}`,
+      });
+      await reload();
+    } catch (failure) {
+      setNote({ tone: 'error', text: failure instanceof Error ? failure.message : 'Não foi possível consultar agora.' });
+    } finally {
+      setBusy(false);
+    }
+  }, [reload]);
+
+  return { busy, note, run, clear: () => setNote(null) };
 }
 
 type Scope = 'open' | 'resolved' | 'all';
 
-/** The Multas tab of Carros: every fine, who drove, and what is left to do on each. */
-export function FinesPanel({ cars, technicians, onCarsChanged }: { cars: VehicleRow[]; technicians: Technician[]; onCarsChanged: () => Promise<void> }) {
-  const [data, setData] = useState<FinesData | null>(null);
-  const [lookingUp, setLookingUp] = useState(false);
-  const [lookupNote, setLookupNote] = useState('');
-  const [error, setError] = useState('');
-  const [dialog, setDialog] = useState<{ fineId: string | null } | null>(null);
+/** The filters and the table of fines (the Multas tab puts them inside its panel). */
+export function FinesList({ data, cars, technicians, onOpen }: { data: FinesData; cars: VehicleRow[]; technicians: Technician[]; onOpen: (fineId: string) => void }) {
   const [scope, setScope] = useState<Scope>('open');
   const [stage, setStage] = useState('');
   const [technicianId, setTechnicianId] = useState('');
   const [vehicleId, setVehicleId] = useState('');
-  const [checked, setChecked] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      setData(await call<FinesData>('/api/vehicles/fines'));
-      setError('');
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível carregar as multas.');
-    }
-  }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  const rows = useMemo(() => {
-    if (!data) return [];
-    return data.fines.filter((fine) => {
-      if (scope === 'open' && fine.stage === 'resolved') return false;
-      if (scope === 'resolved' && fine.stage !== 'resolved') return false;
-      if (stage && fine.stage !== stage) return false;
-      if (technicianId && fine.technicianId !== technicianId) return false;
-      if (vehicleId && fine.vehicleId !== vehicleId) return false;
-      return true;
-    });
-  }, [data, scope, stage, technicianId, vehicleId]);
-
-  async function lookupNow() {
-    setLookingUp(true);
-    setError('');
-    setLookupNote('');
-    try {
-      const result = await call<{ cars: number; skipped: number; created: number; failed: number; limited: boolean }>('/api/vehicles/fines/lookup', { method: 'POST' });
-      setLookupNote(
-        result.cars === 0
-          ? 'Nada a consultar agora: os carros foram consultados há pouco ou faltam Renavam e estado.'
-          : `${result.cars} carro(s) consultado(s): ${result.created === 0 ? 'nenhuma multa nova' : `${result.created} multa(s) nova(s) registrada(s)`}${result.failed ? `, ${result.failed} com falha` : ''}.${result.limited ? ' Ainda há carros esperando: clique de novo.' : ''}`,
-      );
-      await onCarsChanged();
-      await load();
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível consultar agora.');
-    } finally {
-      setLookingUp(false);
-    }
-  }
-
-  async function markChecked() {
-    try {
-      await call('/api/vehicles/fines/checked', { method: 'POST' });
-      setChecked(true);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível concluir.');
-    }
-  }
-
-  if (cars.length === 0) {
-    return <p className="cr-muted">Cadastre um carro na aba Carros para registrar multas.</p>;
-  }
-  if (!data) return error ? <ModalNotice tone="error">{error}</ModalNotice> : <p className="cr-muted">Carregando…</p>;
-
-  const summary = data.summary;
+  const rows = useMemo(
+    () =>
+      data.fines.filter((fine) => {
+        if (scope === 'open' && fine.stage === 'resolved') return false;
+        if (scope === 'resolved' && fine.stage !== 'resolved') return false;
+        if (stage && fine.stage !== stage) return false;
+        if (technicianId && fine.technicianId !== technicianId) return false;
+        if (vehicleId && fine.vehicleId !== vehicleId) return false;
+        return true;
+      }),
+    [data, scope, stage, technicianId, vehicleId],
+  );
 
   return (
     <>
-      <div className="cr-toolbar cr-toolbar-wide">
-        <button type="button" className="mg-button mg-button-dark" onClick={() => setDialog({ fineId: null })}>
-          <Plus size={16} /> Registrar multa
-        </button>
-        {data.lookup.enabled && data.lookup.configured ? (
-          <button type="button" className="mg-button" disabled={lookingUp} onClick={() => void lookupNow()}>
-            {lookingUp ? <Loader2 size={16} className="animate-spin" /> : null} Consultar agora
-          </button>
-        ) : (
-          <button type="button" className="mg-button" disabled={checked} onClick={() => void markChecked()}>
-            {checked ? 'Consulta da semana feita' : 'Já consultei as multas esta semana'}
-          </button>
-        )}
-        <HelpDot
-          label="Multas"
-          text={
-            data.lookup.enabled
-              ? 'Toda semana o sistema consulta as multas dos carros que têm Renavam e estado preenchidos e registra as novas sozinho: ele sugere quem estava com o carro e avisa você no sino. Confira o prazo na notificação e avise o prestador. A indicação do condutor continua sendo feita no site oficial.'
-              : 'Uma vez por semana o sino lembra de consultar as multas dos carros no Detran ou na Carteira Digital de Trânsito. Quando achar uma, registre aqui: o sistema sugere quem estava com o carro, avisa o prestador e conta o prazo para indicar o condutor.'
-          }
-        />
-      </div>
-
-      {data.lookup.enabled && !data.lookup.configured ? (
-        <ModalNotice tone="warning">A consulta automática ainda não foi configurada pelo NextRotta. Até lá, consulte à mão e registre aqui.</ModalNotice>
-      ) : null}
-      {lookupNote ? <ModalNotice tone="success">{lookupNote}</ModalNotice> : null}
-      {error ? <ModalNotice tone="error">{error}</ModalNotice> : null}
-      {data.lookup.enabled
-        ? (() => {
-            const problems = cars.filter((car) => car.finesCheckStatus && car.finesCheckStatus !== 'ok');
-            return problems.length ? (
-              <div className="cr-lookup-issues">
-                <strong>Carros que a consulta automática não alcançou por completo</strong>
-                <ul>
-                  {problems.map((car) => (
-                    <li key={car.id}>
-                      <span className="cr-plate">{formatPlate(car.plate)}</span> <span className="cr-muted">{car.finesCheckMessage}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null;
-          })()
-        : null}
-
-      <SummaryBand
-        items={[
-          { label: 'Em aberto', value: summary.open },
-          { label: 'Prazo perto de vencer', value: summary.urgent, tone: summary.urgent ? 'bad' : 'default' },
-          { label: 'A pagar', value: summary.toPay ? `${summary.toPay} · ${money(summary.toPayAmount)}` : '0' },
-        ]}
-      />
-
-      <div className="cr-toolbar cr-filters">
+      <div className="cr-filters">
         <SegmentedControl
           label="Mostrar"
           value={scope}
@@ -631,9 +546,7 @@ export function FinesPanel({ cars, technicians, onCarsChanged }: { cars: Vehicle
       </div>
 
       {rows.length === 0 ? (
-        <div className="cr-empty">
-          <p>{data.fines.length === 0 ? 'Nenhuma multa registrada.' : 'Nenhuma multa com esses filtros.'}</p>
-        </div>
+        <p className="cr-empty-line">{data.fines.length === 0 ? 'Nenhuma multa registrada.' : 'Nenhuma multa com esses filtros.'}</p>
       ) : (
         <div className="cr-table-wrap">
           <table className="cr-table cr-fines-table">
@@ -669,7 +582,7 @@ export function FinesPanel({ cars, technicians, onCarsChanged }: { cars: Vehicle
                   </td>
                   <td>{fine.stage === 'resolved' ? <span className="cr-muted">—</span> : <DeadlineBadge fine={fine} today={data.today} />}</td>
                   <td>
-                    <button type="button" className="mg-button mg-button-icon" aria-label={`Abrir a multa do ${formatPlate(fine.plate)}`} onClick={() => setDialog({ fineId: fine.id })}>
+                    <button type="button" className="mg-button mg-button-icon" aria-label={`Abrir a multa do ${formatPlate(fine.plate)}`} onClick={() => onOpen(fine.id)}>
                       <Pencil size={15} />
                     </button>
                   </td>
@@ -679,19 +592,6 @@ export function FinesPanel({ cars, technicians, onCarsChanged }: { cars: Vehicle
           </table>
         </div>
       )}
-
-      {dialog ? (
-        <FineDialog
-          key={dialog.fineId ?? 'new'}
-          fineId={dialog.fineId}
-          data={data}
-          cars={cars}
-          technicians={technicians}
-          onClose={() => setDialog(null)}
-          onChanged={load}
-          onCreated={(id) => setDialog({ fineId: id })}
-        />
-      ) : null}
     </>
   );
 }

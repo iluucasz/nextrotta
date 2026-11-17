@@ -1,7 +1,9 @@
-/* Carros app (/admin/apps/carros). Sits under .mg-dashboard, like the other redesigned screens. */
+/* Carros app (/admin/apps/carros) and the technician's Minhas multas. Sits under .mg-dashboard, like the other redesigned screens
+   (the hero, the problem rows and the two columns follow Config. Porto). */
 .mg-dashboard.cr {
   display: grid;
-  gap: 22px;
+  align-content: start;
+  gap: 14px;
 }
 
 .mg-dashboard .cr-muted {
@@ -9,10 +11,26 @@
   color: var(--muted-foreground);
   font-size: 15px;
 }
+.mg-dashboard .cr-empty-line {
+  margin: 0;
+  padding: 6px 0 2px;
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
 .mg-dashboard .cr-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+.mg-dashboard .mg-header-actions.cr-header-actions {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+}
+/* the tabs are as wide as their labels, not a bar across the page */
+.mg-dashboard .cr-tabs {
+  justify-self: start;
 }
 
 .mg-dashboard .cr-empty {
@@ -28,6 +46,110 @@
 }
 .mg-dashboard .cr-empty p {
   margin: 0;
+}
+
+/* the status card: where the fleet stands, in a sentence */
+.mg-dashboard .cr-hero {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: 22px 24px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+}
+.mg-dashboard .cr-hero-icon {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+.mg-dashboard .cr-hero-text h2 {
+  font-size: 22px;
+  letter-spacing: -0.4px;
+}
+.mg-dashboard .cr-hero-text p {
+  margin-top: 2px;
+  font-size: 16px;
+  color: var(--muted-foreground);
+}
+.mg-dashboard .cr-hero.success {
+  border-color: #b7e3cc;
+  background: linear-gradient(180deg, #f3fbf7, var(--card));
+}
+.mg-dashboard .cr-hero.success .cr-hero-icon {
+  background: #dcf3e7;
+  color: #166a45;
+}
+.mg-dashboard .cr-hero.warning {
+  border-color: #f0d9a4;
+  background: linear-gradient(180deg, #fffaf0, var(--card));
+}
+.mg-dashboard .cr-hero.warning .cr-hero-icon {
+  background: #fdeec9;
+  color: #8a5a00;
+}
+.mg-dashboard .cr-hero.danger {
+  border-color: #f2c4c0;
+  background: linear-gradient(180deg, #fff6f5, var(--card));
+}
+.mg-dashboard .cr-hero.danger .cr-hero-icon {
+  background: #fde4e1;
+  color: #b42318;
+}
+
+/* what else needs a look: one line each, with the button that fixes it */
+.mg-dashboard .cr-problems {
+  display: grid;
+  gap: 8px;
+}
+.mg-dashboard .cr-problem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  border: 1px solid #f0d9a4;
+  border-radius: 12px;
+  background: #fffaf0;
+}
+.mg-dashboard .cr-problem.danger {
+  border-color: #f2c4c0;
+  background: #fff6f5;
+}
+.mg-dashboard .cr-problem-icon {
+  color: #8a5a00;
+}
+.mg-dashboard .cr-problem.danger .cr-problem-icon {
+  color: #b42318;
+}
+.mg-dashboard .cr-problem-text {
+  font-size: 15px;
+}
+.mg-dashboard .cr-problems-more {
+  justify-self: start;
+  padding: 2px 4px;
+}
+
+/* the cars on the left, the side panels on the right (they stack below 1150px) */
+.mg-dashboard .cr-layout {
+  display: grid;
+  gap: 18px;
+  align-items: start;
+}
+.mg-dashboard .cr-side {
+  display: grid;
+  align-content: start;
+  gap: 18px;
+}
+@media (min-width: 1151px) {
+  .mg-dashboard .cr-layout {
+    grid-template-columns: minmax(0, 1.7fr) minmax(0, 1fr);
+  }
 }
 
 /* Plate: the way it looks on the car. */
@@ -97,16 +219,16 @@
   font-size: 14px;
 }
 
-/* All cars: a table that scrolls sideways on a phone. */
+/* tables scroll sideways on a phone */
 .mg-dashboard .cr-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--border);
-  border-radius: 14px;
+  border-radius: 12px;
   background: #fff;
 }
 .mg-dashboard .cr-table {
   width: 100%;
-  min-width: 760px;
+  min-width: 640px;
   border-collapse: collapse;
   font-size: 15px;
 }
@@ -136,62 +258,205 @@
   text-align: right;
 }
 
-/* By technician: one card per person with their cars. */
-.mg-dashboard .cr-people {
+/* by technician: one row per person, his cars beside the name */
+.mg-dashboard .cr-groups {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 16px;
+  gap: 18px;
 }
-.mg-dashboard .cr-person {
+.mg-dashboard .cr-rows {
   display: grid;
-  align-content: start;
-  gap: 12px;
-  padding: 16px 18px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: #fff;
-}
-.mg-dashboard .cr-person.is-yard {
-  border-style: dashed;
-  background: #fafafa;
-}
-.mg-dashboard .cr-person header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.mg-dashboard .cr-person h3 {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 650;
-}
-.mg-dashboard .cr-person ul {
-  display: grid;
-  gap: 8px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
-.mg-dashboard .cr-car {
+.mg-dashboard .cr-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.8fr) minmax(0, 1.6fr);
+  align-items: start;
+  gap: 8px 18px;
+  padding: 13px 0;
+  border-top: 1px solid var(--border);
+}
+.mg-dashboard .cr-row:first-child {
+  border-top: 0;
+  padding-top: 2px;
+}
+.mg-dashboard .cr-row-name {
+  min-width: 0;
+  padding-top: 5px;
+  font-size: 15px;
+  font-weight: 600;
+}
+.mg-dashboard .cr-row.is-quiet {
+  align-items: center;
+  padding: 8px 0;
+}
+.mg-dashboard .cr-row.is-quiet .cr-row-name {
+  padding-top: 0;
+  color: var(--muted-foreground);
+  font-weight: 500;
+}
+.mg-dashboard .cr-row.is-yard .cr-row-name {
+  color: var(--muted-foreground);
+}
+.mg-dashboard .cr-row-cars {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.mg-dashboard .cr-car {
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
-  width: 100%;
-  padding: 10px 12px;
-  border: 1px solid var(--border);
+  padding: 4px 8px;
+  border: 0;
   border-radius: 10px;
-  background: #fff;
+  background: none;
   text-align: left;
-  transition: border-color 0.15s;
+  transition: background-color 0.15s;
 }
 .mg-dashboard .cr-car:hover {
-  border-color: var(--primary);
+  background: var(--secondary);
+}
+.mg-dashboard .cr-group-title {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 14px;
+  font-weight: 600;
 }
 
-/* The add / edit dialog. */
+/* side panels */
+.mg-dashboard .cr-kv {
+  display: grid;
+  gap: 0;
+  margin: 0 0 14px;
+}
+.mg-dashboard .cr-kv > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+  border-top: 1px solid var(--border);
+}
+.mg-dashboard .cr-kv > div:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.mg-dashboard .cr-kv dt {
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+.mg-dashboard .cr-kv dd {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.mg-dashboard .cr-kv dd.is-bad {
+  color: #b42318;
+}
+.mg-dashboard .cr-dues-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mg-dashboard .cr-due-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 0;
+  border: 0;
+  border-top: 1px solid var(--border);
+  background: none;
+  text-align: left;
+}
+.mg-dashboard .cr-dues-list li:first-child .cr-due-row {
+  border-top: 0;
+  padding-top: 0;
+}
+.mg-dashboard .cr-due-label {
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+
+/* the fines list: its filters, then the table */
+.mg-dashboard .cr-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.mg-dashboard .cr-fines-table {
+  min-width: 860px;
+}
+.mg-dashboard .cr-fine-what {
+  font-weight: 600;
+}
+.mg-dashboard .cr-stage {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mg-dashboard .cr-stage.is-to_identify,
+.mg-dashboard .cr-stage.is-to_notify,
+.mg-dashboard .cr-stage.is-to_indicate {
+  background: #fef3c7;
+  color: #b45309;
+}
+.mg-dashboard .cr-stage.is-to_pay {
+  background: #ffe4e8;
+  color: #be123c;
+}
+.mg-dashboard .cr-stage.is-appeal {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+.mg-dashboard .cr-stage.is-resolved {
+  background: #ecfdf5;
+  color: #047857;
+}
+.mg-dashboard .cr-flag {
+  display: block;
+  margin-top: 4px;
+  color: #be123c;
+  font-size: 13px;
+  font-weight: 600;
+}
+.mg-dashboard .cr-auto-tag {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 600;
+  vertical-align: 1px;
+}
+.cr-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+/* the add / edit dialogs */
 .cr-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -239,98 +504,7 @@
   color: #be123c;
 }
 
-/* Multas tab. */
-.mg-dashboard .cr-toolbar-wide {
-  flex-wrap: wrap;
-}
-.mg-dashboard .cr-filters {
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.mg-dashboard .cr-fines-table {
-  min-width: 860px;
-}
-.mg-dashboard .cr-fines-table th:nth-child(4) {
-  text-align: right;
-}
-.mg-dashboard .cr-fine-what {
-  font-weight: 600;
-}
-.mg-dashboard .cr-stage {
-  display: inline-block;
-  padding: 3px 10px;
-  border-radius: 999px;
-  background: #f1f5f9;
-  color: #475569;
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-}
-.mg-dashboard .cr-stage.is-to_identify,
-.mg-dashboard .cr-stage.is-to_notify,
-.mg-dashboard .cr-stage.is-to_indicate {
-  background: #fef3c7;
-  color: #b45309;
-}
-.mg-dashboard .cr-stage.is-to_pay {
-  background: #ffe4e8;
-  color: #be123c;
-}
-.mg-dashboard .cr-stage.is-appeal {
-  background: #ede9fe;
-  color: #6d28d9;
-}
-.mg-dashboard .cr-stage.is-resolved {
-  background: #ecfdf5;
-  color: #047857;
-}
-.mg-dashboard .cr-flag {
-  display: block;
-  margin-top: 4px;
-  color: #be123c;
-  font-size: 13px;
-  font-weight: 600;
-}
-.cr-link {
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--primary);
-  font-size: 14px;
-  font-weight: 600;
-  text-decoration: underline;
-  text-underline-offset: 2px;
-  cursor: pointer;
-}
-
-.mg-dashboard .cr-auto-tag {
-  margin-left: 8px;
-  padding: 1px 8px;
-  border-radius: 999px;
-  background: #e0f2fe;
-  color: #0369a1;
-  font-size: 12px;
-  font-weight: 600;
-  vertical-align: 1px;
-}
-.mg-dashboard .cr-lookup-issues {
-  display: grid;
-  gap: 8px;
-  padding: 12px 16px;
-  border: 1px solid #fcd34d;
-  border-radius: 12px;
-  background: #fffbeb;
-  font-size: 14px;
-}
-.mg-dashboard .cr-lookup-issues ul {
-  display: grid;
-  gap: 6px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
-/* Steps of a fine, in the dialog. */
+/* steps of a fine, in the dialog */
 .cr-steps {
   display: grid;
   gap: 0;
@@ -381,7 +555,7 @@
   font-size: 14px;
 }
 
-/* A technician's own fines (/dashboard/multas). */
+/* a technician's own fines (/dashboard/multas) */
 .mg-dashboard .cr-mine {
   display: grid;
   gap: 14px;
@@ -425,11 +599,35 @@
   gap: 8px;
 }
 
-@media (max-width: 560px) {
-  .cr-grid {
+@media (max-width: 700px) {
+  .mg-dashboard .cr-hero {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mg-dashboard .cr-hero-cta {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .mg-dashboard .cr-row {
     grid-template-columns: minmax(0, 1fr);
   }
-  .mg-dashboard .cr-people {
+  .mg-dashboard .cr-row-name {
+    padding-top: 0;
+  }
+}
+@media (max-width: 640px) {
+  .mg-dashboard .cr-problem {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .mg-dashboard .cr-problem > button {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+  .mg-dashboard .mg-header-actions.cr-header-actions {
+    justify-content: flex-start;
+  }
+}
+@media (max-width: 560px) {
+  .cr-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
