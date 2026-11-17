@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { listCharges } from '@/lib/billing/billing';
+import { ensureSimulatedSchedule } from '@/lib/billing/simulation';
 import { sql } from '@/lib/db';
 import { getSubscription } from '@/lib/platform/plans';
 
@@ -17,19 +18,23 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Apenas administradores podem ver a assinatura.' }, { status: 403 });
     }
 
+    // A test company gets simulated instalments (nothing goes to the gateway), so its dashboard can be exercised.
+    await ensureSimulatedSchedule(auth.organizationId);
     const [subscription, charges, [organization]] = await Promise.all([
       getSubscription(auth.organizationId),
       listCharges(auth.organizationId),
       sql`SELECT lifetime, is_test, unbilled FROM organizations WHERE id = ${auth.organizationId}`,
     ]);
     // Lifetime: the company uses the platform without paying, so there is no value or charge to show.
-    const lifetime = Boolean(organization?.unbilled);
+    // Test: shows the charges, but they are simulated (`simulated`) and can be paid and undone by hand.
+    const simulated = Boolean(organization?.is_test);
+    const lifetime = Boolean(organization?.unbilled) && !simulated;
     const mode = organization?.is_test ? 'test' : organization?.lifetime ? 'lifetime' : null;
-    if (!subscription) return NextResponse.json({ subscription: null, charges: [], lifetime, mode });
+    if (!subscription) return NextResponse.json({ subscription: null, charges: [], lifetime, mode, simulated });
 
     // Gateway identifiers stay internal.
     const { asaas: _asaas, limitOverrides: _limits, ...visible } = subscription;
-    return NextResponse.json({ subscription: visible, charges: lifetime ? [] : charges, lifetime, mode });
+    return NextResponse.json({ subscription: visible, charges: lifetime ? [] : charges, lifetime, mode, simulated });
   } catch (error) {
     console.error('[organization/billing] error:', error);
     return NextResponse.json({ error: 'Erro ao carregar a assinatura.' }, { status: 500 });

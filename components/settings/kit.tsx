@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Banknote, Bot, CheckCircle2, CircleHelp, Clock3, CreditCard, DatabaseBackup, Loader2, Tags, type LucideIcon } from 'lucide-react';
+import { Banknote, Bot, CheckCircle2, CircleHelp, Clock3, DatabaseBackup, Loader2, Tags, type LucideIcon } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { Panel } from '@/components/management-ui';
 import { HelpDot } from '@/components/modal-kit';
@@ -24,11 +24,10 @@ const SECTIONS: Array<{ href: string; label: string; icon: LucideIcon }> = [
   { href: '/admin/configuracoes/porto', label: 'Robô do Porto', icon: Bot },
   { href: '/admin/configuracoes/financeiro', label: 'Financeiro', icon: Tags },
   { href: '/admin/configuracoes/backups', label: 'Backups', icon: DatabaseBackup },
-  { href: '/admin/assinatura', label: 'Assinatura', icon: CreditCard },
 ];
 
 /** Header and page frame shared by every screen under Configurações (including Assinatura). */
-export function Frame({ userName, title, description, actions, children }: { userName: string; title: string; description: string; actions?: ReactNode; children: ReactNode }) {
+export function Frame({ userName, title, description, actions, children, section = 'CONFIGURAÇÕES' }: { userName: string; title: string; description: string; actions?: ReactNode; children: ReactNode; /** Eyebrow after "EMPRESA /"; pass null for a page that is not part of Configurações (no tabs). */ section?: string | null }) {
   const pathname = usePathname();
   return (
     <AppShell role="admin" userName={userName}>
@@ -36,7 +35,7 @@ export function Frame({ userName, title, description, actions, children }: { use
         <header className="mg-page-heading">
           <div>
             <div className="mg-eyebrow">
-              <span /> EMPRESA <span className="mg-eyebrow-divider">/</span> CONFIGURAÇÕES
+              <span /> EMPRESA <span className="mg-eyebrow-divider">/</span> {section ?? title.toUpperCase()}
             </div>
             <h1>
               {title}
@@ -46,14 +45,14 @@ export function Frame({ userName, title, description, actions, children }: { use
           </div>
           {actions ? <div className="mg-header-actions st-header-actions">{actions}</div> : null}
         </header>
-        <nav className="mg-section-nav st-tabs" aria-label="Seções das configurações">
+        {section === null ? null : <nav className="mg-section-nav st-tabs" aria-label="Seções das configurações">
           {SECTIONS.map((section) => (
             <Link key={section.href} href={section.href} className={pathname === section.href ? 'active' : ''} aria-current={pathname === section.href ? 'page' : undefined}>
               <section.icon size={15} />
               {section.label}
             </Link>
           ))}
-        </nav>
+        </nav>}
         <div className="st-body">{children}</div>
       </div>
     </AppShell>

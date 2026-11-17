@@ -26,6 +26,7 @@ import {
   ChartNoAxesCombined,
   CalendarDays,
   ChevronDown,
+  CreditCard,
   Clock3,
   History,
   Landmark,
@@ -138,8 +139,6 @@ const adminSections: NavSection[] = [
         href: '/admin/configuracoes',
         label: 'Configurações',
         icon: Settings,
-        // The tabs inside the settings screen already list these pages (components/settings/kit.tsx).
-        alsoActiveFor: ['/admin/assinatura'],
       },
     ],
   },
@@ -524,6 +523,14 @@ function AccountMenu({ role, userName, readOnly, isLoggingOut, onLogout }: Accou
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-52">
+        {role === 'admin' ? (
+          <DropdownMenuItem asChild className="cursor-pointer gap-2.5 py-2.5 text-sm">
+            <Link href="/admin/assinatura">
+              <CreditCard className="h-4 w-4" />
+              Assinatura
+            </Link>
+          </DropdownMenuItem>
+        ) : null}
         <DropdownMenuItem disabled={isLoggingOut} onSelect={onLogout} className="cursor-pointer gap-2.5 py-2.5 text-sm">
           <LogOut className="h-4 w-4" />
           {isLoggingOut ? 'Saindo...' : 'Sair da conta'}

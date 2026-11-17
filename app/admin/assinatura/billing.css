@@ -1,0 +1,136 @@
+/* Painel de pagamentos da Assinatura. Tudo sob .mg-dashboard, prefixo bl-. */
+.mg-dashboard .bl-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 22px 26px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+}
+.mg-dashboard .bl-hero.late {
+  border-color: color-mix(in srgb, #e11d48 40%, var(--border));
+  background: color-mix(in srgb, #e11d48 6%, var(--card));
+}
+.mg-dashboard .bl-hero.ok {
+  border-color: color-mix(in srgb, #059669 35%, var(--border));
+  background: color-mix(in srgb, #059669 5%, var(--card));
+}
+.mg-dashboard .bl-hero-text {
+  min-width: 0;
+}
+.mg-dashboard .bl-hero-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.mg-dashboard .bl-hero-sub {
+  margin: 4px 0 0;
+  color: var(--muted-foreground);
+  font-size: 15px;
+}
+.mg-dashboard .bl-test {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  color: #b45309;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.mg-dashboard .bl-progress {
+  height: 6px;
+  margin-top: 12px;
+  border-radius: 999px;
+  background: var(--secondary);
+  overflow: hidden;
+}
+.mg-dashboard .bl-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--primary);
+}
+.mg-dashboard .bl-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.mg-dashboard .bl-table {
+  width: 100%;
+  min-width: 560px;
+  font-size: 15px;
+  border-collapse: collapse;
+}
+.mg-dashboard .bl-table th {
+  padding: 8px 12px 8px 0;
+  text-align: left;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+  font-weight: 500;
+  border-bottom: 1px solid var(--border);
+}
+.mg-dashboard .bl-table td {
+  padding: 12px 12px 12px 0;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+.mg-dashboard .bl-table tr:last-child td {
+  border-bottom: 0;
+}
+.mg-dashboard .bl-table .bl-kind small {
+  display: block;
+  color: var(--muted-foreground);
+  font-size: 12.5px;
+}
+.mg-dashboard .bl-table .bl-actions {
+  text-align: right;
+  white-space: nowrap;
+  padding-right: 0;
+}
+.mg-dashboard .bl-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 9px;
+  background: var(--card);
+  color: var(--foreground);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.mg-dashboard .bl-link:hover {
+  border-color: var(--primary);
+}
+.mg-dashboard .bl-link.primary {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+.mg-dashboard .bl-link.quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted-foreground);
+}
+@media (max-width: 720px) {
+  .mg-dashboard .bl-hero {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 18px;
+  }
+}
