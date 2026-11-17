@@ -86,16 +86,6 @@ export function FleetApp() {
     }
   }
 
-  async function toggleAuto(enabled: boolean) {
-    setError('');
-    try {
-      await call('/api/vehicles/fines/lookup', { method: 'PATCH', body: JSON.stringify({ autoEnabled: enabled }) });
-      await load();
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : 'Não foi possível mudar a verificação semanal.');
-    }
-  }
-
   async function markChecked() {
     try {
       await call('/api/vehicles/fines/checked', { method: 'POST' });
@@ -235,7 +225,6 @@ export function FleetApp() {
           cars={cars}
           running={running}
           busy={lookup.busy}
-          onToggle={(enabled) => void toggleAuto(enabled)}
           onRun={() => void lookup.run()}
           onOpenCar={(car) => setDetailCar(car)}
         />
@@ -299,14 +288,14 @@ export function FleetApp() {
                       </thead>
                       <tbody>
                         {cars.map((car) => (
-                          <tr key={car.id}>
+                          <tr key={car.id} className="cr-row-click" onClick={() => setDetailCar(car)}>
                             <td>
                               <button type="button" className="cr-plate-button" aria-label={`Ver a situação do carro ${formatPlate(car.plate)}`} onClick={() => setDetailCar(car)}>
                                 <span className="cr-plate">{formatPlate(car.plate)}</span>
                               </button>
                             </td>
                             <td>{carName(car) || <span className="cr-muted">—</span>}</td>
-                            <td>
+                            <td onClick={(event) => event.stopPropagation()}>
                               <select
                                 className="cr-inline-select"
                                 value={car.technicianId ?? ''}
@@ -333,7 +322,10 @@ export function FleetApp() {
                               <span className={`cr-status is-${car.status}`}>{VEHICLE_STATUS_LABELS[car.status as keyof typeof VEHICLE_STATUS_LABELS] ?? car.status}</span>
                             </td>
                             <td>
-                              <button type="button" className="mg-button mg-button-icon" aria-label={`Editar ${formatPlate(car.plate)}`} onClick={() => setCarDialog({ car })}>
+                              <button type="button" className="mg-button mg-button-icon" aria-label={`Editar ${formatPlate(car.plate)}`} onClick={(event) => {
+                                  event.stopPropagation();
+                                  setCarDialog({ car });
+                                }}>
                                 <Pencil size={15} />
                               </button>
                             </td>

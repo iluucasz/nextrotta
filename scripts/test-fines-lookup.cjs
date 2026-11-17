@@ -326,21 +326,6 @@ test('the round only reaches companies the owner granted the lookup to, and does
   assert.ok(granted.companies >= 1);
   assert.ok(calls.length > 0, 'a granted company is looked up');
 
-  // The company can pause the Sunday lookup; the manual one is not affected, and resuming brings it back.
-  assert.equal(await sync.getAutoEnabled(actor.organizationId), true, 'on unless paused');
-  await sync.setAutoEnabled(actor.organizationId, false, null);
-  assert.equal(await sync.getAutoEnabled(actor.organizationId), false);
-  await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId}`;
-  calls = [];
-  await sync.runFineLookups(today, fetcher);
-  assert.equal(calls.length, 0, 'a paused company is not looked up by the weekly round');
-  const manualRun = await manual();
-  assert.ok(manualRun && manualRun.cars >= 1, 'the manual lookup still works while paused');
-  await sync.setAutoEnabled(actor.organizationId, true, null);
-  await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId}`;
-  calls = [];
-  await sync.runFineLookups(today, fetcher);
-  assert.ok(calls.length > 0, 'resumed: it is looked up again');
   if (before) process.env.INFOSIMPLES_TOKEN = before;
 });
 
@@ -353,16 +338,13 @@ test('the owner sees and switches the lookup of a company in its Integrações t
 
   await sql`DELETE FROM organization_features WHERE organization_id = ${actor.organizationId}`;
   await sql`DELETE FROM fines_lookup_runs WHERE organization_id = ${actor.organizationId}`;
-  await sql`DELETE FROM fines_lookup_settings WHERE organization_id = ${actor.organizationId}`;
   const off = await detail();
-  assert.deepEqual([off.granted, off.autoEnabled, off.lastRunAt, off.runsThisMonth], [false, true, null, 0]);
+  assert.deepEqual([off.granted, off.lastRunAt, off.runsThisMonth], [false, null, 0]);
   assert.equal(off.cars >= 2, true, 'counts the cars of the company');
   assert.ok(off.carsWithData >= 1 && off.carsWithData < off.cars, 'and the ones that have Renavam and state');
 
   await setOrganizationFeature(actor.organizationId, sync.FINES_LOOKUP_FEATURE, true, { id: owner.id });
   assert.equal((await detail()).granted, true, 'turned on by the owner');
-  await sync.setAutoEnabled(actor.organizationId, false, null);
-  assert.equal((await detail()).autoEnabled, false, 'the company paused it');
   await sync.beginRun(actor.organizationId, 'weekly', null, today);
   const withRun = await detail();
   assert.deepEqual([withRun.runsThisMonth, withRun.lastRunStatus], [1, 'running']);
@@ -373,7 +355,7 @@ test('the owner sees and switches the lookup of a company in its Integrações t
 
 after(async () => {
   if (!orgs.length) return;
-  for (const table of ['audit_events', 'notifications', 'organization_features', 'fines_lookup_settings', 'fines_lookup_runs', 'vehicle_fines', 'vehicle_assignments', 'vehicles', 'technicians']) {
+  for (const table of ['audit_events', 'notifications', 'organization_features', 'fines_lookup_runs', 'vehicle_fines', 'vehicle_assignments', 'vehicles', 'technicians']) {
     await sql.query(`DELETE FROM ${table} WHERE organization_id = ANY($1::uuid[])`, [orgs]);
   }
   await sql`DELETE FROM organizations WHERE id = ANY(${orgs}::uuid[])`;

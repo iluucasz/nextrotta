@@ -164,7 +164,6 @@ export async function getOrganizationDetail(organizationId: string) {
     sql`
       SELECT
         EXISTS (SELECT 1 FROM organization_features WHERE organization_id = ${organizationId} AND feature_key = 'fines_lookup' AND revoked_at IS NULL) AS granted,
-        COALESCE((SELECT auto_enabled FROM fines_lookup_settings WHERE organization_id = ${organizationId}), TRUE) AS "autoEnabled",
         (SELECT COUNT(*)::int FROM vehicles WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND status <> 'inactive') AS cars,
         (SELECT COUNT(*)::int FROM vehicles WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND status <> 'inactive'
            AND renavam IS NOT NULL AND state IS NOT NULL) AS "carsWithData",

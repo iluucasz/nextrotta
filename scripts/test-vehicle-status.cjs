@@ -111,14 +111,13 @@ test('the side panel lists the papers soonest first, expired ones included, and 
   assert.equal(status.lastLookup([{ finesCheckedAt: null }]), null);
 });
 
-test('the automation says where the weekly lookup stands: not granted, not set up, paused or on', () => {
-  const lookup = (extra) => status.automationState({ enabled: true, configured: true, autoEnabled: true, nextAutomatic: '2026-11-22', ...extra });
+test('the automation says where the weekly lookup stands: not granted, not set up or on', () => {
+  const lookup = (extra) => status.automationState({ enabled: true, configured: true, nextAutomatic: '2026-11-22', ...extra });
   assert.deepEqual([lookup({ enabled: false }).tone, lookup({ enabled: false }).headline], ['neutral', 'Consulta automática desligada']);
   assert.deepEqual([lookup({ configured: false }).tone, lookup({ configured: false }).headline], ['warning', 'Consulta automática ainda não configurada']);
-  assert.deepEqual([lookup({ autoEnabled: false }).tone, lookup({ autoEnabled: false }).headline], ['warning', 'Verificação semanal pausada']);
   const on = lookup({});
   assert.deepEqual([on.tone, on.headline, on.detail], ['success', 'Verificação semanal ligada', 'Todo domingo, sozinha. Próxima: domingo, 22/11.']);
-  assert.equal(lookup({ enabled: false, autoEnabled: true }).tone, 'neutral', 'not granted wins over everything');
+  assert.equal(lookup({ enabled: false, configured: false }).tone, 'neutral', 'not granted wins over everything');
 });
 
 test('a car says how its own lookup is doing', () => {

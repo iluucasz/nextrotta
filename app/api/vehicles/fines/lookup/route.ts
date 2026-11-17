@@ -1,9 +1,9 @@
 import { after, NextRequest, NextResponse } from 'next/server';
 import { organizationHasFeature } from '@/lib/billing/entitlements';
 import { brasiliaDateKey } from '@/lib/formatters';
-import { readJson, vehiclesRoute } from '@/lib/vehicles/api';
+import { vehiclesRoute } from '@/lib/vehicles/api';
 import { createProviderFetcher, providerToken } from '@/lib/vehicles/fines-provider';
-import { beginRun, FINES_LOOKUP_FEATURE, lookupOrganization, setAutoEnabled } from '@/lib/vehicles/fines-sync';
+import { beginRun, FINES_LOOKUP_FEATURE, lookupOrganization } from '@/lib/vehicles/fines-sync';
 import { VehicleError } from '@/lib/vehicles/store';
 
 export const runtime = 'nodejs';
@@ -34,18 +34,5 @@ export async function POST(request: NextRequest) {
       }
     });
     return NextResponse.json({ runId }, { status: 202 });
-  });
-}
-
-/** Pauses or resumes the Sunday lookup of this company ({ autoEnabled: boolean }). The manual one stays available. */
-export async function PATCH(request: NextRequest) {
-  return vehiclesRoute(request, async (actor) => {
-    if (!(await organizationHasFeature(actor.organizationId, FINES_LOOKUP_FEATURE))) {
-      throw new VehicleError('A consulta automática de multas não está ligada para a sua empresa. Fale com o suporte do NextRotta.', 403);
-    }
-    const body = await readJson(request);
-    if (typeof body.autoEnabled !== 'boolean') throw new VehicleError('Pedido inválido.');
-    await setAutoEnabled(actor.organizationId, body.autoEnabled, actor.userId);
-    return NextResponse.json({ ok: true });
   });
 }

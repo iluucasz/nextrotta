@@ -168,18 +168,15 @@ export function describeRun(run: RunLite): { title: string; detail: string; tone
   return { title, detail: `${run.cars} ${plural(run.cars, 'carro consultado', 'carros consultados')} · ${found}${failed}`, tone: run.status === 'partial' ? 'warning' : 'success' };
 }
 
-export type LookupLite = { enabled: boolean; configured: boolean; autoEnabled: boolean; nextAutomatic: string };
+export type LookupLite = { enabled: boolean; configured: boolean; nextAutomatic: string };
 
-/** Where the weekly automatic lookup stands, in a sentence: not granted, not set up, paused by the company, or on. */
+/** Where the weekly automatic lookup stands, in a sentence: not granted (the owner turns it on), not set up, or on. */
 export function automationState(lookup: LookupLite): { tone: Tone; headline: string; detail: string } {
   if (!lookup.enabled) {
     return { tone: 'neutral', headline: 'Consulta automática desligada', detail: 'Peça ao suporte do NextRotta para ligar na sua empresa. Até lá, as multas são registradas à mão.' };
   }
   if (!lookup.configured) {
     return { tone: 'warning', headline: 'Consulta automática ainda não configurada', detail: 'O NextRotta ainda está preparando a conexão. Tente de novo mais tarde.' };
-  }
-  if (!lookup.autoEnabled) {
-    return { tone: 'warning', headline: 'Verificação semanal pausada', detail: 'Ligue para o sistema consultar as multas todo domingo. A verificação manual continua disponível.' };
   }
   return { tone: 'success', headline: 'Verificação semanal ligada', detail: `Todo domingo, sozinha. Próxima: domingo, ${lookup.nextAutomatic.slice(8, 10)}/${lookup.nextAutomatic.slice(5, 7)}.` };
 }

@@ -948,3 +948,11 @@
     display: none;
   }
 }
+
+/* a row that opens its page on click */
+.mg-dashboard .cr-row-click {
+  cursor: pointer;
+}
+.mg-dashboard .cr-row-click:hover td {
+  background: var(--secondary);
+}

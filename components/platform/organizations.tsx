@@ -168,7 +168,6 @@ type OrganizationDetailData = {
     };
     finesLookup: {
       granted: boolean;
-      autoEnabled: boolean;
       cars: number;
       carsWithData: number;
       lastRunAt: string | null;
@@ -1330,13 +1329,6 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           <Panel title="Consulta de multas">
             <div className="nr-pad">
               <Badge tone={integrations.finesLookup.granted ? 'good' : 'warn'}>{integrations.finesLookup.granted ? 'Ligada para a empresa' : 'Desligada'}</Badge>
-              {integrations.finesLookup.granted ? (
-                <div className="nr-statelines">
-                  <StateLine label="Verificação de domingo" state={integrations.finesLookup.autoEnabled ? 'on' : 'off'}>
-                    {integrations.finesLookup.autoEnabled ? 'Ligada' : 'Pausada pela empresa'}
-                  </StateLine>
-                </div>
-              ) : null}
               <p className="my-4 text-xs">
                 {integrations.finesLookup.carsWithData} de {integrations.finesLookup.cars} carro(s) com Renavam e estado
                 <br />

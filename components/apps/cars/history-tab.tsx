@@ -2,7 +2,6 @@
 
 import { AlertTriangle, CheckCircle2, Loader2, PlugZap } from 'lucide-react';
 import { Panel } from '@/components/management-ui';
-import { Switch } from '@/components/ui/switch';
 import { formatPlate } from '@/lib/vehicles/rules';
 import { automationState, carLookupSituation, RUN_STATUS_LABEL, shortDateTime } from '@/lib/vehicles/status';
 import type { VehicleRow } from '@/lib/vehicles/store';
@@ -16,13 +15,11 @@ export function AutomationCard({
   lookup,
   running,
   busy,
-  onToggle,
   onRun,
 }: {
   lookup: FinesData['lookup'];
   running: boolean;
   busy: boolean;
-  onToggle: (enabled: boolean) => void;
   onRun: () => void;
 }) {
   const state = automationState(lookup);
@@ -41,10 +38,6 @@ export function AutomationCard({
       </div>
       {usable ? (
         <div className="cr-auto-controls">
-          <label className="cr-switch">
-            <Switch checked={lookup.autoEnabled} onCheckedChange={onToggle} aria-label="Verificação semanal automática" />
-            <span>{lookup.autoEnabled ? 'Ligada' : 'Pausada'}</span>
-          </label>
           <button type="button" className="mg-button" disabled={busy || running || locked} title={locked ? 'Você já verificou hoje. Libera amanhã.' : undefined} onClick={onRun}>
             {busy || running ? <Loader2 size={16} className="animate-spin" /> : null}
             {busy || running ? 'Verificando…' : locked ? 'Verificado hoje' : 'Verificar agora'}
@@ -61,7 +54,6 @@ export function HistoryTab({
   cars,
   running,
   busy,
-  onToggle,
   onRun,
   onOpenCar,
 }: {
@@ -69,13 +61,12 @@ export function HistoryTab({
   cars: VehicleRow[];
   running: boolean;
   busy: boolean;
-  onToggle: (enabled: boolean) => void;
   onRun: () => void;
   onOpenCar: (car: VehicleRow) => void;
 }) {
   return (
     <>
-      <AutomationCard lookup={lookup} running={running} busy={busy} onToggle={onToggle} onRun={onRun} />
+      <AutomationCard lookup={lookup} running={running} busy={busy} onRun={onRun} />
       {lookup.enabled && lookup.lockedToday && !running ? <p className="cr-note">Você já verificou hoje. A verificação manual volta amanhã; a automática roda todo domingo.</p> : null}
 
       <div className="cr-layout">

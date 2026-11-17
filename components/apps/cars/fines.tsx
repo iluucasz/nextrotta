@@ -33,7 +33,7 @@ export type FinesData = {
    * The weekly automatic lookup: granted to this company, the platform has its provider set up, the history of the lookups, whether
    * today's manual one was already used, and the next Sunday.
    */
-  lookup: { enabled: boolean; configured: boolean; autoEnabled: boolean; runs: LookupRun[]; lockedToday: boolean; nextAutomatic: string };
+  lookup: { enabled: boolean; configured: boolean; runs: LookupRun[]; lockedToday: boolean; nextAutomatic: string };
 };
 
 
@@ -562,7 +562,7 @@ export function FinesList({ data, cars, technicians, onOpen }: { data: FinesData
             </thead>
             <tbody>
               {rows.map((fine) => (
-                <tr key={fine.id}>
+                <tr key={fine.id} className="cr-row-click" onClick={() => onOpen(fine.id)}>
                   <td>
                     <span className="cr-plate">{formatPlate(fine.plate)}</span>
                   </td>

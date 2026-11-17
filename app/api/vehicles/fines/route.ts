@@ -3,7 +3,7 @@ import { organizationHasFeature } from '@/lib/billing/entitlements';
 import { readJson, vehiclesRoute } from '@/lib/vehicles/api';
 import { providerToken } from '@/lib/vehicles/fines-provider';
 import { nextSunday } from '@/lib/vehicles/fines-rules';
-import { FINES_LOOKUP_FEATURE, getAutoEnabled, listLookupRuns, manualLockedToday } from '@/lib/vehicles/fines-sync';
+import { FINES_LOOKUP_FEATURE, listLookupRuns, manualLockedToday } from '@/lib/vehicles/fines-sync';
 import { parseFineInput } from '@/lib/vehicles/fines-rules';
 import { createFine, loadFines } from '@/lib/vehicles/fines-store';
 import { VehicleError } from '@/lib/vehicles/store';
@@ -16,12 +16,12 @@ export async function GET(request: NextRequest) {
     const [loaded, enabled] = await Promise.all([loadFines(actor.organizationId), organizationHasFeature(actor.organizationId, FINES_LOOKUP_FEATURE)]);
     // `lookup`: whether the weekly automatic lookup is on for this company (the owner grants it) and the platform has its provider; and,
     // when on, the history of the lookups, whether today's manual one was used, and the next Sunday.
-    const [runs, locked, autoEnabled] = enabled
-      ? await Promise.all([listLookupRuns(actor.organizationId, 40), manualLockedToday(actor.organizationId, loaded.today), getAutoEnabled(actor.organizationId)])
-      : [[], false, false];
+    const [runs, locked] = enabled
+      ? await Promise.all([listLookupRuns(actor.organizationId, 40), manualLockedToday(actor.organizationId, loaded.today)])
+      : [[], false];
     return NextResponse.json({
       ...loaded,
-      lookup: { enabled, configured: Boolean(providerToken()), autoEnabled, runs, lockedToday: locked, nextAutomatic: nextSunday(loaded.today) },
+      lookup: { enabled, configured: Boolean(providerToken()), runs, lockedToday: locked, nextAutomatic: nextSunday(loaded.today) },
     });
   });
 }
