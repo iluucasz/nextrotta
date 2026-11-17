@@ -65,6 +65,10 @@ export async function beginRun(organizationId: string, kind: RunKind, triggeredB
     UPDATE fines_lookup_runs SET status = 'error', lock_day = NULL, finished_at = NOW(), message = 'A consulta não terminou.'
     WHERE organization_id = ${organizationId} AND lock_day IS NOT NULL AND status = 'running' AND started_at < NOW() - make_interval(mins => ${STALE_RUN_MINUTES})
   `;
+  if (!MANUAL_ONCE_A_DAY) {
+    // The daily rule is off: a lookup that already finished (even one recorded while the rule was on) no longer holds the day.
+    await sql`UPDATE fines_lookup_runs SET lock_day = NULL WHERE organization_id = ${organizationId} AND lock_day IS NOT NULL AND status <> 'running'`;
+  }
   const rows = await sql`
     INSERT INTO fines_lookup_runs (organization_id, kind, triggered_by, lock_day)
     VALUES (${organizationId}, 'manual', ${triggeredBy}, ${today}::date)
@@ -89,6 +93,7 @@ export async function manualLockedToday(organizationId: string, today: string): 
     SELECT 1 FROM fines_lookup_runs
     WHERE organization_id = ${organizationId} AND lock_day = ${today}::date
       AND NOT (status = 'running' AND started_at < NOW() - make_interval(mins => ${STALE_RUN_MINUTES}))
+      AND (status = 'running' OR ${MANUAL_ONCE_A_DAY})
     LIMIT 1
   `;
   return rows.length > 0;

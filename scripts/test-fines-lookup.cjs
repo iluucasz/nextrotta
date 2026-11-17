@@ -310,6 +310,12 @@ test('with the daily rule off, "Verificar agora" can be asked again once the las
   assert.ok(second, 'and it can be asked again right after');
   assert.equal((await runs()).filter((run) => run.kind === 'manual').length, 2);
 
+  // A lookup recorded while the daily rule was on still holds its day in the database: with the rule off it must not lock anything.
+  await wipe();
+  await sql`INSERT INTO fines_lookup_runs (organization_id, kind, status, finished_at, lock_day) VALUES (${actor.organizationId}, 'manual', 'ok', NOW(), ${today}::date)`;
+  assert.equal(await sync.manualLockedToday(actor.organizationId, today), false, 'the old day lock does not hold the button');
+  assert.ok(await manual(), 'and a new lookup can start');
+
   // Two clicks at the same moment: only one runs; the other is told one is in progress.
   await wipe();
   const both = await Promise.all([sync.beginRun(actor.organizationId, 'manual', null, today), sync.beginRun(actor.organizationId, 'manual', null, today)]);
