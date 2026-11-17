@@ -1,6 +1,6 @@
 # WhatsApp oficial do NextRotta
 
-Contato oficial (05/11/2026): **WhatsApp (21) 99779-2422** e **e-mail nextrotta@gmail.com**. Estão no conteúdo do site
+Contato oficial: **WhatsApp (21) 99779-2422** e **e-mail contato@nextrotta.com** (trocado em 17/11/2026: a Infosimples recusou e-mail pessoal; antes era nextrotta@gmail.com). Estão no conteúdo do site
 publicado e no rascunho (`site_content`: campos `whatsapp` e `email`, editáveis em Conteúdo do site) e nos padrões de
 `lib/site/content.ts`. O botão "Falar com a administração" das telas de acesso bloqueado e o contato do site leem esse campo
 (`lib/support-contact.ts`). O número antigo foi removido de todos os lugares; os números que sobraram no código são exemplos
@@ -23,6 +23,6 @@ Quer conhecer ou tirar uma dúvida? Mande uma mensagem. Atendimento de segunda a
 nextrotta.app
 ```
 
-Outros campos do perfil: e-mail `nextrotta@gmail.com`, site `https://nextrotta.app`, horário de segunda a sexta, das 9h às 18h,
+Outros campos do perfil: e-mail `contato@nextrotta.com`, site `https://nextrotta.app`, horário de segunda a sexta, das 9h às 18h,
 categoria "Software" (ou a mais próxima que o app oferecer). Endereço e localização: deixar em branco enquanto não houver
 endereço comercial (o CNPJ ainda não foi definido).

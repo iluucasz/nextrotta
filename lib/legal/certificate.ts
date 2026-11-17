@@ -164,7 +164,7 @@ export function buildCertificatePdf(input: { company: CertificateCompany; rows: 
   doc.text(verificationCode(rows), left + doc.getTextWidth('Código de verificação: '), y);
   y += 6;
   write('O código é o início do resumo SHA-256 das linhas "documento|versão|data em UTC" dos três aceites, na ordem acima, e pode ser recalculado a partir delas.', 8.5, 'normal', GRAY);
-  write('Contato: nextrotta@gmail.com', 8.5, 'normal', GRAY);
+  write('Contato: contato@nextrotta.com', 8.5, 'normal', GRAY);
 
   return new Uint8Array(doc.output('arraybuffer'));
 }

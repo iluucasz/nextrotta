@@ -156,7 +156,7 @@ export const siteContent: SiteContent = {
     },
   ],
   whatsapp: '(21) 99779-2422',
-  email: 'nextrotta@gmail.com',
+  email: 'contato@nextrotta.com',
   phone: '',
   hours: 'Segunda a sexta, das 9h às 18h (Brasília)',
   legalName: 'NextRotta',
