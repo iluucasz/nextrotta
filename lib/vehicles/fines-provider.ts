@@ -37,11 +37,12 @@ export type FineSource = {
 const API_BASE = 'https://api.infosimples.com/api/v2/consultas';
 
 /**
- * How long the provider may wait for the agency's site before giving up (code 605). With 120 s the PRF answered a clean 605; with 240 s
- * the provider's own gateway answered HTTP 502 first, so the wait stays at 100 s and a lookup that times out or gets a gateway error is
- * asked once more (`MAX_ATTEMPTS`). Both attempts fit in the 300 s that "Verificar agora" has. A failed or timed-out lookup is not billed.
+ * How long the provider may wait for the agency's site before giving up (code 605). MEASURED on 16/11/2026: a PRF query takes about
+ * 100 s even to refuse a made-up Renavam (99 s), so 100 s was right at the edge and many real ones timed out. 120 s is the longest wait
+ * that came back as a clean answer (605); with 240 s the provider's own gateway answered HTTP 502 first. A momentary failure is asked
+ * once more (`MAX_ATTEMPTS`), and both attempts fit in the 300 s that "Verificar agora" has. A failed or timed-out lookup is not billed.
  */
-export const PROVIDER_TIMEOUT_SECONDS = 100;
+export const PROVIDER_TIMEOUT_SECONDS = 120;
 export const MAX_ATTEMPTS = 2;
 
 const text = (value: unknown): string => String(value ?? '').trim();

@@ -94,7 +94,7 @@ test('the provider call sends the token and the car, reads the answer and never 
   assert.deepEqual([sent.get('token'), sent.get('placa'), sent.get('renavam')], ['SEGREDO', 'ABC1D23', '12345678900']);
 
   assert.equal(sent.get('timeout'), String(provider.PROVIDER_TIMEOUT_SECONDS), 'it asks the provider to wait for the agency up to the configured time');
-  assert.ok(provider.PROVIDER_TIMEOUT_SECONDS <= 110, 'under what the provider gateway holds (240 s got HTTP 502, 120 s a clean 605)');
+  assert.ok(provider.PROVIDER_TIMEOUT_SECONDS >= 110 && provider.PROVIDER_TIMEOUT_SECONDS <= 130, 'a PRF query takes about 100 s: wait a little more, but no more than the 120 s that came back clean (240 s got HTTP 502)');
   assert.ok(provider.MAX_ATTEMPTS * (provider.PROVIDER_TIMEOUT_SECONDS + 25) < 300, 'every attempt fits in the 300 s of the screen');
 
   const timedOut = await provider.createProviderFetcher('SEGREDO', answer({ code: 605, code_message: 'A consulta não foi realizada dentro do tempo de limite de timeout especificado.' }))(source, car);
