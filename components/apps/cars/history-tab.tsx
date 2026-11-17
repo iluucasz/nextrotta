@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle, CheckCircle2, Loader2, PlugZap } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, PlugZap } from 'lucide-react';
 import { Panel } from '@/components/management-ui';
 import { formatPlate } from '@/lib/vehicles/rules';
 import { automationState, carLookupSituation, RUN_STATUS_LABEL, shortDateTime } from '@/lib/vehicles/status';
@@ -10,22 +10,10 @@ import { cn } from '@/lib/utils';
 
 const TONE_ICON = { neutral: PlugZap, success: CheckCircle2, warning: AlertTriangle, danger: AlertTriangle } as const;
 
-/** The state of the weekly lookup, with the switch to keep it on and the manual button. Shared by the History tab and the Multas side card. */
-export function AutomationCard({
-  lookup,
-  running,
-  busy,
-  onRun,
-}: {
-  lookup: FinesData['lookup'];
-  running: boolean;
-  busy: boolean;
-  onRun: () => void;
-}) {
+/** The state of the weekly lookup, in a sentence. ("Verificar agora" lives in the header of the screen, on every tab.) */
+export function AutomationCard({ lookup }: { lookup: FinesData['lookup'] }) {
   const state = automationState(lookup);
   const Icon = TONE_ICON[state.tone];
-  const usable = lookup.enabled && lookup.configured;
-  const locked = lookup.lockedToday;
 
   return (
     <section className={cn('cr-hero', state.tone)}>
@@ -36,14 +24,6 @@ export function AutomationCard({
         <h2>{state.headline}</h2>
         <p>{state.detail}</p>
       </div>
-      {usable ? (
-        <div className="cr-auto-controls">
-          <button type="button" className="mg-button" disabled={busy || running || locked} title={locked ? 'Você já verificou hoje. Libera amanhã.' : undefined} onClick={onRun}>
-            {busy || running ? <Loader2 size={16} className="animate-spin" /> : null}
-            {busy || running ? 'Verificando…' : locked ? 'Verificado hoje' : 'Verificar agora'}
-          </button>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -53,20 +33,16 @@ export function HistoryTab({
   lookup,
   cars,
   running,
-  busy,
-  onRun,
   onOpenCar,
 }: {
   lookup: FinesData['lookup'];
   cars: VehicleRow[];
   running: boolean;
-  busy: boolean;
-  onRun: () => void;
   onOpenCar: (car: VehicleRow) => void;
 }) {
   return (
     <>
-      <AutomationCard lookup={lookup} running={running} busy={busy} onRun={onRun} />
+      <AutomationCard lookup={lookup} />
       {lookup.enabled && lookup.lockedToday && !running ? <p className="cr-note">Você já verificou hoje. A verificação manual volta amanhã; a automática roda todo domingo.</p> : null}
 
       <div className="cr-layout">

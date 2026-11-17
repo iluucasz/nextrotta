@@ -172,22 +172,20 @@ export function FleetApp() {
           <p>Quem está com cada carro e as multas da frota.</p>
         </div>
         <div className="mg-header-actions cr-header-actions">
-          {tab === 'fines' && ready ? (
-            fines?.lookup.enabled && fines.lookup.configured ? (
-              <button
-                type="button"
-                className="mg-button"
-                disabled={lookup.busy || running || fines.lookup.lockedToday}
-                title={fines.lookup.lockedToday ? 'Você já verificou hoje. Libera amanhã.' : undefined}
-                onClick={() => void lookup.run()}
-              >
-                {lookup.busy || running ? 'Verificando…' : fines.lookup.lockedToday ? 'Verificado hoje' : 'Verificar agora'}
-              </button>
-            ) : (
-              <button type="button" className="mg-button" disabled={checked} onClick={() => void markChecked()}>
-                {checked ? 'Consulta da semana feita' : 'Já consultei esta semana'}
-              </button>
-            )
+          {ready && fines?.lookup.enabled && fines.lookup.configured ? (
+            <button
+              type="button"
+              className="mg-button"
+              disabled={lookup.busy || running || fines.lookup.lockedToday}
+              title={fines.lookup.lockedToday ? 'Você já verificou hoje. Libera amanhã.' : undefined}
+              onClick={() => void lookup.run()}
+            >
+              {lookup.busy || running ? 'Verificando…' : fines.lookup.lockedToday ? 'Verificado hoje' : 'Verificar agora'}
+            </button>
+          ) : tab === 'fines' && ready ? (
+            <button type="button" className="mg-button" disabled={checked} onClick={() => void markChecked()}>
+              {checked ? 'Consulta da semana feita' : 'Já consultei esta semana'}
+            </button>
           ) : null}
           {tab === 'cars' ? (
             <button type="button" className="mg-button mg-button-dark" onClick={() => act({ kind: 'add-car' })}>
@@ -224,8 +222,6 @@ export function FleetApp() {
           lookup={fines!.lookup}
           cars={cars}
           running={running}
-          busy={lookup.busy}
-          onRun={() => void lookup.run()}
           onOpenCar={(car) => setDetailCar(car)}
         />
       ) : tab === 'fines' ? (
@@ -338,7 +334,11 @@ export function FleetApp() {
                   <div className="cr-groups">
                     <ul className="cr-rows">
                       {groups.map((group) => (
-                        <li key={group.id} className="cr-row">
+                        <li
+                          key={group.id}
+                          className={group.cars.length === 1 ? 'cr-row cr-row-click' : 'cr-row'}
+                          onClick={group.cars.length === 1 ? () => setDetailCar(group.cars[0]) : undefined}
+                        >
                           <span className="cr-row-name">{group.name}</span>
                           <div className="cr-row-cars">
                             {group.cars.map((car) => (
