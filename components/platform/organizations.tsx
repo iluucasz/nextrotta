@@ -610,9 +610,9 @@ export function OrganizationWizard() {
                 }
               />
               <div className="nr-note">
-                Primeira cobrança: <strong>{money(cycleValue + setupFee)}</strong>
+                Cobrado agora: <strong>{money(setupFee)}</strong>
                 <small>
-                  {CYCLE_LABELS[String(values.cycle)]} {money(basePrice)} − descontos + implantação {money(setupFee)}. A cobrança é ativada depois, na aba Assinatura.
+                  {setupFee > 0 ? 'Só a implantação.' : 'Sem implantação.'} 1º mês grátis: {CYCLE_LABELS[String(values.cycle)].toLowerCase()} de {money(cycleValue)} vence no mês seguinte. A cobrança é ativada depois, na aba Assinatura.
                 </small>
               </div>
             </>
