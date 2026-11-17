@@ -94,7 +94,8 @@ test('the provider call sends the token and the car, reads the answer and never 
   assert.deepEqual([sent.get('token'), sent.get('placa'), sent.get('renavam')], ['SEGREDO', 'ABC1D23', '12345678900']);
 
   assert.equal(sent.get('timeout'), String(provider.PROVIDER_TIMEOUT_SECONDS), 'it asks the provider to wait for the agency up to the configured time');
-  assert.ok(provider.PROVIDER_TIMEOUT_SECONDS > 120 && provider.PROVIDER_TIMEOUT_SECONDS < 300, 'longer than the 120 s that timed out, shorter than the 300 s of the screen');
+  assert.ok(provider.PROVIDER_TIMEOUT_SECONDS <= 110, 'under what the provider gateway holds (240 s got HTTP 502, 120 s a clean 605)');
+  assert.ok(provider.MAX_ATTEMPTS * (provider.PROVIDER_TIMEOUT_SECONDS + 25) < 300, 'every attempt fits in the 300 s of the screen');
 
   const timedOut = await provider.createProviderFetcher('SEGREDO', answer({ code: 605, code_message: 'A consulta não foi realizada dentro do tempo de limite de timeout especificado.' }))(source, car);
   assert.equal(timedOut.ok, false);
@@ -118,9 +119,31 @@ test('the provider call sends the token and the car, reads the answer and never 
   assert.equal(broken.ok, false);
   assert.doesNotMatch(broken.message, /SEGREDO|boom/);
 
-  const garbage = await provider.createProviderFetcher('SEGREDO', async () => ({ status: 502, json: async () => { throw new Error('html'); } }))(source, car);
-  assert.equal(garbage.ok, false);
-  assert.match(garbage.message, /inesperada/);
+  // A gateway error (HTTP 502, not JSON) is asked again; two failures in a row end with a message in plain words.
+  let tries = 0;
+  const gateway = await provider.createProviderFetcher('SEGREDO', async () => { tries += 1; return { status: 502, json: async () => { throw new Error('html'); } }; })(source, car);
+  assert.equal(gateway.ok, false);
+  assert.equal(tries, provider.MAX_ATTEMPTS, 'it asked again');
+  assert.match(gateway.message, /o provedor não respondeu \(erro 502\)/);
+
+  // A timeout (605) that works on the second try is a success; a refusal is not asked again.
+  let calls605 = 0;
+  const second = await provider.createProviderFetcher('SEGREDO', async () => {
+    calls605 += 1;
+    return calls605 === 1
+      ? { status: 200, json: async () => ({ code: 605, code_message: 'timeout' }) }
+      : { status: 200, json: async () => ({ code: 200, data: [{ multas: [{ auto: 'A2', datahora: '10/11/2026 09:00', valor: '50,00' }] }] }) };
+  })(source, car);
+  assert.deepEqual([second.ok, calls605], [true, 2], 'the second attempt got the answer');
+  let calls603 = 0;
+  await provider.createProviderFetcher('SEGREDO', async () => { calls603 += 1; return { status: 200, json: async () => ({ code: 603, code_message: 'x', errors: ['y'] }) }; })(source, car);
+  assert.equal(calls603, 1, 'a refusal is not asked again');
+
+  // A page that is not a gateway error and not JSON is not worth asking again.
+  let calls404 = 0;
+  const odd = await provider.createProviderFetcher('SEGREDO', async () => { calls404 += 1; return { status: 404, json: async () => { throw new Error('html'); } }; })(source, car);
+  assert.deepEqual([odd.ok, calls404], [false, 1]);
+  assert.match(odd.message, /inesperada/);
 });
 
 test('the week starts on Sunday: the lookup day and the next one', () => {

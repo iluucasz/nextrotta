@@ -37,10 +37,12 @@ export type FineSource = {
 const API_BASE = 'https://api.infosimples.com/api/v2/consultas';
 
 /**
- * How long the provider may wait for the agency's site before giving up (code 605). The PRF answered "timeout" at 120 s in production,
- * so it waits longer now; it stays under the 300 s the screen's "Verificar agora" has to finish in. A lookup that times out is not billed.
+ * How long the provider may wait for the agency's site before giving up (code 605). With 120 s the PRF answered a clean 605; with 240 s
+ * the provider's own gateway answered HTTP 502 first, so the wait stays at 100 s and a lookup that times out or gets a gateway error is
+ * asked once more (`MAX_ATTEMPTS`). Both attempts fit in the 300 s that "Verificar agora" has. A failed or timed-out lookup is not billed.
  */
-export const PROVIDER_TIMEOUT_SECONDS = 240;
+export const PROVIDER_TIMEOUT_SECONDS = 100;
+export const MAX_ATTEMPTS = 2;
 
 const text = (value: unknown): string => String(value ?? '').trim();
 const textOrNull = (value: unknown): string | null => text(value) || null;
@@ -150,34 +152,56 @@ export function providerToken(): string | null {
 }
 
 /** The real fetcher: the provider's API with the platform's token. */
+type Attempt = { result: LookupResult; transient: boolean };
+
+/** One call to the provider. `transient`: the agency or the provider's gateway failed for a moment, so asking again may work. */
+async function attempt(token: string, source: FineSource, car: CarToLookUp, fetchImpl: typeof fetch): Promise<Attempt> {
+  try {
+    const response = await fetchImpl(`${API_BASE}/${source.path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token, timeout: String(PROVIDER_TIMEOUT_SECONDS), ...source.params(car) }),
+      signal: AbortSignal.timeout((PROVIDER_TIMEOUT_SECONDS + 25) * 1000),
+    });
+    const body = (await response.json().catch(() => null)) as { code?: number; code_message?: string; errors?: unknown; data?: unknown } | null;
+    if (!body || typeof body.code !== 'number') {
+      // HTTP 502/503/504 with no JSON: the provider's gateway (or the agency behind it) did not answer in time. Worth asking again.
+      if (response.status >= 500) {
+        return { transient: true, result: { ok: false, message: `${source.label}: o provedor não respondeu (erro ${response.status}). O sistema tenta de novo na próxima verificação.` } };
+      }
+      return { transient: false, result: { ok: false, message: `${source.label}: resposta inesperada do provedor (HTTP ${response.status}).` } };
+    }
+    if (body.code !== 200) {
+      const first = Array.isArray(body.errors) ? text(body.errors[0]) : '';
+      // 603: this query is not enabled on the platform's provider account (or the token lost its access): the company can do
+      // nothing about it, and the text of the provider carries the platform's own account details, so it goes to the log only.
+      if (body.code === 603) {
+        console.error(`[carros] ${source.key}: o provedor recusou o acesso (603): ${first || text(body.code_message)}`);
+        return { transient: false, result: { ok: false, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` } };
+      }
+      // 605: the agency took too long to answer. Nothing is wrong with the car or the data; worth asking again.
+      if (body.code === 605) {
+        return { transient: true, result: { ok: false, message: `${source.label}: o órgão demorou para responder. O sistema tenta de novo na próxima verificação.` } };
+      }
+      const detail = [text(body.code_message), first].filter((part, index, all) => part && !all.slice(0, index).some((other) => other.includes(part))).join(' ');
+      return { transient: false, result: { ok: false, message: `${source.label}: ${detail || 'o provedor não conseguiu consultar'} (código ${body.code}).` } };
+    }
+    const data = Array.isArray(body.data) ? body.data[0] : body.data;
+    return { transient: false, result: { ok: true, fines: data && typeof data === 'object' ? source.parse(data as Record<string, unknown>) : [] } };
+  } catch (error) {
+    const slow = error instanceof Error && error.name === 'TimeoutError';
+    return { transient: true, result: { ok: false, message: `${source.label}: ${slow ? 'o provedor demorou demais' : 'não foi possível falar com o provedor'}.` } };
+  }
+}
+
+/** The real fetcher: the provider's API with the platform's token. A momentary failure is asked again once; the last message is the one kept. */
 export function createProviderFetcher(token: string, fetchImpl: typeof fetch = fetch): Fetcher {
   return async (source, car) => {
-    try {
-      const response = await fetchImpl(`${API_BASE}/${source.path}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({ token, timeout: String(PROVIDER_TIMEOUT_SECONDS), ...source.params(car) }),
-        signal: AbortSignal.timeout((PROVIDER_TIMEOUT_SECONDS + 30) * 1000),
-      });
-      const body = (await response.json().catch(() => null)) as { code?: number; code_message?: string; errors?: unknown; data?: unknown } | null;
-      if (!body || typeof body.code !== 'number') return { ok: false, message: `${source.label}: resposta inesperada do provedor (HTTP ${response.status}).` };
-      if (body.code !== 200) {
-        const first = Array.isArray(body.errors) ? text(body.errors[0]) : '';
-        // 603: this query is not enabled on the platform's provider account (or the token lost its access): the company can do
-        // nothing about it, and the text of the provider carries the platform's own account details, so it goes to the log only.
-        if (body.code === 603) {
-          console.error(`[carros] ${source.key}: o provedor recusou o acesso (603): ${first || text(body.code_message)}`);
-          return { ok: false, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` };
-        }
-        // 605: the agency took too long to answer. Nothing is wrong with the car or the data; it is tried again at the next lookup.
-        if (body.code === 605) return { ok: false, message: `${source.label}: o órgão demorou para responder. O sistema tenta de novo na próxima verificação.` };
-        const detail = [text(body.code_message), first].filter((part, index, all) => part && !all.slice(0, index).some((other) => other.includes(part))).join(' ');
-        return { ok: false, message: `${source.label}: ${detail || 'o provedor não conseguiu consultar'} (código ${body.code}).` };
-      }
-      const data = Array.isArray(body.data) ? body.data[0] : body.data;
-      return { ok: true, fines: data && typeof data === 'object' ? source.parse(data as Record<string, unknown>) : [] };
-    } catch (error) {
-      return { ok: false, message: `${source.label}: ${error instanceof Error && error.name === 'TimeoutError' ? 'o provedor demorou demais' : 'não foi possível falar com o provedor'}.` };
+    let last: Attempt | null = null;
+    for (let tries = 1; tries <= MAX_ATTEMPTS; tries += 1) {
+      last = await attempt(token, source, car, fetchImpl);
+      if (last.result.ok || !last.transient) break;
     }
+    return (last as Attempt).result;
   };
 }
