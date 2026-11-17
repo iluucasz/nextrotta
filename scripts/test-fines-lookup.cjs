@@ -113,6 +113,7 @@ test('the provider call sends the token and the car, reads the answer and never 
   const mismatch = await provider.createProviderFetcher('SEGREDO', answer({ code: 608, code_message: 'Os parâmetros foram recusados pelo site ou aplicativo de origem.', errors: ['Renavam incorreto.'] }))(source, car);
   assert.equal(mismatch.ok, false);
   assert.match(mismatch.message, /o órgão recusou os dados deste carro \(Renavam incorreto\)\. Confira a placa e o Renavam/);
+  assert.equal(mismatch.refused, true, 'a refusal is marked, so it is not asked again');
 
   const refused = await provider.createProviderFetcher('SEGREDO', answer({ code: 612, code_message: 'Renavam não encontrado' }))(source, car);
   assert.equal(refused.ok, false);
@@ -308,6 +309,65 @@ test('the agencies are asked one car at a time (the PRF times out when several c
   await sql`UPDATE vehicles SET status = 'inactive' WHERE organization_id = ${actor.organizationId} AND plate LIKE 'PQR%'`;
 });
 
+const ownCompany = async (suffix) => {
+  const org = await newOrg(suffix);
+  return { org, who: { organizationId: org, userId: null, role: 'admin', impersonationId: null } };
+};
+const runsOf = (org) => sql`SELECT kind, status, cars, created, failed, message FROM fines_lookup_runs WHERE organization_id = ${org} ORDER BY started_at`;
+
+test('a car the agency refused is not asked (and billed) again until its data is edited', { skip: !hasDatabase }, async () => {
+  const { org, who } = await ownCompany('r');
+  const id = await vehicles.createVehicle(who, carRules.parseVehicleInput({ plate: 'REF1A11', renavam: '12345678900', state: 'SP' }).value, null);
+  const refusing = async (source, target) => {
+    calls.push(`${source.key}:${target.plate}`);
+    return { ok: false, refused: true, message: 'PRF (rodovias federais): o órgão recusou os dados deste carro (Renavam incorreto). Confira a placa e o Renavam no documento.' };
+  };
+  calls = [];
+  const summary = await sync.lookupOrganization(org, refusing, { today, mode: 'weekly' });
+  assert.equal(summary.failed, 1);
+  const row = await car(id);
+  assert.equal(row.fines_check_status, 'refused');
+  assert.match(row.fines_check_message, /Renavam incorreto/);
+  assert.equal(row.fines_checked_at, null, 'not marked as checked');
+  assert.equal(calls.length, 1);
+
+  // Neither the weekly round nor the button asks about it again.
+  calls = [];
+  await sync.lookupOrganization(org, refusing, { today, mode: 'weekly' });
+  const runId = await sync.beginRun(org, 'manual', null, today);
+  await sync.lookupOrganization(org, refusing, { today, mode: 'manual', runId });
+  assert.equal(calls.length, 0, 'a refused car is left alone, no matter how many times lookups run');
+
+  // Fixing the data clears the mark, and the car is asked again.
+  await vehicles.updateVehicle(who, id, { renavam: '98765432103' }, undefined);
+  assert.equal((await car(id)).fines_check_status, null, 'saving the data clears the refusal');
+  calls = [];
+  await sync.lookupOrganization(org, refusing, { today, mode: 'weekly' });
+  assert.equal(calls.length, 1, 'and it is asked again');
+});
+
+test('"Verificar agora" moves the fleet forward: it skips cars answered a moment ago and asks the oldest answer first', { skip: !hasDatabase }, async () => {
+  const { org, who } = await ownCompany('o');
+  for (const [plate, hoursAgo] of [['ORD1A11', 1], ['ORD2A22', null], ['ORD3A33', 48], ['ORD4A44', 24]]) {
+    const id = await vehicles.createVehicle(who, carRules.parseVehicleInput({ plate, renavam: '12345678900', state: 'RJ' }).value, null);
+    await sql`UPDATE vehicles SET fines_checked_at = ${hoursAgo === null ? null : new Date(Date.now() - hoursAgo * 3_600_000).toISOString()}, fines_check_status = ${hoursAgo === null ? null : 'ok'} WHERE id = ${id}`;
+  }
+  calls = [];
+  answers = {};
+  const runId = await sync.beginRun(org, 'manual', null, today);
+  const result = await sync.lookupOrganization(org, fetcher, { today, mode: 'manual', runId });
+  assert.equal(result.cars, 3, 'the car answered an hour ago is left out');
+  assert.deepEqual(calls, ['prf:ORD2A22', 'prf:ORD3A33', 'prf:ORD4A44'], 'never looked up first, then the oldest answer, then the newest');
+
+  // Everything was just answered: the next click says so instead of paying again.
+  calls = [];
+  const again = await sync.beginRun(org, 'manual', null, today);
+  const none = await sync.lookupOrganization(org, fetcher, { today, mode: 'manual', runId: again });
+  assert.deepEqual([none.cars, calls.length], [0, 0]);
+  const line = (await runsOf(org)).at(-1);
+  assert.match(line.message, /já foram consultados há menos de 6 horas/);
+});
+
 test('a failed lookup is recorded and tried again next round; a partial one is kept', { skip: !hasDatabase }, async () => {
   await lastWeek(carMs);
   answers = { 'detran-ms': { ok: false, message: 'Detran-MS: fora do ar (código 600).' }, prf: { ok: false, message: 'PRF: fora do ar.' } };
@@ -334,7 +394,7 @@ test('"Verificar agora" works once a day: the second click is refused, and the d
   calls = [];
   const first = await manual();
   assert.ok(first, 'the first click goes through');
-  assert.ok(first.cars >= 1, 'it asks about every car with its data, whenever each was last looked up');
+  assert.ok(first.runId, 'it opened its line');
   assert.equal(await sync.manualLockedToday(actor.organizationId, today), true);
   assert.equal(await sync.beginRun(actor.organizationId, 'manual', null, today), null, 'the second one is refused until tomorrow');
 
@@ -442,7 +502,7 @@ test('filling in the Renavam and the state clears the old "missing data" mark at
   const id = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'MNO7P89' }).value, null);
   await weekly();
   assert.equal((await car(id)).fines_check_status, 'missing_data', 'the lookup flagged it');
-  await vehicles.updateVehicle(actor, id, { plate: 'MNO7P89', color: 'Branco' }, undefined);
+  await vehicles.updateVehicle(actor, id, { color: 'Branco' }, undefined);
   assert.equal((await car(id)).fines_check_status, 'missing_data', 'an edit that does not touch the data leaves the mark');
   await vehicles.updateVehicle(actor, id, { renavam: '12345678900', state: 'MS' }, undefined);
   const row = await car(id);

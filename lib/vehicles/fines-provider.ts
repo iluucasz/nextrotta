@@ -144,7 +144,11 @@ export function sourcesFor(state: string): { sources: FineSource[]; detranCovere
 }
 
 /** `deferred`: not asked at all because the time budget of this lookup ran out; the next lookup does it. */
-export type LookupResult = { ok: true; fines: ExternalFine[] } | { ok: false; message: string; deferred?: boolean };
+/**
+ * `deferred`: not asked at all because the time budget of this lookup ran out; the next lookup does it.
+ * `refused`: the agency refused the plate or the Renavam (code 608): asking again is useless and billed, so it waits for the data to be edited.
+ */
+export type LookupResult = { ok: true; fines: ExternalFine[] } | { ok: false; message: string; deferred?: boolean; refused?: boolean };
 
 /** One query: asks the provider and reads the answer. Never throws; a failure comes back as a message (the token is never put in it). */
 export type Fetcher = (source: FineSource, car: CarToLookUp) => Promise<LookupResult>;
@@ -184,7 +188,7 @@ async function attempt(token: string, source: FineSource, car: CarToLookUp, fetc
       // 608: the agency's site refused the data we sent: the plate and the Renavam do not match a car there. Nothing to ask again.
       if (body.code === 608) {
         const why = (first || text(body.code_message)).replace(/\.$/, '');
-        return { transient: false, result: { ok: false, message: `${source.label}: o órgão recusou os dados deste carro (${why}). Confira a placa e o Renavam no documento.` } };
+        return { transient: false, result: { ok: false, refused: true, message: `${source.label}: o órgão recusou os dados deste carro (${why}). Confira a placa e o Renavam no documento.` } };
       }
       // 605: the agency took too long to answer. Nothing is wrong with the car or the data; worth asking again.
       if (body.code === 605) {

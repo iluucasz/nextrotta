@@ -32,7 +32,7 @@ export type VehicleRow = {
   status: string;
   /** The weekly fines lookup: when it last ran for this car, how it went, and why not when it could not. */
   finesCheckedAt: string | null;
-  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | null;
+  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | 'refused' | null;
   finesCheckMessage: string | null;
   technicianId: string | null;
   technicianName: string | null;
@@ -191,9 +191,9 @@ export async function updateVehicle(actor: Actor, id: string, patch: Partial<Veh
         insurance_due = CASE WHEN ${has('insuranceDue')} THEN ${keep('insuranceDue')}::date ELSE insurance_due END,
         notes = CASE WHEN ${has('notes')} THEN ${keep('notes')} ELSE notes END,
         status = CASE WHEN ${has('status')} THEN ${keep('status')} ELSE status END,
-        -- New Renavam or state: the "missing data" mark of an earlier lookup no longer applies (the next lookup decides again).
-        fines_check_message = CASE WHEN fines_check_status = 'missing_data' AND (${has('renavam')} OR ${has('state')}) THEN NULL ELSE fines_check_message END,
-        fines_check_status = CASE WHEN fines_check_status = 'missing_data' AND (${has('renavam')} OR ${has('state')}) THEN NULL ELSE fines_check_status END,
+        -- New Renavam, state or plate: the "missing data" or "refused" mark of an earlier lookup no longer applies (the next lookup decides again).
+        fines_check_message = CASE WHEN fines_check_status IN ('missing_data', 'refused') AND (${has('renavam')} OR ${has('state')} OR ${has('plate')}) THEN NULL ELSE fines_check_message END,
+        fines_check_status = CASE WHEN fines_check_status IN ('missing_data', 'refused') AND (${has('renavam')} OR ${has('state')} OR ${has('plate')}) THEN NULL ELSE fines_check_status END,
         updated_at = NOW()
       WHERE id = ${id} AND organization_id = ${actor.organizationId} AND deleted_at IS NULL
     `;

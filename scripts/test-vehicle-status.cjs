@@ -79,12 +79,21 @@ test('the automatic lookup only complains about cars when the company has it on,
   const on = problems(cars, [], true);
   assert.deepEqual(on.map((problem) => [problem.group, problem.title]), [
     ['lookup', '2 carros sem Renavam ou estado: a consulta automática não os alcança'],
-    ['lookup', 'O Renavam de CCC-3C33 parece errado: confira no documento do carro'],
+    ['lookup', 'A placa ou o Renavam de CCC-3C33 parece errado: confira no documento do carro'],
     ['lookup', 'FFF-6F66: PRF: o órgão demorou para responder.'],
   ], 'the missing ones share one row; a partial lookup is only information');
   assert.deepEqual(on[0].cars.map((item) => item.id), ['a', 'b'], 'and the row lists its cars to open one by one');
   assert.deepEqual([on[0].actionLabel, on[0].action], ['Completar', { kind: 'car', carId: 'a' }]);
   assert.equal(problems([data({ id: 'x', plate: 'XXX9X99', renavam: null })], [], true)[0].title, 'XXX-9X99 está sem Renavam ou estado: a consulta automática não o alcança');
+});
+
+test('a car the agency refused is flagged as wrong data, with the reason on its own page', () => {
+  const refused = car({ id: 'r', plate: 'RRR1R11', renavam: '12345678900', state: 'SP', finesCheckStatus: 'refused', finesCheckMessage: 'PRF: o órgão recusou os dados deste carro (Renavam incorreto).' });
+  const list = problems([refused], [], true);
+  assert.deepEqual(list.map((problem) => [problem.group, problem.title]), [['lookup', 'A placa ou o Renavam de RRR-1R11 parece errado: confira no documento do carro']]);
+  const situation = status.carLookupSituation(refused, true);
+  assert.deepEqual([situation.tone, situation.text], ['warning', 'PRF: o órgão recusou os dados deste carro (Renavam incorreto).']);
+  assert.deepEqual(problems([refused], [], false), [], 'lookup off: nothing to complain about');
 });
 
 test('every problem belongs to a section of the Avisos tab', () => {

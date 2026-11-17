@@ -43,7 +43,7 @@ export type CarLite = {
   technicianId: string | null;
   licensingDue: string | null;
   insuranceDue: string | null;
-  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | null;
+  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | 'refused' | null;
   finesCheckMessage: string | null;
   /** The data the lookup needs. When these keys are present, what is missing is read from them, never from an old lookup result. */
   renavam?: string | null;
@@ -94,7 +94,7 @@ export function fleetProblems(input: { cars: CarLite[]; fines: FineLite[]; today
     // What is missing is read from the car's data now, not from the result of the last lookup (which only changes at the next one).
     const knowsData = (car: CarLite) => 'renavam' in car || 'state' in car;
     const missing = cars.filter((car) => knowsData(car) && (!car.renavam || !car.state));
-    const wrong = cars.filter((car) => knowsData(car) && car.renavam && car.state && !isValidRenavam(car.renavam));
+    const wrong = cars.filter((car) => knowsData(car) && car.renavam && car.state && (!isValidRenavam(car.renavam) || car.finesCheckStatus === 'refused'));
     const failed = cars.filter((car) => car.finesCheckStatus === 'error' && !missing.includes(car) && !wrong.includes(car));
 
     const group = (list: CarLite[], key: string, one: (plate: string) => string, many: (count: number) => string): Problem | null =>
@@ -111,7 +111,7 @@ export function fleetProblems(input: { cars: CarLite[]; fines: FineLite[]; today
         : null;
 
     const missingRow = group(missing, 'lookup:missing', (plate) => `${plate} está sem Renavam ou estado: a consulta automática não o alcança`, (count) => `${count} carros sem Renavam ou estado: a consulta automática não os alcança`);
-    const wrongRow = group(wrong, 'lookup:wrong', (plate) => `O Renavam de ${plate} parece errado: confira no documento do carro`, (count) => `${count} carros com Renavam que parece errado: confira nos documentos`);
+    const wrongRow = group(wrong, 'lookup:wrong', (plate) => `A placa ou o Renavam de ${plate} parece errado: confira no documento do carro`, (count) => `${count} carros com placa ou Renavam que parece errado: confira nos documentos`);
     if (missingRow) found.push(missingRow);
     if (wrongRow) found.push(wrongRow);
     for (const car of failed) {
@@ -237,7 +237,7 @@ export function automationState(lookup: LookupLite): { tone: Tone; headline: str
 }
 
 export type CarLookupLite = {
-  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | null;
+  finesCheckStatus: 'ok' | 'partial' | 'error' | 'missing_data' | 'refused' | null;
   finesCheckMessage: string | null;
   finesCheckedAt: string | null;
   renavam?: string | null;
@@ -255,6 +255,7 @@ export function carLookupSituation(car: CarLookupLite, lookupEnabled: boolean): 
   if (car.renavam && !isValidRenavam(car.renavam)) {
     return { tone: 'warning', text: 'O Renavam parece errado (o dígito verificador não confere). Confira no documento do carro.' };
   }
+  if (car.finesCheckStatus === 'refused') return { tone: 'warning', text: car.finesCheckMessage ?? 'O órgão recusou a placa ou o Renavam. Confira no documento do carro; ao salvar, ele é consultado de novo.' };
   // The data is complete now: a "missing data" mark left by an earlier lookup is old news; the next lookup takes the car in.
   if (car.finesCheckStatus === 'missing_data' && 'renavam' in car) return { tone: 'neutral', text: 'Dados completos. O carro entra na próxima verificação.' };
   switch (car.finesCheckStatus) {

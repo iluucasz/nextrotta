@@ -20,6 +20,12 @@ export const FINES_LOOKUP_FEATURE = 'fines_lookup';
 export const MANUAL_BUDGET_MS = 160_000;
 export const MANUAL_ATTEMPTS = 2;
 
+/**
+ * "Verificar agora" does not ask again about a car that was looked up successfully this recently (every question is billed, even with no fine):
+ * clicking again moves on to the cars that are missing instead of paying twice for the same answer. The oldest answer goes first.
+ */
+export const MANUAL_RECENT_HOURS = 6;
+
 /** Cars asked about at the same time (each answer waits for an agency, so many at once keeps a fleet inside the time limit of "Verificar agora"). */
 const PARALLEL_CARS = 8;
 
@@ -52,7 +58,7 @@ export type LookupRun = {
 /** `deferred`: cars left for the next lookup because the time budget of this one ran out ("Verificar agora" has 300 s). */
 export type LookupSummary = { cars: number; created: number; failed: number; deferred: number; runId: string | null };
 
-type Car = { id: string; plate: string; renavam: string | null; state: string | null; fines_checked_at: string | null };
+type Car = { id: string; plate: string; renavam: string | null; state: string | null; fines_checked_at: string | null; fines_check_status: string | null };
 
 const brDay = (iso: string) => new Date(Date.parse(iso) - 3 * 3_600_000).toISOString().slice(0, 10).split('-').reverse().join('/');
 const dayStart = (dateKey: string) => `${dateKey}T00:00:00-03:00`;
@@ -174,7 +180,7 @@ async function registerFound(organizationId: string, car: Car, fine: ExternalFin
   return true;
 }
 
-async function markCar(carId: string, status: 'ok' | 'partial' | 'error' | 'missing_data', message: string | null, touchCheckedAt: boolean) {
+async function markCar(carId: string, status: 'ok' | 'partial' | 'error' | 'missing_data' | 'refused', message: string | null, touchCheckedAt: boolean) {
   await sql`
     UPDATE vehicles SET
       fines_check_status = ${status}, fines_check_message = ${message},
@@ -220,22 +226,31 @@ export async function lookupOrganization(
   const summary: LookupSummary = { cars: 0, created: 0, failed: 0, deferred: 0, runId: options.runId ?? null };
   try {
     const cars = (await sql`
-      SELECT id, plate, renavam, state, fines_checked_at FROM vehicles
+      SELECT id, plate, renavam, state, fines_checked_at, fines_check_status FROM vehicles
       WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND status <> 'inactive'
       ORDER BY plate
     `) as unknown as Car[];
 
     const weekStart = Date.parse(dayStart(sundayOnOrBefore(options.today)));
     const toLookUp: Car[] = [];
+    let recentlyChecked = 0;
     for (const car of cars) {
       if (!car.renavam || !car.state) {
         await markCar(car.id, 'missing_data', 'Informe o Renavam e o estado (UF) do carro para consultar as multas.', false);
       } else if (!isValidRenavam(car.renavam)) {
         await markCar(car.id, 'missing_data', 'O Renavam deste carro parece errado (o dígito verificador não confere). Confira o número no documento do carro.', false);
-      } else if (options.mode === 'manual' || !car.fines_checked_at || Date.parse(car.fines_checked_at) < weekStart) {
+      } else if (car.fines_check_status === 'refused') {
+        // The agency refused this plate or Renavam: nothing is asked (and billed) until someone edits the car, which clears the mark.
+      } else if (options.mode === 'manual') {
+        const recent = car.fines_checked_at && Date.now() - Date.parse(car.fines_checked_at) < MANUAL_RECENT_HOURS * 3_600_000;
+        if (recent) recentlyChecked += 1;
+        else toLookUp.push(car);
+      } else if (!car.fines_checked_at || Date.parse(car.fines_checked_at) < weekStart) {
         toLookUp.push(car);
       }
     }
+    // The ones never looked up (or looked up longest ago) go first, so each click moves the fleet forward.
+    toLookUp.sort((a, b) => (a.fines_checked_at ? Date.parse(a.fines_checked_at) : 0) - (b.fines_checked_at ? Date.parse(b.fines_checked_at) : 0));
 
     if (options.mode === 'weekly') {
       if (!toLookUp.length) return summary;
@@ -283,8 +298,13 @@ export async function lookupOrganization(
       errors.forEach((message) => problems.add(message));
       if (succeeded === 0) {
         summary.failed += 1;
-        // Nothing was looked up: not marked as checked, so the next round tries again (a failed query is not billed).
-        await markCar(car.id, 'error', errors.join(' ').slice(0, 500), false);
+        if (answers.some((answer) => !answer.ok && answer.refused)) {
+          // The agency refused the data: it is asked no more until the car is edited.
+          await markCar(car.id, 'refused', errors.join(' ').slice(0, 500), false);
+        } else {
+          // Nothing was looked up: not marked as checked, so the next round tries again (a failed query is not billed).
+          await markCar(car.id, 'error', errors.join(' ').slice(0, 500), false);
+        }
       } else if (errors.length) {
         await markCar(car.id, 'partial', errors.join(' ').slice(0, 500), true);
       } else if (!detranCovered) {
@@ -314,7 +334,11 @@ export async function lookupOrganization(
       const notes = [
         problems.size ? Array.from(problems).join(' ') : '',
         summary.deferred ? `${summary.deferred} ${summary.deferred === 1 ? 'carro ficou' : 'carros ficaram'} para a próxima verificação (acabou o tempo desta).` : '',
-        !problems.size && !summary.deferred && summary.cars === 0 ? 'Nenhum carro com Renavam e estado para consultar.' : '',
+        !problems.size && !summary.deferred && summary.cars === 0
+          ? recentlyChecked > 0
+            ? `Os carros com dados já foram consultados há menos de ${MANUAL_RECENT_HOURS} horas.`
+            : 'Nenhum carro com Renavam e estado para consultar.'
+          : '',
       ].filter(Boolean);
       const message = notes.length ? notes.join(' ').slice(0, 500) : null;
       await finishRun(runId, summary, status, message);
