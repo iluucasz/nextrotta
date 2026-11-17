@@ -190,6 +190,7 @@ type Charge = {
   dueDate: string;
   status: string;
   invoiceUrl: string | null;
+  billingType?: string | null;
 };
 
 type OrganizationUser = {
@@ -1080,6 +1081,7 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
           onCancel={() => statusAction('cancel')}
           canCancel={organization.status !== 'canceled' && organization.status !== 'provisioning'}
           lifetime={organization.lifetime || organization.test}
+          test={organization.test}
           onChanged={detail.reload}
         />
       )}
@@ -1397,6 +1399,7 @@ function SubscriptionTab({
   onCancel,
   canCancel,
   lifetime,
+  test,
   onChanged,
 }: {
   organizationId: string;
@@ -1407,6 +1410,8 @@ function SubscriptionTab({
   onCancel: () => void;
   canCancel: boolean;
   lifetime: boolean;
+  /** Test company: its charges are simulated and are paid and undone by hand. */
+  test: boolean;
   onChanged: () => void;
 }) {
   const notify = useNotify();
@@ -1420,6 +1425,60 @@ function SubscriptionTab({
     billing.reload();
     onChanged();
   }
+
+  async function copyLink(url: string) {
+    try {
+      await navigator.clipboard.writeText(url);
+      notify('Link copiado.');
+    } catch {
+      notify('Não foi possível copiar. Use "Abrir fatura" e copie o endereço.');
+    }
+  }
+
+  async function simulate(chargeId: string, paid: boolean) {
+    try {
+      await billingAction({ action: 'simulate', chargeId, paid }, paid ? 'Marcada como paga (simulado).' : 'Pagamento desfeito.');
+    } catch (reason) {
+      notify(errorMessage(reason));
+    }
+  }
+
+  const generateLink = () =>
+    onEditor({
+      title: 'Gerar link de cobrança',
+      description: 'Cria a cobrança no Asaas (Pix, boleto ou cartão) e copia o link para você enviar. A empresa também a vê em Assinatura.',
+      fields: [
+        {
+          key: 'kind',
+          label: 'Tipo',
+          type: 'select',
+          required: true,
+          options: [
+            { value: 'setup', label: 'Implantação' },
+            { value: 'one_off', label: 'Avulsa' },
+          ],
+        },
+        { key: 'value', label: 'Valor (R$)', type: 'number', hint: 'Em branco na implantação: o que ainda falta dela.' },
+        { key: 'dueDate', label: 'Vencimento', type: 'date', required: true },
+        { key: 'description', label: 'Descrição', hint: 'Opcional.' },
+      ],
+      initial: { kind: 'setup', value: '', dueDate: new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10), description: '' },
+      submit: 'Gerar link',
+      save: async (values) => {
+        const result = await api<{ link: { invoiceUrl: string | null; value: number } | null }>(`/organizations/${organizationId}/billing`, {
+          body: { action: 'link', kind: values.kind, value: values.value === '' ? null : values.value, dueDate: values.dueDate, description: values.description },
+        });
+        billing.reload();
+        onChanged();
+        const url = result.link?.invoiceUrl;
+        if (url) {
+          await navigator.clipboard.writeText(url).catch(() => undefined);
+          notify(`Link de ${money(result.link?.value ?? 0)} gerado e copiado.`);
+        } else {
+          notify('Cobrança criada, mas o Asaas não devolveu o link. Abra a fatura na lista.');
+        }
+      },
+    });
 
   const choosePlan = () =>
     onEditor({
@@ -1541,7 +1600,17 @@ function SubscriptionTab({
         </div>
       </Panel>
       <CouponPanel organizationId={organizationId} onChanged={onChanged} />
-      <Panel title="Cobranças" description="Espelho das cobranças do Asaas, atualizado pelos avisos de pagamento.">
+      <Panel
+        title="Cobranças"
+        description={test ? 'Conta de teste: as parcelas são simuladas. Marque como paga e desfaça à vontade.' : 'Espelho das cobranças do Asaas, atualizado pelos avisos de pagamento.'}
+        action={
+          !lifetime && billingActive ? (
+            <button className="nr-btn primary" onClick={generateLink}>
+              Gerar link de cobrança
+            </button>
+          ) : undefined
+        }
+      >
         {billing.loading && !billing.data ? (
           <Loading />
         ) : billing.error ? (
@@ -1561,13 +1630,28 @@ function SubscriptionTab({
               { key: 'value', label: 'Valor', render: (row) => money(row.value) },
               { key: 'statusText', label: 'Estado', render: (row) => <Badge>{row.statusText}</Badge> },
             ]}
-            actions={(row) =>
-              row.invoiceUrl ? (
-                <a href={row.invoiceUrl} target="_blank" rel="noopener noreferrer">
-                  Abrir fatura
-                </a>
-              ) : null
-            }
+            actions={(row) => {
+              if (test && row.billingType === 'SIMULATED') {
+                const paid = ['RECEIVED', 'CONFIRMED', 'RECEIVED_IN_CASH'].includes(row.status);
+                return (
+                  <button className="nr-btn" onClick={() => void simulate(row.id, !paid)}>
+                    {paid ? 'Desfazer pagamento' : 'Marcar como paga'}
+                  </button>
+                );
+              }
+              const url = row.invoiceUrl;
+              if (!url) return null;
+              return (
+                <span className="nr-actions">
+                  <a href={url} target="_blank" rel="noopener noreferrer">
+                    Abrir fatura
+                  </a>
+                  <button className="nr-btn" onClick={() => void copyLink(url)}>
+                    Copiar link
+                  </button>
+                </span>
+              );
+            }}
             emptyText="Nenhuma cobrança ainda. Elas aparecem depois de ativar a cobrança."
           />
         )}

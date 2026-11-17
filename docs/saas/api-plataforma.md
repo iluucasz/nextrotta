@@ -68,7 +68,7 @@ Ações registradas hoje: `organization.created|updated|suspend|reactivate|cance
 | `GET /organizations/:id/subscription` | — | `{ subscription }` com `value` (base + técnicos extras − descontos), `extraTechnicians`, `setupFeeStatus`, `graceDays`, `limitOverrides` |
 | `PUT /organizations/:id/subscription` | `{ planId, cycle: "monthly"\|"annual", discountPercent?, discountAmount?, setupFee?, chargeSetupFee?, graceDays?, limitOverrides? }` | `{ subscription, syncWarning }` — `syncWarning` traz o motivo se o Asaas recusou o novo valor |
 | `GET /organizations/:id/billing` | — | `{ subscription, charges }` |
-| `POST /organizations/:id/billing` | `{ action: "activate", firstDueDate? }` cria cliente, implantação e assinatura no Asaas (exige CNPJ/CPF); `{ action: "sync" }` reenvia o valor e puxa as cobranças | `{ subscription, charges }` |
+| `POST /organizations/:id/billing` | `{ action: "activate", firstDueDate? }` cria cliente, implantação e assinatura no Asaas (exige CNPJ/CPF); `{ action: "sync" }` reenvia o valor e puxa as cobranças; `{ action: "link", kind: "setup"\|"one_off", value?, dueDate?, description? }` gera um link de cobrança no Asaas (implantação: em branco = o que falta; devolve `link.invoiceUrl`); `{ action: "simulate", chargeId, paid }` marca como paga/desfaz parcela simulada (só conta de teste) | `{ subscription, charges }` |
 | `POST /billing/maintenance` | — | `{ suspended: [ids] }` — roda agora a checagem de inadimplência (o worker roda todo dia às 6h) |
 
 A criação de organização aceita `subscription` com os mesmos campos do `PUT`; a etapa "plano" do provisionamento aplica.

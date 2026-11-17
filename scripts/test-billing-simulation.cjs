@@ -92,6 +92,14 @@ test('flow: a charge of another company cannot be paid', async () => {
   await assert.rejects(simulation.setSimulatedPayment(mine, charge.id, true, null), /não encontrada/);
 });
 
+test('flow: a payment link is refused for a test company and for one whose billing is not active (nothing reaches the gateway)', async () => {
+  const testOrg = await makeOrg('f');
+  const realOrg = await makeOrg('g', { testOrg: false });
+  const billing = require('../lib/billing/billing.ts');
+  await assert.rejects(billing.createPaymentLink(testOrg, { kind: 'setup' }, { id: null }), /teste/);
+  await assert.rejects(billing.createPaymentLink(realOrg, { kind: 'setup' }, { id: null }), /Ative a cobrança/);
+});
+
 after(() => {
   if (created.length) console.log(`test companies: ${created.length} (zz-teste-simulacao-*-${stamp})`);
 });

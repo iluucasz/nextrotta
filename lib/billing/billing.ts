@@ -432,6 +432,65 @@ export async function buyCreditPackage(organizationId: string, packageId: string
 }
 
 /**
+ * The owner makes a payment link for the company: the setup fee (what is still missing of it) or any other charge.
+ * It is a normal charge of the gateway (mirrored here, the company sees it in Assinatura); the owner copies the link and sends it.
+ */
+export async function createPaymentLink(
+  organizationId: string,
+  input: { kind: 'setup' | 'one_off'; value?: number | null; dueDate?: string | null; description?: string | null },
+  actor: Actor,
+) {
+  const context = await loadContext(organizationId);
+  if (context.unbilled) throw new PlatformError('Esta empresa é vitalícia ou de teste: não há cobrança real. Na conta de teste, marque as parcelas como pagas na própria lista.', 409);
+  if (!context.asaas_customer_id) throw new PlatformError('Ative a cobrança da empresa (botão "Ativar cobrança") antes de gerar links.', 409);
+
+  const today = brasiliaToday();
+  const dueDate = input.dueDate || addDays(today, 3);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dueDate) || dueDate < today) throw new PlatformError('Informe um vencimento a partir de hoje.');
+
+  let value = Number(input.value ?? 0);
+  let description = String(input.description ?? '').trim();
+  let externalReference = `${organizationId}:link:${Date.now()}`;
+
+  if (input.kind === 'setup') {
+    // Default: what is still missing of the setup fee (the fee minus the parcels already charged).
+    const [charged] = await sql`
+      SELECT COALESCE(SUM(value), 0)::float AS total, COUNT(*)::int AS count FROM billing_charges
+      WHERE organization_id = ${organizationId} AND kind = 'setup' AND status NOT IN ('DELETED', 'CANCELED', 'REFUNDED')
+    `;
+    if (!(value > 0)) value = Math.round((Number(context.setup_fee) - Number(charged.total)) * 100) / 100;
+    if (!(value > 0)) throw new PlatformError('A implantação já está toda cobrada. Informe um valor se quiser outra cobrança.');
+    description ||= 'NextRotta — implantação';
+    // The very first setup charge keeps the plain reference (paying it releases the account); later ones are numbered.
+    externalReference = Number(charged.count) === 0 ? `${organizationId}:setup` : `${organizationId}:setup:${Number(charged.count) + 1}`;
+  } else {
+    if (!(value > 0)) throw new PlatformError('Informe o valor da cobrança.');
+    description ||= 'NextRotta — cobrança avulsa';
+  }
+  if (value > 1_000_000) throw new PlatformError('Valor alto demais. Confira.');
+
+  const payment = await createPayment({
+    customer: String(context.asaas_customer_id),
+    value,
+    dueDate,
+    description,
+    externalReference,
+  }).catch(asPlatformError);
+  await upsertCharge(organizationId, payment);
+
+  await recordAudit({
+    organizationId,
+    actorId: actor.id,
+    actorRole: 'platform_owner',
+    action: 'billing.link_created',
+    targetType: 'billing_charge',
+    targetId: payment.id,
+    details: { kind: input.kind, value, dueDate },
+  });
+  return { invoiceUrl: payment.invoiceUrl ?? null, value, dueDate };
+}
+
+/**
  * Pushes the current value (and cycle) to the gateway — after technicians come and go, or the plan,
  * cycle or discounts change. Pending charges are updated too. No-op without an active subscription.
  */
