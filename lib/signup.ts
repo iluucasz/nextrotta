@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { ensureAcceptanceCertificate } from './legal/certificate';
 import { recordAudit } from './audit';
 import { hashPassword } from './auth';
 import { createLoginHandoff } from './auth-handoff';
@@ -212,6 +213,8 @@ export async function signUp(input: Record<string, unknown>, sourceIp: string | 
   }
 
   await grantBonusCredits(organizationId, plan.aiBonusCredits);
+  // The certificate of the acceptance given at signup (best effort: it never fails the signup).
+  await ensureAcceptanceCertificate(organizationId);
   await recordAudit({
     organizationId,
     actorId: adminId,

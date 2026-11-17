@@ -22,6 +22,7 @@ import {
   type OrganizationStatusKey,
 } from './api';
 import { AuditTable } from './audit';
+import { LegalTab } from './legal-tab';
 import { CouponPanel, CreditsTab, CustomFeaturesPanel, DataTab, OrganizationBugsTab } from './organization-tabs';
 import { OrganizationCostsTab } from './organization-costs';
 import { OrganizationStoragePanel } from './organization-storage';
@@ -956,7 +957,7 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
         ),
     });
 
-  const tabs = ['Resumo', 'Assinatura', 'Limites e recursos', 'Custos', 'Créditos de IA', 'Usuários', 'Configurações', 'Integrações', 'Dados', 'Auditoria', 'Reports', 'Anotações'];
+  const tabs = ['Resumo', 'Assinatura', 'Limites e recursos', 'Custos', 'Créditos de IA', 'Usuários', 'Configurações', 'Integrações', 'Dados', 'Termos', 'Auditoria', 'Reports', 'Anotações'];
   const storageMb = Math.round((Number(usage.storageBytes) / (1024 * 1024)) * 10) / 10;
 
   return (
@@ -1366,6 +1367,8 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
       )}
 
       {tab === 'Dados' && <DataTab organizationId={id} />}
+
+      {tab === 'Termos' && <LegalTab organizationId={id} />}
 
       {tab === 'Auditoria' && (
         <Panel title="Auditoria da organização">

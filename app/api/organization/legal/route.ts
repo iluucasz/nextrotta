@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { recordAudit } from '@/lib/audit';
 import { verifyOrganizationAuth } from '@/lib/auth';
 import { acceptancesOf, recordAcceptances } from '@/lib/legal/acceptance';
+import { ensureAcceptanceCertificate } from '@/lib/legal/certificate';
 import { ACCOUNT_DOCUMENTS, LEGAL_DOCUMENTS, isLegalDocument, pendingDocuments, type LegalDocument } from '@/lib/legal/versions';
 import { clientIp } from '@/lib/security/throttle';
 import { rootUrl } from '@/lib/tenant-host';
@@ -63,6 +64,8 @@ export async function POST(request: NextRequest) {
       targetId: auth.organizationId,
       details: { documents: documents.map((key) => ({ key, version: LEGAL_DOCUMENTS[key].version })) },
     });
+    // The certificate of acceptance is made and kept in the company's Biblioteca after the answer (a failure there never undoes the acceptance).
+    after(() => ensureAcceptanceCertificate(auth.organizationId));
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error('[organization/legal] accept error:', error);
