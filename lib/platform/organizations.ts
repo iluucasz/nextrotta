@@ -7,6 +7,7 @@ import { cancelBilling } from '../billing/billing';
 import { checkLimit } from '../billing/entitlements';
 import { sql } from '../db';
 import { mercadoPagoMissingConfig } from '../mercadopago/config';
+import { providerToken } from '../vehicles/fines-provider';
 import { getOrganizationSettings, saveOrganizationSettings } from '../organization-settings-store';
 import { applyPayPreset, isPayPreset } from '../pay-presets';
 import { calculateSubscriptionValue, type BillingCycle } from '../plans';
@@ -117,7 +118,7 @@ export async function getOrganizationDetail(organizationId: string) {
   // Live WhatsApp state (stored by getInstanceStatus) instead of whatever was last saved.
   await getInstanceStatus(organizationId).catch(() => null);
 
-  const [usage, porto, whatsapp, settings, provisioning, subscription, mercadoPago] = await Promise.all([
+  const [usage, porto, whatsapp, settings, provisioning, subscription, mercadoPago, finesLookup] = await Promise.all([
     sql`
       SELECT
         (SELECT COUNT(*)::int FROM technicians WHERE organization_id = ${organizationId}
@@ -159,6 +160,19 @@ export async function getOrganizationDetail(organizationId: string) {
       FROM mercadopago_accounts
       WHERE organization_id = ${organizationId} AND disconnected_at IS NULL
     `,
+    // Consulta automática de multas (App Carros): granted by the owner (custom feature), paused or not by the company, and how it is going.
+    sql`
+      SELECT
+        EXISTS (SELECT 1 FROM organization_features WHERE organization_id = ${organizationId} AND feature_key = 'fines_lookup' AND revoked_at IS NULL) AS granted,
+        COALESCE((SELECT auto_enabled FROM fines_lookup_settings WHERE organization_id = ${organizationId}), TRUE) AS "autoEnabled",
+        (SELECT COUNT(*)::int FROM vehicles WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND status <> 'inactive') AS cars,
+        (SELECT COUNT(*)::int FROM vehicles WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND status <> 'inactive'
+           AND renavam IS NOT NULL AND state IS NOT NULL) AS "carsWithData",
+        (SELECT started_at FROM fines_lookup_runs WHERE organization_id = ${organizationId} ORDER BY started_at DESC LIMIT 1) AS "lastRunAt",
+        (SELECT status FROM fines_lookup_runs WHERE organization_id = ${organizationId} ORDER BY started_at DESC LIMIT 1) AS "lastRunStatus",
+        (SELECT COUNT(*)::int FROM fines_lookup_runs WHERE organization_id = ${organizationId}
+          AND started_at >= date_trunc('month', NOW() AT TIME ZONE 'America/Sao_Paulo') AT TIME ZONE 'America/Sao_Paulo') AS "runsThisMonth"
+    `,
   ]);
   const access = await getAccessById(organizationId);
 
@@ -169,6 +183,7 @@ export async function getOrganizationDetail(organizationId: string) {
       porto: porto[0] ?? { configured: false, automationEnabled: false },
       whatsapp: whatsapp[0] ?? { enabled: false },
       mercadoPago: { ...mercadoPago[0], platformMissing: mercadoPagoMissingConfig() },
+      finesLookup: { ...finesLookup[0], providerConfigured: Boolean(providerToken()) },
     },
     settings,
     provisioning,

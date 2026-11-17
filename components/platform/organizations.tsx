@@ -166,6 +166,16 @@ type OrganizationDetailData = {
       lastError?: string | null;
       platformMissing: string[];
     };
+    finesLookup: {
+      granted: boolean;
+      autoEnabled: boolean;
+      cars: number;
+      carsWithData: number;
+      lastRunAt: string | null;
+      lastRunStatus: 'running' | 'ok' | 'partial' | 'error' | null;
+      runsThisMonth: number;
+      providerConfigured: boolean;
+    };
   };
   settings: OrganizationSettings;
   provisioning: Provisioning | null;
@@ -1315,6 +1325,43 @@ export function OrganizationDetail({ id }: { id: string; access?: boolean }) {
                 ) : null}
               </p>
               {integrations.mercadoPago.lastError && <p className="nr-error text-xs">{integrations.mercadoPago.lastError}</p>}
+            </div>
+          </Panel>
+          <Panel title="Consulta de multas">
+            <div className="nr-pad">
+              <Badge tone={integrations.finesLookup.granted ? 'good' : 'warn'}>{integrations.finesLookup.granted ? 'Ligada para a empresa' : 'Desligada'}</Badge>
+              {integrations.finesLookup.granted ? (
+                <div className="nr-statelines">
+                  <StateLine label="Verificação de domingo" state={integrations.finesLookup.autoEnabled ? 'on' : 'off'}>
+                    {integrations.finesLookup.autoEnabled ? 'Ligada' : 'Pausada pela empresa'}
+                  </StateLine>
+                </div>
+              ) : null}
+              <p className="my-4 text-xs">
+                {integrations.finesLookup.carsWithData} de {integrations.finesLookup.cars} carro(s) com Renavam e estado
+                <br />
+                Última verificação: {date(integrations.finesLookup.lastRunAt, true)}
+                {integrations.finesLookup.lastRunStatus ? ` (${{ running: 'em andamento', ok: 'concluída', partial: 'com falhas', error: 'falhou' }[integrations.finesLookup.lastRunStatus]})` : ''}
+                <br />
+                Verificações no mês: {integrations.finesLookup.runsThisMonth}
+                {!integrations.finesLookup.providerConfigured ? (
+                  <>
+                    <br />
+                    Falta INFOSIMPLES_TOKEN no ambiente
+                  </>
+                ) : null}
+              </p>
+              <button
+                className={`nr-btn${integrations.finesLookup.granted ? '' : ' primary'}`}
+                onClick={() =>
+                  void act(
+                    () => api(`/organizations/${id}/features`, { method: 'PUT', body: { key: 'fines_lookup', enabled: !integrations.finesLookup.granted } }),
+                    integrations.finesLookup.granted ? 'Consulta de multas desligada para a empresa.' : 'Consulta de multas ligada para a empresa.',
+                  )
+                }
+              >
+                {integrations.finesLookup.granted ? 'Desligar para esta empresa' : 'Ligar para esta empresa'}
+              </button>
             </div>
           </Panel>
           <Panel title="Armazenamento">
