@@ -76,13 +76,28 @@ export function normalizeAmount(value: unknown): number {
   return Number(text);
 }
 
-function normalizeMonth(value: unknown, fallback: string): string {
+const MONTH_NAMES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+
+const monthKey = (year: number | string, month: number | string) => `${year}-${String(month).padStart(2, '0')}`;
+const fullYear = (year: string) => (year.length === 2 ? `20${year}` : year);
+
+/**
+ * "2026-11", "11/2026", "11/26", "nov/26", "novembro 2026", "10/11/2026" or a date cell to "2026-11"; anything else stays as typed.
+ * Excel turns a typed "06/2026" into a real date shown as "jun/26", so a Date is the common case here, not the exception.
+ */
+export function normalizeMonth(value: unknown, fallback: string): string {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return monthKey(value.getFullYear(), value.getMonth() + 1);
   const text = String(value ?? '').trim();
   if (!text) return fallback;
-  const iso = text.match(/^(\d{4})-(\d{1,2})/);
-  if (iso) return `${iso[1]}-${iso[2].padStart(2, '0')}`;
-  const br = text.match(/^(\d{1,2})\/(\d{4})$/);
-  if (br) return `${br[2]}-${br[1].padStart(2, '0')}`;
+  const iso = text.match(/^(\d{4})[-/](\d{1,2})/);
+  if (iso) return monthKey(iso[1], iso[2]);
+  const day = text.match(/^\d{1,2}\/(\d{1,2})\/(\d{4})$/);
+  if (day) return monthKey(day[2], day[1]);
+  const numeric = text.match(/^(\d{1,2})[/-](\d{2}|\d{4})$/);
+  if (numeric) return monthKey(fullYear(numeric[2]), numeric[1]);
+  const named = fold(text).match(/^([a-z]{3,})(?: (\d{2}|\d{4}))?$/);
+  const index = named ? MONTH_NAMES.indexOf(named[1].slice(0, 3)) : -1;
+  if (named && named[2] && index >= 0) return monthKey(fullYear(named[2]), index + 1);
   return text;
 }
 

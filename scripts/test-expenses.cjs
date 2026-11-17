@@ -222,3 +222,29 @@ test('the spreadsheet: headers, dates and amounts are read the way people write 
   assert.deepEqual(rows.slice(2).map((row) => Boolean(row.problem)), [true, true, true, true]);
   assert.equal(rows[0].line, 2);
 });
+
+test('the competence column: Excel turns a typed "06/2026" into a date shown as "jun/26", and that must still read as 2026-06', () => {
+  const imp = require('../lib/expenses-import.ts');
+  const fallback = '2026-01';
+  // What the real sheet had (17/11/2026): a date cell, a text "jun/26", and the forms the template asks for.
+  assert.equal(imp.normalizeMonth(new Date(2026, 5, 1), fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('jun/26', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('Jun/2026', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('junho 2026', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('mar-26', fallback), '2026-03');
+  assert.equal(imp.normalizeMonth('06/26', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('6/2026', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('06/2026', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('2026-06', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('2026/06', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('15/06/2026', fallback), '2026-06');
+  assert.equal(imp.normalizeMonth('', fallback), fallback);
+  assert.equal(imp.normalizeMonth('qualquer coisa', fallback), 'qualquer coisa', 'what cannot be read stays as typed, so it is flagged');
+  assert.equal(imp.normalizeMonth('junho', fallback), 'junho', 'a month name without a year is not guessed');
+
+  const [row] = imp.parseImportRows([{ Tipo: 'A pagar', 'Descrição': 'FJTS', Valor: 'R$ 3.300,29', Vencimento: '01/06/2026', 'Competência': new Date(2026, 5, 1), Status: 'Pago' }]);
+  assert.equal(row.problem, null);
+  assert.equal(row.values.competence_month, '2026-06');
+  const [text] = imp.parseImportRows([{ Tipo: 'A pagar', 'Descrição': 'FJTS', Valor: 100, Vencimento: '01/06/2026', 'Competência': 'jun/26' }]);
+  assert.equal(text.problem, null);
+});
