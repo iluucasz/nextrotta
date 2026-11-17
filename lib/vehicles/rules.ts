@@ -37,6 +37,20 @@ export const BRAZIL_STATES = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',
 ] as const;
 
+/**
+ * Whether a Renavam has a correct check digit (9 to 11 digits; the old 9-digit ones count with leading zeros). The fines provider
+ * charges for a lookup it refuses, so a mistyped number is caught here instead of paid for.
+ */
+export function isValidRenavam(input: unknown): boolean {
+  const digits = normalizeRenavam(input);
+  if (digits.length < 9 || digits.length > 11) return false;
+  const padded = digits.padStart(11, '0');
+  const weights = [3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
+  const sum = weights.reduce((total, weight, index) => total + weight * Number(padded[index]), 0);
+  const check = (sum * 10) % 11 === 10 ? 0 : (sum * 10) % 11;
+  return check === Number(padded[10]);
+}
+
 /** Chassis (VIN): 17 characters, never I, O or Q. */
 export function normalizeChassis(input: unknown): string {
   return String(input ?? '')

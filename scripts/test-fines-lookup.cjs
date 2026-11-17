@@ -34,6 +34,16 @@ test('dates from the provider are read as Brasília time', () => {
   assert.equal(provider.parseProviderDate(''), null);
 });
 
+test('a Renavam is checked by its digit before a paid lookup is spent on it', () => {
+  const { isValidRenavam } = carRules;
+  assert.equal(isValidRenavam('639884962'), true, 'an old 9-digit Renavam');
+  assert.equal(isValidRenavam('00639884962'), true);
+  assert.equal(isValidRenavam('123.456.789-00'), true);
+  assert.equal(isValidRenavam('12345678901'), false, 'the provider refused this one for its digit');
+  assert.equal(isValidRenavam('1234'), false);
+  assert.equal(isValidRenavam(''), false);
+});
+
 test('the Detran-MS answer becomes our fines', () => {
   const { sources } = provider.sourcesFor('MS');
   assert.deepEqual(sources.map((source) => source.key), ['detran-ms', 'prf']);
@@ -70,7 +80,7 @@ test('the provider call sends the token and the car, reads the answer and never 
     calls.push({ url, body: String(init.body) });
     return { status, json: async () => body };
   };
-  const car = { plate: 'ABC1D23', renavam: '12345678901', state: 'MS' };
+  const car = { plate: 'ABC1D23', renavam: '12345678900', state: 'MS' };
   const source = provider.sourcesFor('MS').sources[0];
 
   const ok = await provider.createProviderFetcher('SEGREDO', answer({ code: 200, data: [{ multas: [{ auto: 'A1', datahora: '10/11/2026 09:00', valor: '100,00' }] }] }))(source, car);
@@ -78,7 +88,15 @@ test('the provider call sends the token and the car, reads the answer and never 
   assert.equal(ok.fines.length, 1);
   assert.match(calls[0].url, /\/consultas\/detran\/ms\/multas$/);
   const sent = new URLSearchParams(calls[0].body);
-  assert.deepEqual([sent.get('token'), sent.get('placa'), sent.get('renavam')], ['SEGREDO', 'ABC1D23', '12345678901']);
+  assert.deepEqual([sent.get('token'), sent.get('placa'), sent.get('renavam')], ['SEGREDO', 'ABC1D23', '12345678900']);
+
+  const notEnabled = await provider.createProviderFetcher('SEGREDO', answer({ code: 603, code_message: 'O token informado não tem autorização', errors: ["Consulta 'detran/ms/multas' não habilitada para a sua conta."] }))(source, car);
+  assert.equal(notEnabled.ok, false);
+  assert.match(notEnabled.message, /ainda não foi habilitada pelo NextRotta/);
+  assert.doesNotMatch(notEnabled.message, /conta|SEGREDO/, 'the platform account details stay out of the company screen');
+
+  const invalid = await provider.createProviderFetcher('SEGREDO', answer({ code: 607, code_message: 'Parâmetro(s) inválido(s).: placa, renavam.', errors: ['RENAVAM inválido'] }))(source, car);
+  assert.match(invalid.message, /inválido\(s\).*RENAVAM inválido.*607/);
 
   const refused = await provider.createProviderFetcher('SEGREDO', answer({ code: 612, code_message: 'Renavam não encontrado' }))(source, car);
   assert.equal(refused.ok, false);
@@ -124,7 +142,7 @@ test('setup: a company with a car that has its data, one that does not, and a hi
   const org = await newOrg('a');
   actor = { organizationId: org, userId: null, role: 'admin', impersonationId: null };
   ana = (await sql`INSERT INTO technicians (organization_id, name, email, status) VALUES (${org}, 'Ana', ${`ana-${stamp}@exemplo.com`}, 'active') RETURNING id`)[0].id;
-  carMs = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'ABC1D23', renavam: '12345678901', state: 'ms' }).value, null);
+  carMs = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'ABC1D23', renavam: '12345678900', state: 'ms' }).value, null);
   carNoData = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'XYZ9K88' }).value, null);
   await sql`INSERT INTO vehicle_assignments (organization_id, vehicle_id, technician_id, assigned_at, released_at) VALUES (${org}, ${carMs}, ${ana}, '2026-09-01T12:00:00Z', '2026-11-01T12:00:00Z')`;
 });
@@ -161,6 +179,16 @@ test('a fine the company removed is not brought back by the next lookup', { skip
   assert.equal((await fines()).length, 0);
 });
 
+test('a car whose Renavam fails its check digit is flagged and never sent to the paid provider', { skip: !hasDatabase }, async () => {
+  const bad = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'GHI3J45', renavam: '12345678901', state: 'MS' }).value, null);
+  calls = [];
+  await sync.lookupOrganization(actor.organizationId, fetcher, { today: '2026-11-30', minIntervalMinutes: 0 });
+  assert.equal(calls.some((call) => call.endsWith(':GHI3J45')), false, 'nothing was asked about it');
+  const row = await car(bad);
+  assert.equal(row.fines_check_status, 'missing_data');
+  assert.match(row.fines_check_message, /dígito verificador/);
+});
+
 test('a failed lookup is recorded and tried again next round; a partial one is kept', { skip: !hasDatabase }, async () => {
   await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE id = ${carMs}`;
   answers = { 'detran-ms': { ok: false, message: 'Detran-MS: fora do ar (código 600).' }, prf: { ok: false, message: 'PRF: fora do ar.' } };
@@ -177,7 +205,7 @@ test('a failed lookup is recorded and tried again next round; a partial one is k
 });
 
 test('"consultar agora" stops at the limit and says more is waiting', { skip: !hasDatabase }, async () => {
-  const second = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'DEF2G34', renavam: '98765432109', state: 'RJ' }).value, null);
+  const second = await vehicles.createVehicle(actor, carRules.parseVehicleInput({ plate: 'DEF2G34', renavam: '98765432103', state: 'RJ' }).value, null);
   await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId}`;
   answers = {};
   const result = await sync.lookupOrganization(actor.organizationId, fetcher, { today: '2026-12-02', minIntervalMinutes: 30, maxCars: 1 });

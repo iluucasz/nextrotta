@@ -1,10 +1,11 @@
 // The paid provider that looks fines up in the Detrans (Infosimples). Everything that depends on the provider's API lives HERE:
 // the endpoints, the parameters and the field names of each answer. Relative imports only: the worker compiles this file.
 //
-// NOT CONFIRMED AGAINST THE REAL API YET (its documentation is behind the customer login): the endpoint format
-// (/api/v2/consultas/<path>), the token and the envelope ({ code, code_message, data: [...] }) follow the provider's usual pattern, and the
-// field names come from the "Dados retornados" list of each query's public page. The first real call (the free R$ 100 credit) decides:
-// adjust only this file (and fines-provider tests) if something differs.
+// CONFIRMED with real calls (16/11/2026): the endpoint (/api/v2/consultas/<path>, POST with the token), the envelope ({ code,
+// code_message, errors, header: { billable, price }, data: [...] }), code 603 (query not enabled on the account: each query is
+// enabled by a form on the provider's site) and 607 (invalid parameter, e.g. a Renavam with a wrong check digit; it IS charged).
+// NOT CONFIRMED yet: the fields of a real list of fines. They come from the "Dados retornados" list of each query's public page,
+// and need a real car with fines to be checked. Adjust only this file (and its tests) if something differs.
 import { parseAmount } from './fines-rules';
 
 /** A fine as the provider reports it, already in our terms. */
@@ -155,7 +156,14 @@ export function createProviderFetcher(token: string, fetchImpl: typeof fetch = f
       const body = (await response.json().catch(() => null)) as { code?: number; code_message?: string; errors?: unknown; data?: unknown } | null;
       if (!body || typeof body.code !== 'number') return { ok: false, message: `${source.label}: resposta inesperada do provedor (HTTP ${response.status}).` };
       if (body.code !== 200) {
-        const detail = text(body.code_message) || (Array.isArray(body.errors) ? text(body.errors[0]) : '');
+        const first = Array.isArray(body.errors) ? text(body.errors[0]) : '';
+        // 603: this query is not enabled on the platform's provider account (or the token lost its access): the company can do
+        // nothing about it, and the text of the provider carries the platform's own account details, so it goes to the log only.
+        if (body.code === 603) {
+          console.error(`[carros] ${source.key}: o provedor recusou o acesso (603): ${first || text(body.code_message)}`);
+          return { ok: false, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` };
+        }
+        const detail = [text(body.code_message), first].filter((part, index, all) => part && !all.slice(0, index).some((other) => other.includes(part))).join(' ');
         return { ok: false, message: `${source.label}: ${detail || 'o provedor não conseguiu consultar'} (código ${body.code}).` };
       }
       const data = Array.isArray(body.data) ? body.data[0] : body.data;

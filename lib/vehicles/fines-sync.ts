@@ -6,7 +6,7 @@ import { sql } from '../db';
 import { createNotification } from '../notifications';
 import { createProviderFetcher, providerToken, sourcesFor, type ExternalFine, type Fetcher } from './fines-provider';
 import { suggestDriver } from './fines-rules';
-import { formatPlate } from './rules';
+import { formatPlate, isValidRenavam } from './rules';
 
 /** The feature (granted by the owner, company by company) that turns the automatic lookup on. */
 export const FINES_LOOKUP_FEATURE = 'fines_lookup';
@@ -93,6 +93,10 @@ export async function lookupOrganization(
   for (const car of cars) {
     if (!car.renavam || !car.state) {
       await markCar(car.id, 'missing_data', 'Informe o Renavam e o estado (UF) do carro para consultar as multas.', false);
+      continue;
+    }
+    if (!isValidRenavam(car.renavam)) {
+      await markCar(car.id, 'missing_data', 'O Renavam deste carro parece errado (o dígito verificador não confere). Confira o número no documento do carro.', false);
       continue;
     }
     if (car.fines_checked_at && Date.now() - Date.parse(car.fines_checked_at) < options.minIntervalMinutes * 60_000) {
