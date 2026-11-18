@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ArrowDownToLine, ArrowUpFromLine, Download, Loader2, PackagePlus, Search, ShoppingCart, SlidersHorizontal } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { Button } from '@/components/ui/button';
 import type { MovementKind } from '@/lib/parts/types';
 import { Alert, Field, formatDateTime, inputClass, partsApi, Spinner, useParts } from '../shared';
@@ -181,6 +180,7 @@ export function MovementsTab() {
         Observação: row.note ?? '',
         'Registrado por': row.createdByName ?? '',
       }));
+      const XLSX = await import('xlsx');
       const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(book, XLSX.utils.json_to_sheet(sheetRows), 'Movimentações');
       XLSX.writeFile(book, `movimentacoes-pecas-${from || 'inicio'}-a-${to || 'hoje'}.xlsx`);

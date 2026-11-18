@@ -2,7 +2,6 @@
 
 import { useState } from 'react';
 import { Download, Loader2, MessageCircle, RefreshCw, XCircle } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { DataPanel } from '@/components/data-panel';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
@@ -33,7 +32,8 @@ export function SalesTab() {
     cost: valid.reduce((sum, sale) => sum + (sale.totalCost ?? 0), 0),
   };
 
-  function exportSheet() {
+  async function exportSheet() {
+    const XLSX = await import('xlsx');
     const rows = sales.flatMap((sale) =>
       sale.items.map((item) => ({
         Venda: sale.number,

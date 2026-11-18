@@ -8,6 +8,8 @@ const BASE_URLS = {
   production: 'https://api.asaas.com/v3',
 };
 
+const ASAAS_TIMEOUT_MS = 25_000;
+
 export class AsaasError extends Error {
   constructor(message: string, public status: number) {
     super(message);
@@ -23,16 +25,26 @@ function config() {
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const { apiKey, baseUrl } = config();
-  const response = await fetch(`${baseUrl}${path}`, {
-    method,
-    headers: {
-      access_token: apiKey,
-      'Content-Type': 'application/json',
-      'User-Agent': 'NextRotta',
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    cache: 'no-store',
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${baseUrl}${path}`, {
+      method,
+      headers: {
+        access_token: apiKey,
+        'Content-Type': 'application/json',
+        'User-Agent': 'NextRotta',
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      cache: 'no-store',
+      // A gateway that never answers must not hold the page (or the checkout) until the platform kills the function.
+      signal: AbortSignal.timeout(ASAAS_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error instanceof Error && (error.name === 'TimeoutError' || error.name === 'AbortError')) {
+      throw new AsaasError('O Asaas demorou para responder. Tente de novo em instantes.', 504);
+    }
+    throw error;
+  }
 
   const data = await response.json().catch(() => ({}));
   if (!response.ok) {

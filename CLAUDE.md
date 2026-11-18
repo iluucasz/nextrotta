@@ -128,6 +128,7 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/calculo-folha.md` — exemplo do cálculo da folha.
 - `docs/assistente-ia.md` — assistente de IA (DeepSeek): consultas, créditos, sugestões.
 - `docs/onboarding-cliente.md` — como entregar a plataforma a um cliente novo.
+- `docs/desempenho.md` — análise de desempenho de 18/11/2026: o que já existia, o que foi feito (região `gru1` em `vercel.json`, cache de sessão no cliente, histórico de OS em blocos) e o que fica para depois (paginar `/api/services`, streaming do assistente).
 - `docs/custos-10-25-clientes.md` — estimativa de custos de infraestrutura para 10 a 25 clientes.
 
 ## Padrão de design das telas (admin e técnico)

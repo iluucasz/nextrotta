@@ -1,7 +1,6 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import {
   Archive,
   Download,
@@ -1257,7 +1256,8 @@ function ImportForm({ onSaved }: { onSaved: (message: string) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  function downloadTemplate() {
+  async function downloadTemplate() {
+    const XLSX = await import('xlsx');
     const sheet = XLSX.utils.aoa_to_sheet([TEMPLATE_COLUMNS, ['Torneira de cozinha cromada', '7891234567890', '', 'Hidráulica', 'Marca X', 'un', '50,00', '75,00', '100,00', '5', '100']]);
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(book, sheet, 'Peças');
@@ -1268,6 +1268,7 @@ function ImportForm({ onSaved }: { onSaved: (message: string) => void }) {
     setError('');
     setFileName(file.name);
     try {
+      const XLSX = await import('xlsx');
       const book = XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet = book.Sheets[book.SheetNames[0]];
       const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: false });

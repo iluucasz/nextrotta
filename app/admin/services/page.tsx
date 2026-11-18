@@ -1,6 +1,6 @@
 'use client';
 
-import { type ChangeEvent, type ClipboardEvent, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type ClipboardEvent, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
 import { AlertTriangle, CheckCircle2, CircleHelp, ClipboardPaste, Download, FileSpreadsheet, MoreHorizontal, PencilLine, Plus, Search, Trash2, UploadCloud, Users, Wrench } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
@@ -40,6 +40,8 @@ const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
 const importStageOrder = ['prepare', 'upload', 'process', 'finalize'] as const;
 /** Read when used, not at module load: the page can stay open across a month change. */
 const currentCompetenceMonth = () => brasiliaDateKey().slice(0, 7);
+
+const SERVICE_ROWS_PER_PAGE = 100;
 
 type ImportStageKey = (typeof importStageOrder)[number];
 type BulkDeletePeriod = 'monthly' | ServiceFortnight;
@@ -485,7 +487,26 @@ export default function AdminServicesPage() {
     return periods.filter((period) => servicesWithDetails.some((service) => service.fortnight_period === period));
   }, [servicesWithDetails]);
 
+  // The searchable text of each OS is worked out once per list, not once per keystroke.
+  const searchIndex = useMemo(
+    () =>
+      new Map(
+        servicesWithDetails.map((service) => [
+          service.id,
+          normalizeText(
+            `${service.order_code} ${service.service_type} ${getServiceCompetenceMonth(service)} ${service.fortnight_period || ''} ${service.time_performed || ''} ${service.technician_name} ${service.description || ''}`,
+          ),
+        ]),
+      ),
+    [servicesWithDetails],
+  );
+
+  // Typing stays responsive on a long list: the box updates at once, the list catches up right after.
+  const deferredQuery = useDeferredValue(query);
+
   const filteredServices = useMemo(() => {
+    const term = normalizeText(deferredQuery);
+
     return servicesWithDetails.filter((service) => {
       const competence = getServiceCompetenceMonth(service);
       if (technicianFilter !== 'all' && service.technician_id !== technicianFilter) return false;
@@ -493,12 +514,15 @@ export default function AdminServicesPage() {
       if (competenceFilter !== 'all' && competence !== competenceFilter) return false;
       if (fortnightFilter !== 'all' && service.fortnight_period !== fortnightFilter) return false;
 
-      const haystack = normalizeText(
-        `${service.order_code} ${service.service_type} ${competence} ${service.fortnight_period || ''} ${service.time_performed || ''} ${service.technician_name} ${service.description || ''}`,
-      );
-      return !query || haystack.includes(normalizeText(query));
+      return !term || (searchIndex.get(service.id) ?? '').includes(term);
     });
-  }, [competenceFilter, fortnightFilter, query, servicesWithDetails, technicianFilter, typeFilter]);
+  }, [competenceFilter, deferredQuery, fortnightFilter, searchIndex, servicesWithDetails, technicianFilter, typeFilter]);
+
+  // The table draws 100 rows at a time (each row carries its own actions menu); the totals above still cover the whole filter.
+  const [visibleRowCount, setVisibleRowCount] = useState(SERVICE_ROWS_PER_PAGE);
+  useEffect(() => {
+    setVisibleRowCount(SERVICE_ROWS_PER_PAGE);
+  }, [competenceFilter, deferredQuery, fortnightFilter, technicianFilter, typeFilter]);
 
   const importSummary = useMemo(() => {
     return {
@@ -1779,7 +1803,7 @@ export default function AdminServicesPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredServices.map((service) => (
+                  {filteredServices.slice(0, visibleRowCount).map((service) => (
                     <tr key={service.id} className="border-b border-border last:border-0">
                       <td className="py-3 pr-4 font-mono text-xs">{service.order_code}</td>
                       <td className="py-3 pr-4 font-bold text-foreground">{service.technician_name || service.technician_id}</td>
@@ -1818,6 +1842,16 @@ export default function AdminServicesPage() {
                   ))}
                 </tbody>
               </table>
+              {filteredServices.length > visibleRowCount ? (
+                <div className="flex items-center justify-center gap-3 pt-4 text-sm text-muted-foreground">
+                  <span>
+                    {visibleRowCount} de {filteredServices.length}
+                  </span>
+                  <Button type="button" variant="outline" size="sm" onClick={() => setVisibleRowCount((count) => count + SERVICE_ROWS_PER_PAGE)}>
+                    Mostrar mais
+                  </Button>
+                </div>
+              ) : null}
             </div>
           ) : (
             <div className="rounded-xl border border-dashed border-border bg-secondary/40 p-8 text-center text-sm text-muted-foreground">

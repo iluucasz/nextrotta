@@ -1,7 +1,6 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { ChevronDown, ChevronLeft, ChevronRight, Download, FileSpreadsheet, Loader2, MessageCircle, RefreshCw, RotateCw } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import {
@@ -254,6 +253,7 @@ export function HistoryPanel({ technicians }: HistoryPanelProps) {
         Mensagem: message.message,
       }));
 
+      const XLSX = await import('xlsx');
       const worksheet = XLSX.utils.json_to_sheet(rows);
       const workbook = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(workbook, worksheet, 'Envios');

@@ -7,6 +7,7 @@ import { IMPERSONATION_FLAG_COOKIE, PREVIEW_FLAG_COOKIE } from '@/lib/preview-mo
 import { TECHNICIAN_PAGE_PATHS, type HideableTechnicianPage } from '@/lib/technician-visibility';
 import { resetTechnicianVisibilityCache, useTechnicianVisibility } from '@/hooks/use-technician-visibility';
 import { resetOrganizationSettingsCache } from '@/hooks/use-organization-settings';
+import { clearSessionCache } from '@/lib/client-auth';
 import { TechnicianVisibilityDialog } from '@/components/technician-visibility-dialog';
 import { MaintenanceBanner, SupportActions } from '@/components/organization-support';
 import { NotificationsBell } from '@/components/notifications-bell';
@@ -718,6 +719,7 @@ export function AppShell({ children, role, userName }: AppShellProps) {
       await fetch('/api/auth/logout', { method: 'POST' });
       resetTechnicianVisibilityCache();
       resetOrganizationSettingsCache();
+      clearSessionCache();
       // Full navigation: on an organization subdomain /login redirects to the root domain.
       window.location.assign('/login');
     } finally {

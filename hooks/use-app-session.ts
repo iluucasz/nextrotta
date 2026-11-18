@@ -2,14 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getSessionUser, type SessionUser } from '@/lib/client-auth';
+import { getSessionUser, peekSessionUser, type SessionUser } from '@/lib/client-auth';
 
 const SESSION_RETRIES = 2;
 const SESSION_RETRY_DELAY_MS = 1000;
 
 export function useAppSession() {
-  const [user, setUser] = useState<SessionUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Moving between screens reuses a recent answer, so the new screen opens without the loading step.
+  // Always empty on the server and on a first load, which keeps hydration identical.
+  const [user, setUser] = useState<SessionUser | null>(() => peekSessionUser());
+  const [loading, setLoading] = useState(() => peekSessionUser() === null);
   const router = useRouter();
 
   useEffect(() => {

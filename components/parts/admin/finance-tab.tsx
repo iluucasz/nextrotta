@@ -25,7 +25,6 @@ import {
   Users,
   Wallet,
 } from 'lucide-react';
-import * as XLSX from 'xlsx';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, LabelList, Line, Pie, PieChart, ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -355,8 +354,9 @@ export function FinanceTab({ onNavigate }: { onNavigate?: (tab: string) => void 
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   }
 
-  function exportSheet() {
+  async function exportSheet() {
     if (!report) return;
+    const XLSX = await import('xlsx');
     const { current, previous, position } = report;
     const book = XLSX.utils.book_new();
     const row = (name: string, now: number, before?: number) => ({ Indicador: name, Período: now, ...(before === undefined ? {} : { 'Período anterior': before }) });
