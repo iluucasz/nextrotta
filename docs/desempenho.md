@@ -29,12 +29,21 @@ Análise de 18/11/2026 a partir de uma lista genérica de otimizações, separad
 | --- | --- |
 | Paginar `GET /api/services` | A admin (início, OS, faturamento) e a folha leem a lista inteira para somar no cliente. Paginar exige mover totais e filtros para o servidor; fazer junto com o primeiro cliente que passar de alguns milhares de OS. |
 | Streaming da resposta do assistente | Os créditos são cobrados pelo uso real, que só vem no fim da resposta; precisa redesenhar a cobrança. Só no Pro. |
-| Recharts sob demanda | Os gráficos estão dentro do JSX das telas (dashboard gerencial, faturamento, início do técnico); separar exige extrair componentes e só se confere olhando as telas no Chrome com uma empresa real. |
 | Timeout no cliente do worker do Porto | As rotas já têm `maxDuration` da Vercel; um timeout nosso daria só uma mensagem melhor e confundiria com "worker em manutenção". |
 | Speed Insights (`@vercel/speed-insights`) | Mede a velocidade dos usuários reais, mas é cobrado por evento no Pro; o dono decide. |
 | Cache em Redis / memória | Sem medição de gargalo; cache por organização é risco de vazar dado entre clientes. Medir antes. |
 | OpenTelemetry | A aba Observability da Vercel (Pro) já mostra as funções lentas. |
 | `ensure`/N+1 | Não há N+1 nas rotas lidas; os laços com `await sql` (`lib/platform/bugs.ts`, `features.ts`) são de poucas linhas. |
+
+## Conferido no navegador (18/11/2026, empresa de teste `kappa`, só leitura)
+
+- Navegação interna: 5 trocas de tela sem nenhuma chamada a `/api/auth/me`; depois de 31 s, uma chamada, e as seguintes voltam a reaproveitar.
+- OS: "100 de 106", "Mostrar mais" chega a 106, totais do filtro inteiro (R$ 12.408,00); busca "kit fixacao" = 18 OS × R$ 52 = R$ 936; no celular (386 px) a tabela rola dentro do quadro e a página não ganha rolagem horizontal.
+- `xlsx` sob demanda: na Escala e em Peças nenhum chunk do `xlsx` na carga da página; ele vem só ao exportar ou baixar o modelo (arquivos gerados: `escala-banco-horas-…xlsx`, `modelo-importacao-horas.xlsx`, `modelo-pecas.xlsx`).
+- Importação lida de ponta a ponta (sem salvar): Escala (2 apontamentos válidos, datas e horas certas) e OS (data em número de série do Excel virou 05/10/2026 10H47).
+- Buscas: catálogo de peças ("hidrotec" = 9 de 27) e registro da Escala ("diego" = 23 linhas, só dele).
+- Não conferido: as OS do técnico (`/dashboard/services`, mesma lógica da tela da admin, cuja contagem foi conferida) e o ganho em bytes (o servidor de desenvolvimento não minifica e o build local não termina a pré-renderização).
+- Recharts sob demanda: descartado. Nas telas de dashboard e faturamento o gráfico é o conteúdo principal, então carregá-lo depois só atrasaria o que o usuário veio ver.
 
 ## Observação sobre o build local
 
