@@ -67,11 +67,15 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const technicianId = searchParams.get('technicianId');
     const competenceMonth = searchParams.get('competenceMonth');
+    // The list hides the OS of inactive technicians (they are not paid and cannot receive new OS); the admin can ask to see
+    // them, and `withHidden` tells how many the plain list leaves out so the screen can offer it.
+    const includeInactive = auth.role === 'admin' && !technicianId && searchParams.get('includeInactive') === '1';
+    const withHidden = auth.role === 'admin' && !technicianId && !includeInactive && searchParams.get('withHidden') === '1';
 
     let query = `
       SELECT s.id, s.order_code, s.technician_id, s.service_type, s.value,
              s.date_performed, s.time_performed, s.competence_month, s.fortnight_period, s.description, s.created_at,
-             t.name AS technician_name
+             t.name AS technician_name, t.status AS technician_status
       FROM services s
       LEFT JOIN technicians t ON t.id = s.technician_id
     `;
@@ -85,7 +89,8 @@ export async function GET(request: NextRequest) {
       conditions.push(`s.technician_id = $${params.length}`);
     }
 
-    conditions.push(`t.status = 'active'`, 't.deleted_at IS NULL');
+    conditions.push('t.deleted_at IS NULL');
+    if (!includeInactive) conditions.push(`t.status = 'active'`);
 
     if (competenceMonth) {
       params.push(competenceMonth);
@@ -98,8 +103,21 @@ export async function GET(request: NextRequest) {
       }
 
       query += ` ORDER BY s.date_performed DESC, s.time_performed DESC NULLS LAST, s.created_at DESC`;
-      const services = await sql.query(query, params);
-      return NextResponse.json({ services });
+      const [services, hidden] = await Promise.all([
+        sql.query(query, params),
+        withHidden
+          ? sql`
+              SELECT COUNT(*)::int AS n
+              FROM services s
+              JOIN technicians t ON t.id = s.technician_id
+              WHERE s.organization_id = ${auth.organizationId}
+                AND s.deleted_at IS NULL
+                AND t.deleted_at IS NULL
+                AND t.status <> 'active'
+            `
+          : Promise.resolve(null),
+      ]);
+      return NextResponse.json(withHidden ? { services, hiddenInactive: Number(hidden?.[0]?.n ?? 0) } : { services });
     }
 
     return NextResponse.json(

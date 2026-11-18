@@ -1,6 +1,7 @@
 'use client';
 
 import { type ChangeEvent, type ClipboardEvent, useDeferredValue, useEffect, useMemo, useState } from 'react';
+import { HelpDot } from '@/components/modal-kit';
 import { AlertTriangle, CheckCircle2, CircleHelp, ClipboardPaste, Download, FileSpreadsheet, MoreHorizontal, PencilLine, Plus, Search, Trash2, UploadCloud, Users, Wrench } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
@@ -40,7 +41,7 @@ const importStageOrder = ['prepare', 'upload', 'process', 'finalize'] as const;
 /** Read when used, not at module load: the page can stay open across a month change. */
 const currentCompetenceMonth = () => brasiliaDateKey().slice(0, 7);
 
-const SERVICE_ROWS_PER_PAGE = 100;
+const SERVICE_ROWS_PER_PAGE = 500;
 
 type ImportStageKey = (typeof importStageOrder)[number];
 type BulkDeletePeriod = 'monthly' | ServiceFortnight;
@@ -328,6 +329,9 @@ export default function AdminServicesPage() {
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [dataError, setDataError] = useState('');
+  // OS of inactive technicians are left out of the list unless asked for; `hiddenInactive` is how many that leaves out.
+  const [includeInactive, setIncludeInactive] = useState(false);
+  const [hiddenInactive, setHiddenInactive] = useState(0);
   const [query, setQuery] = useState('');
   const [technicianFilter, setTechnicianFilter] = useState('all');
   const [typeFilter, setTypeFilter] = useState('all');
@@ -385,17 +389,20 @@ export default function AdminServicesPage() {
     async function loadData() {
       if (!user) return;
 
-      setIsDataLoading(true);
       setDataError('');
 
       try {
-        const [servicesResult, techniciansResult] = await Promise.allSettled([fetch('/api/services'), fetch('/api/technicians')]);
+        const [servicesResult, techniciansResult] = await Promise.allSettled([
+          fetch(includeInactive ? '/api/services?includeInactive=1' : '/api/services?withHidden=1'),
+          fetch('/api/technicians'),
+        ]);
         const errors: string[] = [];
 
         if (servicesResult.status === 'fulfilled' && servicesResult.value.ok) {
           const data = await servicesResult.value.json();
           if (mounted) {
             setServices(Array.isArray(data.services) ? data.services : []);
+            setHiddenInactive(Number(data.hiddenInactive ?? 0) || 0);
           }
         } else {
           errors.push('ordens de serviço');
@@ -436,7 +443,7 @@ export default function AdminServicesPage() {
     return () => {
       mounted = false;
     };
-  }, [user]);
+  }, [user, includeInactive]);
 
   const visibleTechnicians = technicians;
   const inputClassName = 'min-h-11 w-full rounded-xl border border-input bg-background px-3.5 text-sm outline-none transition focus:ring-2 focus:ring-ring';
@@ -450,8 +457,8 @@ export default function AdminServicesPage() {
     [activeTechnicians],
   );
   const visibleServices = useMemo(
-    () => services.filter((service) => activeTechnicianIds.has(service.technician_id)),
-    [activeTechnicianIds, services],
+    () => (includeInactive ? services : services.filter((service) => activeTechnicianIds.has(service.technician_id))),
+    [activeTechnicianIds, includeInactive, services],
   );
 
   const sortedTechnicians = useMemo(() => {
@@ -576,13 +583,15 @@ export default function AdminServicesPage() {
 
   const bulkDeletePreviewServices = useMemo(() => {
     return servicesWithDetails.filter((service) => {
+      // The bulk delete leaves the OS of inactive technicians alone, so the count shown is only the active ones.
+      if (!activeTechnicianIds.has(service.technician_id)) return false;
       const competence = getServiceCompetenceMonth(service);
       if (competence !== bulkDeleteCompetenceMonth) return false;
       if (bulkDeletePeriod !== 'monthly' && service.fortnight_period !== bulkDeletePeriod) return false;
 
       return true;
     });
-  }, [bulkDeleteCompetenceMonth, bulkDeletePeriod, servicesWithDetails]);
+  }, [activeTechnicianIds, bulkDeleteCompetenceMonth, bulkDeletePeriod, servicesWithDetails]);
 
   function resetForm() {
     setFormData(createInitialFormData(orgSettings.monthClosingDay));
@@ -1721,9 +1730,10 @@ export default function AdminServicesPage() {
               <span className="mb-1.5 block font-medium">Colaborador</span>
               <select value={technicianFilter} onChange={(event) => setTechnicianFilter(event.target.value)} className={inputClassName}>
                 <option value="all">Todos</option>
-                {sortedActiveTechnicians.map((technician) => (
+                {(includeInactive ? sortedTechnicians : sortedActiveTechnicians).map((technician) => (
                   <option key={technician.id} value={technician.id}>
                     {technician.name}
+                    {technician.status === 'active' ? '' : ' (inativo)'}
                   </option>
                 ))}
               </select>
@@ -1781,13 +1791,23 @@ export default function AdminServicesPage() {
               Limpar filtros
             </Button>
           </div>
+          {hiddenInactive > 0 || includeInactive ? (
+            <label className="mt-3 flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={includeInactive} onChange={(event) => setIncludeInactive(event.target.checked)} className="h-4 w-4 rounded border-input" />
+              <span>Incluir técnicos inativos{includeInactive ? '' : ` (${hiddenInactive} OS)`}</span>
+              <HelpDot
+                label="técnicos inativos"
+                text="As OS de técnicos inativos não aparecem na lista nem entram na exclusão em massa. Para voltar a lançar OS para um técnico, reative-o em Técnicos."
+              />
+            </label>
+          ) : null}
         </DataPanel>
       </div>
 
       <div className="mt-5">
         <DataPanel
           title="Histórico de OS"
-          description={`${filteredServices.length} registro(s) encontrados em todos os colaboradores.`}
+          description={`${filteredServices.length} registro(s) encontrados em todos os colaboradores.${filteredServices.length > visibleRowCount ? ` Mostrando ${visibleRowCount}.` : ''}`}
         >
           {filteredServices.length ? (
             <div className="overflow-x-auto">
@@ -1809,7 +1829,14 @@ export default function AdminServicesPage() {
                   {filteredServices.slice(0, visibleRowCount).map((service) => (
                     <tr key={service.id} className="border-b border-border last:border-0">
                       <td className="py-3 pr-4 font-mono text-xs">{service.order_code}</td>
-                      <td className="py-3 pr-4 font-bold text-foreground">{service.technician_name || service.technician_id}</td>
+                      <td className="py-3 pr-4 font-bold text-foreground">
+                        {service.technician_name || service.technician_id}
+                        {activeTechnicianIds.has(service.technician_id) ? null : (
+                          <span className="ml-2 align-middle">
+                            <StatusBadge tone="neutral">inativo</StatusBadge>
+                          </span>
+                        )}
+                      </td>
                       <td className="py-3 pr-4">{service.service_type}</td>
                       <td className="py-3 pr-4">{formatCurrency(service.value)}</td>
                       <td className="py-3 pr-4">
@@ -1826,7 +1853,7 @@ export default function AdminServicesPage() {
                             </Button>
                           </DropdownMenuTrigger>
                           <DropdownMenuContent align="end">
-                            <DropdownMenuItem onSelect={() => openEditDialog(service)}>
+                            <DropdownMenuItem onSelect={() => openEditDialog(service)} disabled={!activeTechnicianIds.has(service.technician_id)}>
                               <PencilLine className="h-4 w-4" />
                               Editar
                             </DropdownMenuItem>
@@ -1852,6 +1879,9 @@ export default function AdminServicesPage() {
                   </span>
                   <Button type="button" variant="outline" size="sm" onClick={() => setVisibleRowCount((count) => count + SERVICE_ROWS_PER_PAGE)}>
                     Mostrar mais
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setVisibleRowCount(filteredServices.length)}>
+                    Mostrar todas
                   </Button>
                 </div>
               ) : null}

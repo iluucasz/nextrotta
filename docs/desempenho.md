@@ -17,7 +17,7 @@ Análise de 18/11/2026 a partir de uma lista genérica de otimizações, separad
 
 - **Região das funções na Vercel = `gru1` (São Paulo)** em `vercel.json`. O banco (Neon `sa-east-1`) e o Blob (`gru1`) já estão em São Paulo; sem isso as funções rodam no padrão da Vercel (Washington) e cada consulta atravessa o continente (várias por requisição). Conferir em Settings → Functions que o projeto não está com outra região fixada lá.
 - **Sessão no cliente** (`lib/client-auth.ts`, `hooks/use-app-session.ts`): cada tela perguntava `/api/auth/me` ao abrir (uma ida ao servidor + uma consulta ao banco por navegação). Agora a resposta vale 30 s dentro do app e pedidos simultâneos dividem uma só chamada. Só guarda login confirmado; nunca no servidor; toda troca de sessão (login, sair, preview, sair do modo dono) termina em recarga completa, que zera o cache; as rotas de dados continuam conferindo a sessão sozinhas. Teste: `scripts/test-client-session-cache.cjs`.
-- **Histórico de OS** (`app/admin/services/page.tsx`): o texto pesquisável de cada OS é calculado uma vez por lista (antes, a cada tecla, para todas as linhas), a busca usa `useDeferredValue` e a tabela desenha 100 linhas por vez ("Mostrar mais"); os totais continuam somando o filtro inteiro.
+- **Histórico de OS** (`app/admin/services/page.tsx`): o texto pesquisável de cada OS é calculado uma vez por lista (antes, a cada tecla, para todas as linhas), a busca usa `useDeferredValue` e a tabela desenha 500 linhas por vez ("Mostrar mais" e "Mostrar todas"; o cabeçalho diz "Mostrando 500"); os totais continuam somando o filtro inteiro. Começou com 100 por vez e uma cliente com 390 OS achou que faltavam OS: o rodapé discreto não bastava (18/11/2026).
 - **Timeout de 25 s no Asaas** (`lib/billing/asaas.ts`), com mensagem em português.
 - **`xlsx` só ao exportar/importar** em todas as telas: Peças, histórico do WhatsApp, importação de OS e importação/exportação da Escala. `lib/spreadsheet-import.ts` (`readSpreadsheet` agora é assíncrona) carrega a biblioteca sob demanda; as telas de OS e Escala guardam o módulo em uma variável do arquivo (`sheetjs`) preenchida ao ler a planilha, que os ajudantes de data do Excel usam. Teste: `scripts/test-spreadsheet-import.cjs`.
 - **Busca adiada (`useDeferredValue`)** também no registro da Escala, no catálogo de peças e nas OS do técnico; as OS do técnico desenham 100 linhas por vez, como as da admin (o registro da Escala já pagina).
@@ -34,6 +34,10 @@ Análise de 18/11/2026 a partir de uma lista genérica de otimizações, separad
 | Cache em Redis / memória | Sem medição de gargalo; cache por organização é risco de vazar dado entre clientes. Medir antes. |
 | OpenTelemetry | A aba Observability da Vercel (Pro) já mostra as funções lentas. |
 | `ensure`/N+1 | Não há N+1 nas rotas lidas; os laços com `await sql` (`lib/platform/bugs.ts`, `features.ts`) são de poucas linhas. |
+
+## OS de técnicos inativos (18/11/2026)
+
+A lista de OS, a exclusão em massa e a importação ignoram técnicos inativos (não são pagos e não recebem OS novas). Uma empresa achou que OS de outubro tinham sumido: eram de um técnico inativo. A lista agora avisa "Incluir técnicos inativos (N OS)" e, ligado, mostra essas OS com o selo "inativo" (só leitura e exclusão; editar exige técnico ativo). `GET /api/services?withHidden=1` devolve `hiddenInactive`; `?includeInactive=1` inclui as OS. Teste: `scripts/test-services-inactive-flow.cjs`.
 
 ## Conferido no navegador (18/11/2026, empresa de teste `kappa`, só leitura)
 

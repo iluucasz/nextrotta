@@ -52,6 +52,8 @@ export interface Service {
   description?: string
   created_at: string
   technician_name?: string
+  /** Only on the admin's OS list: whether the technician is still active. */
+  technician_status?: string
 }
 
 export interface WorkHours {
