@@ -37,6 +37,62 @@ export function applyBrazilianDateText(workbook: XLSX.WorkBook) {
 }
 
 /**
+ * Rows of text copied from a spreadsheet or a web table (tab-separated, as Excel, Google Sheets and
+ * browsers put it on the clipboard; ";" or "," as a fallback for pasted CSV). The first line holds the
+ * column titles. Values stay text, so dates and amounts are read as Brazilian ones by the importer.
+ */
+export function parsePastedTable(text: string): Record<string, string>[] {
+  const clean = text.replace(/^﻿/, '').replace(/\r\n?/g, '\n');
+  const firstLine = clean.split('\n', 1)[0] ?? '';
+  const delimiter = firstLine.includes('\t') ? '\t' : firstLine.includes(';') ? ';' : ',';
+
+  const table: string[][] = [];
+  let row: string[] = [];
+  let cell = '';
+  let quoted = false;
+
+  for (let index = 0; index < clean.length; index += 1) {
+    const char = clean[index];
+    if (quoted) {
+      if (char === '"' && clean[index + 1] === '"') {
+        cell += '"';
+        index += 1;
+      } else if (char === '"') {
+        quoted = false;
+      } else {
+        cell += char;
+      }
+    } else if (char === '"' && cell === '') {
+      quoted = true;
+    } else if (char === delimiter) {
+      row.push(cell);
+      cell = '';
+    } else if (char === '\n') {
+      row.push(cell);
+      table.push(row);
+      row = [];
+      cell = '';
+    } else {
+      cell += char;
+    }
+  }
+  row.push(cell);
+  table.push(row);
+
+  const lines = table.filter((cells) => cells.some((value) => value.trim() !== ''));
+  if (lines.length < 2) return [];
+
+  const headers = lines[0].map((header) => header.trim());
+  return lines.slice(1).map((cells) => {
+    const record: Record<string, string> = {};
+    headers.forEach((header, position) => {
+      if (header) record[header] = (cells[position] ?? '').trim();
+    });
+    return record;
+  });
+}
+
+/**
  * Reads an uploaded spreadsheet. A CSV is plain text: it is decoded here (SheetJS assumes
  * Windows-1252) and kept as text, because SheetJS would otherwise guess US types ("05/10/2026"
  * becomes May 10, "500,00" becomes 50000). Excel files keep their real dates.

@@ -1,8 +1,8 @@
 'use client';
 
-import { type ChangeEvent, useEffect, useMemo, useState } from 'react';
+import { type ChangeEvent, type ClipboardEvent, useEffect, useMemo, useState } from 'react';
 import * as XLSX from 'xlsx';
-import { AlertTriangle, CheckCircle2, CircleHelp, Download, FileSpreadsheet, MoreHorizontal, PencilLine, Plus, Search, Trash2, UploadCloud, Users, Wrench } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, CircleHelp, ClipboardPaste, Download, FileSpreadsheet, MoreHorizontal, PencilLine, Plus, Search, Trash2, UploadCloud, Users, Wrench } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
 import { LoadingShell } from '@/components/page-skeleton';
@@ -34,7 +34,7 @@ import { useAppSession } from '@/hooks/use-app-session';
 import { useOrganizationSettings } from '@/hooks/use-organization-settings';
 import { Checkbox } from '@/components/ui/checkbox';
 import { competenceForDate, countByCompetence, defaultCompetenceMonth, monthLabel, periodKeys, periodLabel, type PeriodKey } from '@/lib/pay-calendar';
-import { isTextSpreadsheet, readSpreadsheet } from '@/lib/spreadsheet-import';
+import { isTextSpreadsheet, parsePastedTable, readSpreadsheet } from '@/lib/spreadsheet-import';
 
 const serviceImportTemplateUrl = '/planilhas/list_os.xlsx';
 const importStageOrder = ['prepare', 'upload', 'process', 'finalize'] as const;
@@ -194,6 +194,16 @@ function pickImportValue(row: Record<string, unknown>, key: keyof typeof service
   return '';
 }
 
+/** True when the first row's titles include at least one column the importer knows. */
+function hasKnownImportHeaders(row: Record<string, unknown> | undefined) {
+  if (!row) return false;
+  const aliases = Object.values(serviceImportAliases).flat().map(normalizeImportHeader);
+  return Object.keys(row).some((header) => {
+    const normalized = normalizeImportHeader(header);
+    return aliases.some((alias) => normalized === alias || normalized.startsWith(`${alias} `));
+  });
+}
+
 function formatDateParts(year: number, month: number, day: number) {
   const date = new Date(year, month - 1, day);
 
@@ -335,6 +345,8 @@ export default function AdminServicesPage() {
   const [isImportDialogOpen, setIsImportDialogOpen] = useState(false);
   const [importRows, setImportRows] = useState<ParsedServiceImportRow[]>([]);
   const [importFileName, setImportFileName] = useState('');
+  const [isPasteOpen, setIsPasteOpen] = useState(false);
+  const [pasteText, setPasteText] = useState('');
   const [importSheetName, setImportSheetName] = useState('');
   const [importError, setImportError] = useState('');
   const [importResult, setImportResult] = useState('');
@@ -563,6 +575,8 @@ export default function AdminServicesPage() {
   function resetImport() {
     setImportRows([]);
     setImportFileName('');
+    setIsPasteOpen(false);
+    setPasteText('');
     setImportSheetName('');
     setImportError('');
     setImportResult('');
@@ -603,10 +617,56 @@ export default function AdminServicesPage() {
     }
   }
 
+  /** Rows copied straight from the Porto (or any spreadsheet) and pasted: same preview as a file. */
+  function handlePasteText(text: string) {
+    setPasteText(text);
+    setImportError('');
+    setImportResult('');
+    setSkippedImportMonths([]);
+    setAllowClosedPayroll(false);
+    setImportSheetName('');
+
+    if (!text.trim()) {
+      setImportRows([]);
+      setImportFileName('');
+      return;
+    }
+
+    const rows = parsePastedTable(text);
+    setImportFileName('Dados colados');
+
+    if (!rows.length) {
+      setImportRows([]);
+      setImportError('Não encontrei linhas no que foi colado. Copie a tabela inteira, com a linha de títulos.');
+      return;
+    }
+
+    if (!hasKnownImportHeaders(rows[0])) {
+      setImportRows([]);
+      setImportError('Não encontrei os títulos das colunas. Copie também a linha de cabeçalho (Número da Ordem de Serviço, Valor Total, QRA…).');
+      return;
+    }
+
+    setImportRows(parseServiceImportRows(rows, sortedActiveTechnicians));
+  }
+
+  function handleDialogPaste(event: ClipboardEvent<HTMLDivElement>) {
+    const target = event.target as HTMLElement;
+    // Ctrl+V anywhere in the window works, except inside a field the person is typing in.
+    if (target.closest('input, textarea, select, [contenteditable="true"]') || isImporting) return;
+    const text = event.clipboardData.getData('text/plain');
+    if (!text.trim()) return;
+    event.preventDefault();
+    setIsPasteOpen(true);
+    handlePasteText(text);
+  }
+
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    setIsPasteOpen(false);
+    setPasteText('');
     setImportError('');
     setImportResult('');
     setSkippedImportMonths([]);
@@ -1138,7 +1198,7 @@ export default function AdminServicesPage() {
             }
           }}
         >
-          <div className="flex h-full min-h-0 flex-col">
+          <div className="flex h-full min-h-0 flex-col" onPaste={handleDialogPaste}>
             {isImporting && importProgress ? (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-background/85 backdrop-blur-sm">
                 <div className="w-[min(92vw,32rem)] rounded-2xl border border-border bg-background p-6 shadow-2xl">
@@ -1190,7 +1250,7 @@ export default function AdminServicesPage() {
             <DialogHeader className="border-b border-border/70 px-6 py-5 sm:px-7">
               <DialogTitle className="text-xl">Importar OS</DialogTitle>
               <DialogDescription className="max-w-2xl text-sm leading-6 text-muted-foreground">
-                Use o modelo de OS para carregar várias ordens de serviço e vinculá-las automaticamente pelo QRA do colaborador.
+                Cole as linhas copiadas do Porto (Ctrl+V) ou carregue a planilha do modelo. As OS são vinculadas automaticamente pelo QRA do colaborador.
               </DialogDescription>
             </DialogHeader>
 
@@ -1215,6 +1275,11 @@ export default function AdminServicesPage() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
+                    <Button type="button" variant={isPasteOpen ? 'default' : 'outline'} onClick={() => setIsPasteOpen((open) => !open)}>
+                      <ClipboardPaste className="h-4 w-4" />
+                      Colar dados
+                    </Button>
+
                     <Button type="button" variant="outline" asChild>
                       <a href={serviceImportTemplateUrl} download>
                         <Download className="h-4 w-4" />
@@ -1229,8 +1294,27 @@ export default function AdminServicesPage() {
                     </label>
                   </div>
 
+                  {isPasteOpen ? (
+                    <div className="mt-5 space-y-2">
+                      <textarea
+                        autoFocus
+                        value={pasteText}
+                        onChange={(event) => handlePasteText(event.target.value)}
+                        placeholder="Copie a tabela no Porto, com a linha de títulos, e cole aqui (Ctrl+V)"
+                        rows={5}
+                        spellCheck={false}
+                        className="w-full resize-y rounded-xl border border-input bg-background px-3.5 py-3 font-mono text-xs outline-none transition focus:ring-2 focus:ring-ring"
+                      />
+                      {pasteText ? (
+                        <Button type="button" variant="ghost" size="sm" onClick={() => handlePasteText('')}>
+                          Limpar
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <div className="mt-5 rounded-xl border border-border bg-background px-4 py-3 text-sm text-muted-foreground">
-                    {importFileName ? `Arquivo: ${importFileName}` : 'Nenhum arquivo selecionado.'}
+                    {importFileName === 'Dados colados' ? 'Dados colados.' : importFileName ? `Arquivo: ${importFileName}` : 'Nenhum arquivo selecionado.'}
                     {importSheetName ? <span className="ml-2 text-foreground">Aba: {importSheetName}</span> : null}
                   </div>
 
