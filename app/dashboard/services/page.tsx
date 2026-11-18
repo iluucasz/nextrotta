@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { Search, Wrench } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
 import { LoadingShell } from '@/components/page-skeleton';
@@ -12,6 +13,8 @@ import { demoServices, demoTechnicians } from '@/lib/demo-data';
 import { formatCurrency, formatDate, normalizeText } from '@/lib/formatters';
 import type { Service } from '@/lib/types';
 import { useAppSession } from '@/hooks/use-app-session';
+
+const SERVICE_ROWS_PER_PAGE = 100;
 
 export default function TechnicianServicesPage() {
   const { user, loading } = useAppSession();
@@ -34,12 +37,21 @@ export default function TechnicianServicesPage() {
 
   const fallbackTechnician = demoTechnicians[0];
   const visibleServices = services.length ? services : demoServices.filter((service) => service.technician_id === fallbackTechnician.id);
+  // Typing stays responsive on a long history: the box updates at once, the list catches up right after.
+  const deferredQuery = useDeferredValue(query);
   const filteredServices = useMemo(() => {
+    const term = normalizeText(deferredQuery);
     return visibleServices.filter((service) => {
       const haystack = normalizeText(`${service.order_code} ${service.service_type} ${service.competence_month}`);
-      return !query || haystack.includes(normalizeText(query));
+      return !term || haystack.includes(term);
     });
-  }, [query, visibleServices]);
+  }, [deferredQuery, visibleServices]);
+
+  // The table draws 100 rows at a time; the totals above still cover the whole filter.
+  const [visibleRowCount, setVisibleRowCount] = useState(SERVICE_ROWS_PER_PAGE);
+  useEffect(() => {
+    setVisibleRowCount(SERVICE_ROWS_PER_PAGE);
+  }, [deferredQuery]);
 
   if (loading || !user) {
     return <LoadingShell role="technician" />;
@@ -82,7 +94,7 @@ export default function TechnicianServicesPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredServices.map((service) => (
+                {filteredServices.slice(0, visibleRowCount).map((service) => (
                   <tr key={service.id} className="border-b border-border last:border-0">
                     <td className="py-3 pr-4 font-mono text-xs">{service.order_code}</td>
                     <td className="py-3 pr-4">{service.service_type}</td>
@@ -95,6 +107,16 @@ export default function TechnicianServicesPage() {
                 ))}
               </tbody>
             </table>
+            {filteredServices.length > visibleRowCount ? (
+              <div className="flex items-center justify-center gap-3 pt-4 text-sm text-muted-foreground">
+                <span>
+                  {visibleRowCount} de {filteredServices.length}
+                </span>
+                <Button type="button" variant="outline" size="sm" onClick={() => setVisibleRowCount((count) => count + SERVICE_ROWS_PER_PAGE)}>
+                  Mostrar mais
+                </Button>
+              </div>
+            ) : null}
           </div>
         </DataPanel>
       </div>

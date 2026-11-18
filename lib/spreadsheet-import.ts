@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx';
+// Types only: the SheetJS library itself (large) is fetched when a file is actually read.
+import type * as XLSX from 'xlsx';
 
 /** UTF-8 when the bytes are valid UTF-8 (Google Sheets, "CSV UTF-8"), otherwise Windows-1252 (Excel's plain CSV). */
 export function decodeTextFile(buffer: ArrayBuffer) {
@@ -97,8 +98,9 @@ export function parsePastedTable(text: string): Record<string, string>[] {
  * Windows-1252) and kept as text, because SheetJS would otherwise guess US types ("05/10/2026"
  * becomes May 10, "500,00" becomes 50000). Excel files keep their real dates.
  */
-export function readSpreadsheet(buffer: ArrayBuffer, fileName: string) {
+export async function readSpreadsheet(buffer: ArrayBuffer, fileName: string) {
+  const sheetjs = await import('xlsx');
   return isTextSpreadsheet(fileName)
-    ? XLSX.read(decodeTextFile(buffer), { type: 'string', cellDates: true, raw: true })
-    : XLSX.read(buffer, { type: 'array', cellDates: true });
+    ? sheetjs.read(decodeTextFile(buffer), { type: 'string', cellDates: true, raw: true })
+    : sheetjs.read(buffer, { type: 'array', cellDates: true });
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Search } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
@@ -89,8 +89,11 @@ export function ScheduleRecords() {
     [records],
   );
 
+  // Typing stays responsive on a long history: the box updates at once, the list catches up right after.
+  const deferredQuery = useDeferredValue(query);
+
   const filtered = useMemo(() => {
-    const search = normalizeText(query);
+    const search = normalizeText(deferredQuery);
 
     return records
       .filter((item) => technicianId === 'all' || item.technician_id === technicianId)
@@ -101,7 +104,7 @@ export function ScheduleRecords() {
         return text.includes(search);
       })
       .sort((left, right) => dateKeyOf(right.date).localeCompare(dateKeyOf(left.date)) || (left.technician_name || '').localeCompare(right.technician_name || '', 'pt-BR'));
-  }, [records, technicianId, statusLabel, query]);
+  }, [records, technicianId, statusLabel, deferredQuery]);
 
   if (loading || !user) {
     return <LoadingShell role="admin" />;

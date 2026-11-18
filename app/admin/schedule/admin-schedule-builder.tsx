@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
+// Types only: SheetJS itself is fetched when a spreadsheet is read or written (see sheetjs below).
+import type * as XLSXTypes from 'xlsx';
 import { CalendarDays, Check, ChevronDown, Clock3, Download, FileText, Plus, Trash2, Upload, Users, WandSparkles } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
@@ -781,6 +782,14 @@ function buildSuccessMessage(summary: {
     : base;
 }
 
+// SheetJS is fetched when an attendance file is read (handleAttendanceImportFile); the import helpers below only run after that.
+let sheetjs: typeof XLSXTypes | null = null;
+
+function requireSheetjs() {
+  if (!sheetjs) throw new Error('A biblioteca de planilhas ainda não foi carregada.');
+  return sheetjs;
+}
+
 const attendanceImportColumnAliases = {
   date: ['data', 'date'],
   employee: ['funcionario', 'funcionário', 'tecnico', 'técnico', 'colaborador', 'nome'],
@@ -874,7 +883,7 @@ function parseImportedDate(value: unknown, monthValue: unknown, yearValue: unkno
   }
 
   if (typeof value === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(value);
+    const parsed = requireSheetjs().SSF.parse_date_code(value);
     if (parsed) {
       const date = buildImportDateKey(parsed.y, parsed.m, parsed.d);
       if (date) return { date, month: parsed.m, year: parsed.y };
@@ -929,7 +938,7 @@ function parseImportedTime(value: unknown) {
   }
 
   if (typeof value === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(value);
+    const parsed = requireSheetjs().SSF.parse_date_code(value);
     if (parsed) {
       return `${String(parsed.H).padStart(2, '0')}:${String(parsed.M).padStart(2, '0')}`;
     }
@@ -938,7 +947,7 @@ function parseImportedTime(value: unknown) {
   const raw = String(value ?? '').trim();
   const numericValue = raw && !raw.includes(':') && !/[a-zA-Z]/.test(raw) ? parseImportNumber(raw) : null;
   if (numericValue !== null && numericValue >= 0 && numericValue < 1) {
-    const parsed = XLSX.SSF.parse_date_code(numericValue);
+    const parsed = requireSheetjs().SSF.parse_date_code(numericValue);
     if (parsed) {
       return `${String(parsed.H).padStart(2, '0')}:${String(parsed.M).padStart(2, '0')}`;
     }
@@ -985,13 +994,13 @@ function parseImportedHours(value: unknown, startTime: string, endTime: string) 
   return calculated > 0 && calculated <= 24 ? calculated : null;
 }
 
-function getAttendanceWorksheetName(workbook: XLSX.WorkBook) {
+function getAttendanceWorksheetName(workbook: XLSXTypes.WorkBook) {
   const preferred = workbook.SheetNames.find((sheetName) => normalizeText(sheetName) === 'banco de dados');
   if (preferred) return preferred;
 
   return workbook.SheetNames.find((sheetName) => {
     const worksheet = workbook.Sheets[sheetName];
-    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: false, blankrows: false });
+    const rows = requireSheetjs().utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: false, blankrows: false });
     const firstRow = rows[0] ?? {};
     return Boolean(
       getImportValue(firstRow, attendanceImportColumnAliases.date) &&
@@ -2136,7 +2145,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setAttendanceMessage(`Desconto de ${formatBreakLabel(scheduleRules.dailyBreakMinutes)} de almoço aplicado em ${formatCount(count, 'apontamento', 'apontamentos')} da planilha.`);
   }
 
-  function parseAttendanceWorkbook(workbook: XLSX.WorkBook, fileName: string) {
+  function parseAttendanceWorkbook(workbook: XLSXTypes.WorkBook, fileName: string) {
     const sheetName = getAttendanceWorksheetName(workbook);
     if (!sheetName) {
       return {
@@ -2163,7 +2172,7 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     }
 
     const worksheet = workbook.Sheets[sheetName];
-    const rawRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: false, blankrows: false });
+    const rawRows = requireSheetjs().utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: false, blankrows: false });
     const technicianMatches = buildTechnicianMatchMap(sortedTechnicians);
     const seenKeys = new Set<string>();
     const rows: AttendanceImportRow[] = [];
@@ -2324,7 +2333,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
       const buffer = await file.arrayBuffer();
       // Dates become dd/mm/aaaa text and a CSV is kept as text (lib/spreadsheet-import.ts): the
       // reader below takes the first number as the day.
-      const workbook = applyBrazilianDateText(readSpreadsheet(buffer, file.name));
+      sheetjs = await import('xlsx');
+      const workbook = applyBrazilianDateText(await readSpreadsheet(buffer, file.name));
       const parsed = parseAttendanceWorkbook(workbook, file.name);
 
       setAttendanceImportFileName(file.name);
@@ -3192,7 +3202,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     }));
   }
 
-  function handleExportHourBankDetail(scope: 'period' | 'all') {
+  async function handleExportHourBankDetail(scope: 'period' | 'all') {
+    const XLSX = await import('xlsx');
     const sourceRows = scope === 'all'
       ? buildHourBankDetailRows(visibleSchedule, visibleWorkHours, technicianNameById)
       : hourBankDetailRowsFiltered;
@@ -3216,7 +3227,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setSaveMessage(`Planilha exportada com ${formatCount(filteredRows.length, 'linha', 'linhas')}.`);
   }
 
-  function handleExportSpreadsheet() {
+  async function handleExportSpreadsheet() {
+    const XLSX = await import('xlsx');
     const bankRows = hourBankRows.map((row) => ({
       'Técnico': row.technician_name,
       Previsto: row.planned_hours,
@@ -3237,7 +3249,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setSaveMessage(`Planilha de ${hourBankPeriodLabel} gerada com ${formatCount(scheduleRows.length, 'linha', 'linhas')}.`);
   }
 
-  function handleDownloadAttendanceImportTemplate() {
+  async function handleDownloadAttendanceImportTemplate() {
+    const XLSX = await import('xlsx');
     const headers = ['Data', 'Funcionário', 'Hora Início', 'Hora Final', 'Horas Trabalhadas', 'Semana do Ano', 'Mês', 'Ano', 'Dia da semana'];
     const blankRows = Array.from({ length: 100 }, () => ['', '', '', '', '', '', '', '', '']);
     const templateSheet = XLSX.utils.aoa_to_sheet([headers, ...blankRows]);
@@ -3288,7 +3301,8 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
     setSaveMessage('Modelo XLSX de importação de horas baixado.');
   }
 
-  function handleDownloadAttendanceImportErrors() {
+  async function handleDownloadAttendanceImportErrors() {
+    const XLSX = await import('xlsx');
     if (!attendanceImportErrors.length) {
       setAttendanceMessage('Não há erros de importação para baixar.');
       return;

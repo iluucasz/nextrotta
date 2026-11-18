@@ -1,7 +1,6 @@
 'use client';
 
 import { type ChangeEvent, type ClipboardEvent, useDeferredValue, useEffect, useMemo, useState } from 'react';
-import * as XLSX from 'xlsx';
 import { AlertTriangle, CheckCircle2, CircleHelp, ClipboardPaste, Download, FileSpreadsheet, MoreHorizontal, PencilLine, Plus, Search, Trash2, UploadCloud, Users, Wrench } from 'lucide-react';
 import { AppShell } from '@/components/app-shell';
 import { DataPanel } from '@/components/data-panel';
@@ -224,6 +223,9 @@ function formatTimeParts(hours: number, minutes: number) {
   return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+// SheetJS is fetched when a file is imported (handleImportFile) and read here to turn Excel's day numbers into dates.
+let sheetjs: typeof import('xlsx') | null = null;
+
 function parseImportDateTime(value: unknown) {
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
     return {
@@ -233,7 +235,7 @@ function parseImportDateTime(value: unknown) {
   }
 
   if (typeof value === 'number') {
-    const parsed = XLSX.SSF.parse_date_code(value);
+    const parsed = sheetjs?.SSF.parse_date_code(value);
     if (parsed) {
       return {
         date: formatDateParts(parsed.y, parsed.m, parsed.d),
@@ -700,13 +702,14 @@ export default function AdminServicesPage() {
     try {
       const buffer = await file.arrayBuffer();
       // A CSV is kept as text and decoded as UTF-8 or Windows-1252 (lib/spreadsheet-import.ts).
-      const workbook = readSpreadsheet(buffer, file.name);
+      const workbook = await readSpreadsheet(buffer, file.name);
+      sheetjs = await import('xlsx');
       let bestSheetName = workbook.SheetNames[0] ?? '';
       let bestRows: Record<string, unknown>[] = [];
 
       for (const sheetName of workbook.SheetNames) {
         const worksheet = workbook.Sheets[sheetName];
-        const parsedRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: true });
+        const parsedRows = sheetjs.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: '', raw: true });
 
         if (parsedRows.length > bestRows.length) {
           bestRows = parsedRows;

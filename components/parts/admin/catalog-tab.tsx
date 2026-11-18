@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useMemo, useRef, useState } from 'react';
 import {
   Archive,
   Download,
@@ -56,14 +56,16 @@ export function CatalogTab() {
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
 
+  // Typing stays responsive on a long catalog: the box updates at once, the list catches up right after.
+  const deferredSearch = useDeferredValue(search);
   const parts = useMemo(() => {
-    const term = normalizeText(search);
+    const term = normalizeText(deferredSearch);
     return (data?.parts ?? []).filter(
       (part) =>
         (showInactive || part.active) &&
         (!term || normalizeText(`${part.name} ${part.barcode ?? ''} ${part.sku ?? ''} ${part.brand ?? ''} ${part.category ?? ''}`).includes(term)),
     );
-  }, [data, search, showInactive]);
+  }, [data, deferredSearch, showInactive]);
 
   async function archive(part: Part) {
     if (!window.confirm(`Arquivar "${part.name}"? Ela some do catálogo (o histórico fica guardado).`)) return;
