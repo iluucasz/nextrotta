@@ -42,7 +42,8 @@ Análise de 18/11/2026 a partir de uma lista genérica de otimizações, separad
 - `xlsx` sob demanda: na Escala e em Peças nenhum chunk do `xlsx` na carga da página; ele vem só ao exportar ou baixar o modelo (arquivos gerados: `escala-banco-horas-…xlsx`, `modelo-importacao-horas.xlsx`, `modelo-pecas.xlsx`).
 - Importação lida de ponta a ponta (sem salvar): Escala (2 apontamentos válidos, datas e horas certas) e OS (data em número de série do Excel virou 05/10/2026 10H47).
 - Buscas: catálogo de peças ("hidrotec" = 9 de 27) e registro da Escala ("diego" = 23 linhas, só dele).
-- Não conferido: as OS do técnico (`/dashboard/services`, mesma lógica da tela da admin, cuja contagem foi conferida) e o ganho em bytes (o servidor de desenvolvimento não minifica e o build local não termina a pré-renderização).
+- Em escala, numa empresa fictícia `zz-perf-teste` (290 OS; criada só para o teste e apagada de vez ao fim): "100 de 290" → 200 → 290 com "Ordens 290"; mudar um filtro volta a lista para 100 (290 → outubro 72 → todas → 100). Na visão do técnico (modo preview) a troca de telas também reaproveita a sessão (0 chamadas nas duas primeiras, 1 depois dos 30 s).
+- Não alcançável: `/dashboard/services` está bloqueada para técnicos (`hiddenTechnicianRoutes` em `middleware.ts`), então a tela de OS do técnico que recebeu o mesmo ajuste não tem usuário e não foi testada. Também não conferido: o ganho em bytes (o servidor de desenvolvimento não minifica e o build local não termina a pré-renderização).
 - Recharts sob demanda: descartado. Nas telas de dashboard e faturamento o gráfico é o conteúdo principal, então carregá-lo depois só atrasaria o que o usuário veio ver.
 
 ## Observação sobre o build local
