@@ -3,6 +3,9 @@
 // development database on test companies of their own ("zz-lookup-*"), with a fake provider (nothing is ever called for real).
 process.loadEnvFile('.env');
 process.env.JWT_SECRET ??= 'test';
+// The platform's real gov.br login must never reach a test: the tests that need one set a fake pair and put it back.
+delete process.env.INFOSIMPLES_SP_CPF;
+delete process.env.INFOSIMPLES_SP_SENHA;
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -72,9 +75,90 @@ test('the PRF answer becomes our fines, with the amount still owed and the bolet
 });
 
 test('a state without its Detran integrated is looked up only on the federal highways', () => {
-  const result = provider.sourcesFor('SP');
+  const result = provider.sourcesFor('RJ');
   assert.deepEqual([result.sources.map((source) => source.key), result.detranCovered], [['prf'], false]);
   assert.equal(provider.sourcesFor('ms').detranCovered, true, 'the state is read in any case');
+});
+
+test('São Paulo is looked up in the Detran only when the platform has its gov.br login', () => {
+  assert.deepEqual([provider.sourcesFor('SP').sources.map((source) => source.key), provider.sourcesFor('SP').detranCovered], [['prf'], false], 'no login: federal highways only, as before');
+  process.env.INFOSIMPLES_SP_CPF = '123.456.789-09';
+  process.env.INFOSIMPLES_SP_SENHA = 'fake-pass';
+  try {
+    assert.deepEqual(provider.govbrLogin(), { cpf: '12345678909', password: 'fake-pass' });
+    const result = provider.sourcesFor('sp');
+    assert.deepEqual([result.sources.map((source) => source.key), result.detranCovered], [['detran-sp', 'prf'], true]);
+    const params = result.sources[0].params({ plate: 'ABC1D23', renavam: '12345678900', state: 'SP' });
+    assert.deepEqual(params, { placa: 'ABC1D23', renavam: '12345678900', login_cpf: '12345678909', login_senha: 'fake-pass' });
+    process.env.INFOSIMPLES_SP_CPF = '123';
+    assert.equal(provider.govbrLogin(), null, 'a CPF that is not 11 digits is no login');
+  } finally {
+    delete process.env.INFOSIMPLES_SP_CPF;
+    delete process.env.INFOSIMPLES_SP_SENHA;
+  }
+});
+
+test('the Detran-SP answer becomes our fines', () => {
+  process.env.INFOSIMPLES_SP_CPF = '12345678909';
+  process.env.INFOSIMPLES_SP_SENHA = 'fake-pass';
+  let source;
+  try { source = provider.sourcesFor('SP').sources[0]; } finally { delete process.env.INFOSIMPLES_SP_CPF; delete process.env.INFOSIMPLES_SP_SENHA; }
+  assert.equal(source.key, 'detran-sp');
+  const fines = source.parse({
+    debitos_multas: [
+      { auto_infracao: 'abc1111111', data_infracao: '11/11/2026', hora_infracao: '23:53:00', data_vencimento: '20/12/2026', valor: 203.62, descricao: 'Estacionar em local proibido', local: 'Avenida Paulista, 1636', municipio: 'SAO PAULO / SP', orgao_autuador: { codigo: '111', nome: 'DSV - SP' } },
+      { auto_infracao: 'xyz2', data_infracao: '12/11/2026', valor: '130,16' },
+      { auto_infracao: '', descricao: 'sem número' },
+    ],
+    debitos_ipva: [{ exercicio: '2026', valor: 1160.07 }],
+  });
+  assert.deepEqual(fines, [
+    { ait: 'ABC1111111', infractionAt: '2026-11-12T02:53:00.000Z', description: 'Estacionar em local proibido', amount: 203.62, points: null, location: 'Avenida Paulista, 1636 - SAO PAULO / SP', authority: 'DSV - SP', paymentDue: '2026-12-20' },
+    { ait: 'XYZ2', infractionAt: '2026-11-12T15:00:00.000Z', description: 'Infração de trânsito', amount: 130.16, points: null, location: null, authority: 'Detran-SP', paymentDue: null },
+  ]);
+  // The real answer of a car with nothing owed (18/11/2026): empty lists, and no fines.
+  assert.deepEqual(source.parse({ debitos_multas: [], debitos_ipva: [], debitos_licenciamento: [], multas_total: '0.0', restricao_financeira: 'Consta Gravame' }), []);
+  assert.deepEqual(source.parse({}), []);
+});
+
+test('a Detran-SP query asks the provider for more time and a gov.br problem is told in plain words, without the platform account details', async () => {
+  process.env.INFOSIMPLES_SP_CPF = '12345678909';
+  process.env.INFOSIMPLES_SP_SENHA = 'fake-pass';
+  let source;
+  try { source = provider.sourcesFor('SP').sources[0]; } finally { delete process.env.INFOSIMPLES_SP_CPF; delete process.env.INFOSIMPLES_SP_SENHA; }
+  const car = { plate: 'ABC1D23', renavam: '12345678900', state: 'SP' };
+  const bodies = [];
+  const answer = (body) => async (url, init) => { bodies.push(String(init.body)); return { status: 200, json: async () => body }; };
+
+  // The login is read when the call is made, so the fake pair stays in the environment for these calls only.
+  process.env.INFOSIMPLES_SP_CPF = '12345678909';
+  process.env.INFOSIMPLES_SP_SENHA = 'fake-pass';
+  after(() => { delete process.env.INFOSIMPLES_SP_CPF; delete process.env.INFOSIMPLES_SP_SENHA; });
+  const missing = await provider.createProviderFetcher('SEGREDO', answer({ code: 606, code_message: 'Parâmetros obrigatórios não foram enviados.', errors: ["Um dos pares de parâmetros deve ser informado para login no gov.br: 'login_cpf'/'login_senha'"] }))(source, car);
+  const sent = new URLSearchParams(bodies[0]);
+  delete process.env.INFOSIMPLES_SP_CPF;
+  delete process.env.INFOSIMPLES_SP_SENHA;
+  assert.equal(missing.ok, false);
+  assert.match(missing.message, /Detran-SP: a consulta ainda não está pronta no NextRotta/);
+  assert.doesNotMatch(missing.message, /gov\.br|login|606/);
+
+  let calls = 0;
+  const unauthorised = await provider.createProviderFetcher('SEGREDO', async (url, init) => {
+    calls += 1;
+    bodies.push(String(init.body));
+    return { status: 200, json: async () => ({ code: 620, code_message: 'O site de origem emitiu um erro', errors: ['É necessário autorizar a primeira vez manualmente o gov.br (https://www.detran.sp.gov.br/x)'] }) };
+  })(source, car);
+  assert.equal(unauthorised.ok, false);
+  assert.doesNotMatch(unauthorised.message, /gov\.br|detran\.sp\.gov\.br|620/);
+  assert.equal(calls, 1, 'a charged error is not asked again');
+
+  const other620 = await provider.createProviderFetcher('SEGREDO', answer({ code: 620, code_message: 'Erro do órgão', errors: ['Veículo não encontrado'] }))(source, car);
+  assert.match(other620.message, /Veículo não encontrado.*620/, 'other 620 errors keep the provider text');
+
+  assert.equal(sent.get('timeout'), '90');
+  assert.equal(sent.get('login_cpf'), '12345678909');
+  assert.equal(sent.get('placa'), 'ABC1D23');
+  assert.doesNotMatch(JSON.stringify([missing, unauthorised, other620]), /fake-pass|SEGREDO|12345678909/, 'neither the token nor the login leaks into a message');
 });
 
 test('the provider call sends the token and the car, reads the answer and never leaks the token in a failure', async () => {

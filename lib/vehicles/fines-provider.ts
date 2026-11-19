@@ -30,6 +30,8 @@ export type FineSource = {
   /** Path after /api/v2/consultas/ . */
   path: string;
   params: (car: CarToLookUp) => Record<string, string>;
+  /** How long the provider may wait for this agency's site; PROVIDER_TIMEOUT_SECONDS when absent. */
+  timeoutSeconds?: number;
   /** Turns the answer's data into fines (an empty list means "no fines"). */
   parse: (data: Record<string, unknown>) => ExternalFine[];
 };
@@ -134,12 +136,68 @@ const PRF: FineSource = {
     }),
 };
 
+/**
+ * The platform's gov.br login (CPF and password), from the environment. The Detran-SP query needs one: without it the provider answers 606
+ * (and charges). CONFIRMED with real calls (18/11/2026): the login is registered once in the provider's panel ("Autenticação em Duas
+ * Etapas do gov.br") and the gov.br account must have authorised the Detran-SP service once by hand (otherwise code 620). It is the
+ * platform's, never a company's, and it is never put in a message or a log.
+ */
+export function govbrLogin(): { cpf: string; password: string } | null {
+  const cpf = (process.env.INFOSIMPLES_SP_CPF ?? '').replace(/\D/g, '');
+  const password = process.env.INFOSIMPLES_SP_SENHA ?? '';
+  return cpf.length === 11 && password ? { cpf, password } : null;
+}
+
+/** Joins "10/11/2026" and "23:53:00" the way parseProviderDate reads them; the day alone when there is no time. */
+const dayAndTime = (day: unknown, time: unknown): string => [text(day), text(time)].filter(Boolean).join(' ');
+
+/**
+ * The Detran of São Paulo: debts and restrictions by plate and Renavam, through the platform's gov.br login. Slow (18 to 42 s measured) and
+ * charged on every answer, including some errors; the provider warns about a daily limit per login, so a batch is spread over days by the
+ * weekly rule and the manual lookup skips cars checked recently. Only the fines (`debitos_multas`) are read here; IPVA, licensing and the
+ * restrictions of the same answer are not used yet. Fields CONFIRMED on a real car WITHOUT fines (empty lists) and on the provider's
+ * example; the shape of an item with a real fine is the example's and still needs a real car that has one.
+ */
+const DETRAN_SP: FineSource = {
+  key: 'detran-sp',
+  label: 'Detran-SP',
+  path: 'detran/sp/debitos',
+  timeoutSeconds: 90,
+  params: (car) => {
+    const login = govbrLogin();
+    return { placa: car.plate, renavam: car.renavam, ...(login ? { login_cpf: login.cpf, login_senha: login.password } : {}) };
+  },
+  parse: (data) =>
+    list(data.debitos_multas).flatMap((row) => {
+      const ait = text(row.auto_infracao);
+      if (!ait) return [];
+      const authority = row.orgao_autuador && typeof row.orgao_autuador === 'object' ? textOrNull((row.orgao_autuador as Record<string, unknown>).nome) : null;
+      return [
+        {
+          ait: ait.toUpperCase(),
+          infractionAt: parseProviderDate(dayAndTime(row.data_infracao, row.hora_infracao)),
+          description: text(row.descricao) || 'Infração de trânsito',
+          amount: amountOf(row.valor),
+          points: null,
+          location: [textOrNull(row.local), textOrNull(row.municipio)].filter(Boolean).join(' - ') || null,
+          authority: authority ?? 'Detran-SP',
+          paymentDue: dateOnly(row.data_vencimento),
+        },
+      ];
+    }),
+};
+
 /** Detrans we already read, by UF. Adding a state is adding an entry here (and its test). */
-const DETRAN_BY_STATE: Record<string, FineSource> = { MS: DETRAN_MS };
+const DETRAN_BY_STATE: Record<string, { source: FineSource; ready?: () => boolean }> = {
+  MS: { source: DETRAN_MS },
+  // São Paulo only counts when the platform's gov.br login is in the environment: without it the query cannot work.
+  SP: { source: DETRAN_SP, ready: () => govbrLogin() !== null },
+};
 
 /** Where to look for a car of this state: its Detran when we have it, and always the federal highways. */
 export function sourcesFor(state: string): { sources: FineSource[]; detranCovered: boolean } {
-  const detran = DETRAN_BY_STATE[state.toUpperCase()];
+  const entry = DETRAN_BY_STATE[state.toUpperCase()];
+  const detran = entry && (!entry.ready || entry.ready()) ? entry.source : null;
   return { sources: detran ? [detran, PRF] : [PRF], detranCovered: Boolean(detran) };
 }
 
@@ -163,11 +221,12 @@ type Attempt = { result: LookupResult; transient: boolean };
 /** One call to the provider. `transient`: the agency or the provider's gateway failed for a moment, so asking again may work. */
 async function attempt(token: string, source: FineSource, car: CarToLookUp, fetchImpl: typeof fetch): Promise<Attempt> {
   try {
+    const timeout = source.timeoutSeconds ?? PROVIDER_TIMEOUT_SECONDS;
     const response = await fetchImpl(`${API_BASE}/${source.path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ token, timeout: String(PROVIDER_TIMEOUT_SECONDS), ...source.params(car) }),
-      signal: AbortSignal.timeout((PROVIDER_TIMEOUT_SECONDS + 25) * 1000),
+      body: new URLSearchParams({ token, timeout: String(timeout), ...source.params(car) }),
+      signal: AbortSignal.timeout((timeout + 25) * 1000),
     });
     const body = (await response.json().catch(() => null)) as { code?: number; code_message?: string; errors?: unknown; data?: unknown } | null;
     if (!body || typeof body.code !== 'number') {
@@ -184,6 +243,12 @@ async function attempt(token: string, source: FineSource, car: CarToLookUp, fetc
       if (body.code === 603) {
         console.error(`[carros] ${source.key}: o provedor recusou o acesso (603): ${first || text(body.code_message)}`);
         return { transient: false, result: { ok: false, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` } };
+      }
+      // 606 / 620 about the gov.br login (missing, or not yet authorised by hand on the Detran's page): the platform's setup, not the
+      // company's. The provider's text names the platform's account and a link, so it goes to the log only.
+      if ((body.code === 606 || body.code === 620) && /gov\.?br/i.test(`${first} ${text(body.code_message)}`)) {
+        console.error(`[carros] ${source.key}: o login do gov.br da plataforma não está pronto (${body.code}): ${first || text(body.code_message)}`);
+        return { transient: false, result: { ok: false, message: `${source.label}: a consulta ainda não está pronta no NextRotta.` } };
       }
       // 608: the agency's site refused the data we sent: the plate and the Renavam do not match a car there. Nothing to ask again.
       if (body.code === 608) {
