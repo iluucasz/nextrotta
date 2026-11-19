@@ -213,6 +213,9 @@ export interface TransferSummary {
   note: string | null;
   createdAt: string;
   acknowledgedAt: string | null;
+  /** Set when the admin undid the remittance (the units went back). */
+  canceledAt: string | null;
+  cancelReason: string | null;
 }
 
 function toTransfer(row: Record<string, unknown>): TransferSummary {
@@ -228,13 +231,15 @@ function toTransfer(row: Record<string, unknown>): TransferSummary {
     note: (row.note as string | null) ?? null,
     createdAt: toIso(row.created_at)!,
     acknowledgedAt: toIso(row.acknowledged_at),
+    canceledAt: toIso(row.canceled_at),
+    cancelReason: (row.cancel_reason as string | null) ?? null,
   };
 }
 
 export async function listTransfers(organizationId: string, technicianId?: string | null) {
   const rows = await sql`
     SELECT t.*, tech.name AS technician_name,
-      (SELECT COALESCE(SUM(m.quantity), 0)::int FROM part_movements m WHERE m.transfer_id = t.id AND m.quantity > 0) AS units
+      (SELECT COALESCE(SUM(m.quantity), 0)::int FROM part_movements m WHERE m.transfer_id = t.id AND m.quantity > 0 AND m.corrects_id IS NULL) AS units
     FROM part_transfers t
     JOIN technicians tech ON tech.id = t.technician_id
     WHERE t.organization_id = ${organizationId}
@@ -250,7 +255,7 @@ export async function getTransfer(organizationId: string, transferId: unknown, t
   const row = (
     await sql`
       SELECT t.*, tech.name AS technician_name,
-        (SELECT COALESCE(SUM(m.quantity), 0)::int FROM part_movements m WHERE m.transfer_id = t.id AND m.quantity > 0) AS units
+        (SELECT COALESCE(SUM(m.quantity), 0)::int FROM part_movements m WHERE m.transfer_id = t.id AND m.quantity > 0 AND m.corrects_id IS NULL) AS units
       FROM part_transfers t JOIN technicians tech ON tech.id = t.technician_id
       WHERE t.id = ${transferId} AND t.organization_id = ${organizationId}
         AND (${technicianId ?? null}::uuid IS NULL OR t.technician_id = ${technicianId ?? null}::uuid)
@@ -260,7 +265,7 @@ export async function getTransfer(organizationId: string, transferId: unknown, t
   const items = await sql`
     SELECT m.part_id, p.name, p.barcode, p.unit, m.quantity, m.unit_technician_price, m.unit_cost
     FROM part_movements m JOIN parts p ON p.id = m.part_id
-    WHERE m.transfer_id = ${transferId} AND m.quantity > 0
+    WHERE m.transfer_id = ${transferId} AND m.quantity > 0 AND m.corrects_id IS NULL
     ORDER BY lower(p.name)
   `;
   return {
@@ -280,6 +285,7 @@ export async function getTransfer(organizationId: string, transferId: unknown, t
 /** The technician confirms, in the app, that they received the parts (the consignment receipt). */
 export async function acknowledgeTransfer(organizationId: string, transferId: unknown, technicianId: string, actor: PartsActor, ip: string | null) {
   const transfer = await getTransfer(organizationId, transferId, technicianId);
+  if (transfer.canceledAt) throw new PartsError('Esta remessa foi desfeita pelo administrador. Não há nada a confirmar.', 409);
   if (transfer.acknowledgedAt) return transfer;
   await sql`
     UPDATE part_transfers SET acknowledged_at = NOW(), acknowledged_by = ${actor.id}, acknowledged_ip = ${ip}
@@ -320,6 +326,13 @@ function movementLabel(kind: MovementKind, direction: string | null, technicianI
   return MOVEMENT_KIND_LABELS[kind] ?? String(kind);
 }
 
+/** A row that reverses or adjusts an earlier one says so in its label. */
+function correctionLabel(label: string, correctionKind: string | null) {
+  if (correctionKind === 'reversal') return `Desfeito · ${label}`;
+  if (correctionKind === 'delta') return `Correção · ${label}`;
+  return label;
+}
+
 export async function listMovements(organizationId: string, filters: MovementFilters) {
   const partId = isUuid(filters.partId) ? filters.partId : null;
   const technicianId = isUuid(filters.technicianId) ? filters.technicianId : null;
@@ -337,7 +350,8 @@ export async function listMovements(organizationId: string, filters: MovementFil
   // The totals are window aggregates over the whole filtered set, so they don't depend on the page.
   const rows = await sql`
     SELECT m.*, p.name AS part_name, t.name AS technician_name, u.name AS created_by_name,
-      tr.direction AS transfer_direction, tr.number AS transfer_number, s.number AS sale_number, inv.number AS inventory_number,
+      tr.direction AS transfer_direction, tr.number AS transfer_number, (tr.canceled_at IS NOT NULL) AS transfer_canceled, s.number AS sale_number, inv.number AS inventory_number,
+      EXISTS (SELECT 1 FROM part_movements r WHERE r.corrects_id = m.id AND r.correction_kind = 'reversal') AS reversed,
       COUNT(*) OVER () AS total_rows,
       COALESCE(SUM(m.quantity) FILTER (WHERE m.kind = 'purchase') OVER (), 0) AS sum_purchased,
       COALESCE(SUM(m.quantity) FILTER (WHERE m.kind = 'transfer' AND tr.direction = 'out' AND m.technician_id IS NOT NULL) OVER (), 0) AS sum_sent,
@@ -384,7 +398,15 @@ export async function listMovements(organizationId: string, filters: MovementFil
       technicianName: (row.technician_name as string | null) ?? null,
       quantity: Number(row.quantity),
       kind: row.kind as MovementKind,
-      kindLabel: movementLabel(row.kind as MovementKind, (row.transfer_direction as string | null) ?? null, (row.technician_id as string | null) ?? null),
+      kindLabel: correctionLabel(
+        movementLabel(row.kind as MovementKind, (row.transfer_direction as string | null) ?? null, (row.technician_id as string | null) ?? null),
+        (row.correction_kind as string | null) ?? null,
+      ),
+      correctsId: (row.corrects_id as string | null) ?? null,
+      correctionKind: (row.correction_kind as 'reversal' | 'delta' | null) ?? null,
+      /** An entry or adjustment already undone: nothing more to do with it. */
+      reversed: Boolean(row.reversed),
+      transferCanceled: Boolean(row.transfer_canceled),
       unitCost: row.unit_cost === null ? null : money(row.unit_cost),
       unitTechnicianPrice: row.unit_technician_price === null ? null : money(row.unit_technician_price),
       transferId: (row.transfer_id as string | null) ?? null,
@@ -497,7 +519,7 @@ export async function getInventory(organizationId: string, inventoryId: unknown)
     number: Number(row.number),
     technicianId,
     technicianName: (row.technician_name as string | null) ?? null,
-    status: row.status as 'open' | 'closed' | 'canceled',
+    status: row.status as 'open' | 'closed' | 'canceled' | 'reverted',
     note: (row.note as string | null) ?? null,
     startedAt: toIso(row.started_at)!,
     closedAt: toIso(row.closed_at),
@@ -529,7 +551,7 @@ export async function listInventories(organizationId: string) {
     number: Number(row.number),
     technicianId: (row.technician_id as string | null) ?? null,
     technicianName: (row.technician_name as string | null) ?? null,
-    status: row.status as 'open' | 'closed' | 'canceled',
+    status: row.status as 'open' | 'closed' | 'canceled' | 'reverted',
     startedAt: toIso(row.started_at)!,
     closedAt: toIso(row.closed_at),
     counted: Number(row.counted),

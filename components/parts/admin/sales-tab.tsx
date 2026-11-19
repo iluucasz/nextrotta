@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Download, Loader2, MessageCircle, RefreshCw, XCircle } from 'lucide-react';
+import { Download, Loader2, MessageCircle, Pencil, Plus, RefreshCw, Trash2, XCircle } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { formatCurrency } from '@/lib/formatters';
 import type { Sale } from '@/lib/parts/sales';
 import { formatMonthLabel } from '@/lib/parts/types';
-import { Alert, currentMonthKey, formatDateTime, inputClassName, partsApi, Spinner, useParts, inputClass } from '../shared';
+import { Alert, currentMonthKey, Field, formatDateTime, inputClassName, partsApi, Spinner, useParts, inputClass } from '../shared';
 import type { CatalogResponse } from './catalog-tab';
 
 const STATUS_TONES = { awaiting_payment: 'warning', paid: 'success', canceled: 'neutral' } as const;
@@ -159,6 +159,7 @@ function SaleDetail({ sale, onChanged }: { sale: Sale; onChanged: (sale: Sale) =
   const [notice, setNotice] = useState('');
   const [reason, setReason] = useState('');
   const [cancelOpen, setCancelOpen] = useState(false);
+  const [editing, setEditing] = useState(false);
 
   async function act(action: string, extra: Record<string, unknown> = {}) {
     setBusy(action);
@@ -185,6 +186,19 @@ function SaleDetail({ sale, onChanged }: { sale: Sale; onChanged: (sale: Sale) =
 
   const margin = sale.totalTechnicianPrice - (sale.totalCost ?? 0);
 
+  if (editing) {
+    return (
+      <SaleEditForm
+        sale={sale}
+        onBack={() => setEditing(false)}
+        onSaved={(updated) => {
+          setEditing(false);
+          onChanged(updated);
+        }}
+      />
+    );
+  }
+
   return (
     <div className="grid gap-5 text-sm">
       <DialogHeader>
@@ -204,6 +218,7 @@ function SaleDetail({ sale, onChanged }: { sale: Sale; onChanged: (sale: Sale) =
           <StatusBadge tone="info">{sale.paymentMethodLabel}</StatusBadge>
         </div>
       </div>
+      {sale.editedAt ? <Alert tone="info">Esta venda foi corrigida em {formatDateTime(sale.editedAt)}. O histórico de movimentações mostra o que mudou.</Alert> : null}
       {sale.paymentConfirmedBy === 'technician' ? <Alert tone="warning">O técnico marcou este recebimento à mão. Não foi confirmado pelo Mercado Pago.</Alert> : null}
 
       <section className="grid gap-2">
@@ -296,10 +311,16 @@ function SaleDetail({ sale, onChanged }: { sale: Sale; onChanged: (sale: Sale) =
         </Button>
       ) : null}
       {sale.status !== 'canceled' && !cancelOpen ? (
-        <Button variant="ghost" size="lg" className="justify-self-start text-rose-700" onClick={() => setCancelOpen(true)}>
-          <XCircle className="h-4 w-4" />
-          Cancelar venda
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="lg" onClick={() => setEditing(true)}>
+            <Pencil className="h-4 w-4" />
+            Corrigir venda
+          </Button>
+          <Button variant="ghost" size="lg" className="text-rose-700" onClick={() => setCancelOpen(true)}>
+            <XCircle className="h-4 w-4" />
+            Cancelar venda
+          </Button>
+        </div>
       ) : null}
       {cancelOpen ? (
         <div className="grid gap-2 rounded-xl border border-rose-200 p-3">
@@ -318,6 +339,158 @@ function SaleDetail({ sale, onChanged }: { sale: Sale; onChanged: (sale: Sale) =
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+interface EditLine {
+  partId: string;
+  name: string;
+  quantity: string;
+  unitPrice: string;
+}
+
+const brl = (value: number) => value.toFixed(2).replace('.', ',');
+
+/** The admin fixes a sale launched wrong: customer data always, parts and prices while there is no Mercado Pago charge. */
+function SaleEditForm({ sale, onBack, onSaved }: { sale: Sale; onBack: () => void; onSaved: (sale: Sale) => void }) {
+  const catalog = useParts<CatalogResponse>('/api/parts');
+  const itemsLocked = sale.hasMercadoPagoCharge;
+  const [customerName, setCustomerName] = useState(sale.customerName ?? '');
+  const [customerPhone, setCustomerPhone] = useState(formatPhone(sale.customerPhone) === '—' ? '' : formatPhone(sale.customerPhone));
+  const [orderCode, setOrderCode] = useState(sale.orderCode ?? '');
+  const [note, setNote] = useState(sale.note ?? '');
+  const [lines, setLines] = useState<EditLine[]>(
+    sale.items.map((item) => ({ partId: item.partId, name: item.name, quantity: String(item.quantity), unitPrice: brl(item.unitPrice) })),
+  );
+  const [addId, setAddId] = useState('');
+  const [reason, setReason] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const available = (catalog.data?.parts ?? []).filter((part) => part.active && !lines.some((line) => line.partId === part.id));
+
+  function change(partId: string, patch: Partial<EditLine>) {
+    setLines((current) => current.map((line) => (line.partId === partId ? { ...line, ...patch } : line)));
+  }
+
+  function add() {
+    const part = catalog.data?.parts.find((item) => item.id === addId);
+    if (!part) return;
+    setLines((current) => [...current, { partId: part.id, name: part.name, quantity: '1', unitPrice: brl(part.suggestedPrice) }]);
+    setAddId('');
+  }
+
+  async function save() {
+    setBusy(true);
+    setError('');
+    try {
+      const { sale: updated } = await partsApi<{ sale: Sale }>(`/api/parts/sales/${sale.id}`, {
+        method: 'POST',
+        json: {
+          action: 'edit',
+          reason,
+          customerName,
+          customerPhone,
+          orderCode,
+          note,
+          ...(itemsLocked ? {} : { items: lines.map((line) => ({ partId: line.partId, quantity: Number(line.quantity), unitPrice: line.unitPrice })) }),
+        },
+      });
+      onSaved(updated);
+    } catch (reasonError) {
+      setError(reasonError instanceof Error ? reasonError.message : String(reasonError));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4 text-sm">
+      <DialogHeader>
+        <DialogTitle>Corrigir a venda nº {sale.number}</DialogTitle>
+        <DialogDescription>Nada é apagado: o histórico guarda a venda como foi lançada e o que foi corrigido.</DialogDescription>
+      </DialogHeader>
+
+      <section className="grid gap-3 sm:grid-cols-2">
+        <Field label="Nome do cliente">
+          <input className={inputClass('h-11 text-base sm:text-sm')} value={customerName} onChange={(event) => setCustomerName(event.target.value)} />
+        </Field>
+        <Field label="WhatsApp do cliente">
+          <input className={inputClass('h-11 text-base sm:text-sm')} inputMode="tel" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} />
+        </Field>
+        <Field label="Nº da OS">
+          <input className={inputClass('h-11 text-base sm:text-sm')} value={orderCode} onChange={(event) => setOrderCode(event.target.value)} />
+        </Field>
+        <Field label="Observação">
+          <input className={inputClass('h-11 text-base sm:text-sm')} value={note} onChange={(event) => setNote(event.target.value)} />
+        </Field>
+      </section>
+
+      <section className="grid gap-2">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Peças</h3>
+        {itemsLocked ? (
+          <Alert tone="warning">Esta venda já tem cobrança no Mercado Pago, então as peças e os valores não mudam aqui. Para trocar as peças, cancele a venda e lance outra.</Alert>
+        ) : null}
+        <ul className="grid gap-2">
+          {lines.map((line) => (
+            <li key={line.partId} className="grid gap-2 rounded-xl border p-3 sm:grid-cols-[minmax(0,1fr)_5rem_7rem_auto] sm:items-center">
+              <p className="min-w-0 font-medium wrap-anywhere">{line.name}</p>
+              <input
+                aria-label={`Quantidade de ${line.name}`}
+                className={inputClass('h-10 text-base sm:text-sm')}
+                inputMode="numeric"
+                value={line.quantity}
+                disabled={itemsLocked}
+                onChange={(event) => change(line.partId, { quantity: event.target.value.replace(/\D/g, '') })}
+              />
+              <input
+                aria-label={`Valor cobrado de ${line.name}`}
+                className={inputClass('h-10 text-base sm:text-sm')}
+                inputMode="decimal"
+                value={line.unitPrice}
+                disabled={itemsLocked}
+                onChange={(event) => change(line.partId, { unitPrice: event.target.value })}
+              />
+              {!itemsLocked ? (
+                <Button type="button" variant="ghost" size="icon" aria-label={`Tirar ${line.name}`} disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((item) => item.partId !== line.partId))}>
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+        {!itemsLocked ? (
+          <div className="flex gap-2">
+            <select className={inputClass('h-10 min-w-0 flex-1 text-base sm:text-sm')} value={addId} onChange={(event) => setAddId(event.target.value)} aria-label="Peça a somar">
+              <option value="">Somar outra peça…</option>
+              {available.map((part) => (
+                <option key={part.id} value={part.id}>
+                  {part.name}
+                </option>
+              ))}
+            </select>
+            <Button type="button" variant="outline" onClick={add} disabled={!addId}>
+              <Plus className="h-4 w-4" />
+              Somar
+            </Button>
+          </div>
+        ) : null}
+        {!itemsLocked ? <p className="text-xs text-muted-foreground">Quantidade a mais sai do carro de {sale.technicianName}; a menos volta para ele, e o que ele deve ao Acerto muda junto.</p> : null}
+      </section>
+
+      <Field label="Motivo da correção">
+        <input className={inputClass('h-11 text-base sm:text-sm')} value={reason} onChange={(event) => setReason(event.target.value)} placeholder="Ex.: o técnico lançou a peça errada" maxLength={300} />
+      </Field>
+      {error ? <Alert>{error}</Alert> : null}
+      <div className="grid grid-cols-2 gap-2">
+        <Button variant="outline" size="lg" onClick={onBack} disabled={busy}>
+          Voltar
+        </Button>
+        <Button size="lg" onClick={save} disabled={busy || !reason.trim() || (!itemsLocked && lines.some((line) => !Number(line.quantity)))}>
+          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          Salvar correção
+        </Button>
+      </div>
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revertInventory } from '@/lib/parts/corrections';
 import { partsContext, partsError, readJson } from '@/lib/parts/route-helpers';
 import { cancelInventory, closeInventory, countInventoryItem, getInventory } from '@/lib/parts/stock';
 
@@ -17,7 +18,7 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** action "count" (a barcode read or a typed number), "close" or "cancel". */
+/** action "count" (a barcode read or a typed number), "close", "cancel" or "revert" (undo a closed count). */
 export async function POST(request: NextRequest, { params }: Params) {
   const context = await partsContext(request, 'admin');
   if (context instanceof NextResponse) return context;
@@ -45,6 +46,10 @@ export async function POST(request: NextRequest, { params }: Params) {
     if (body.action === 'cancel') {
       await cancelInventory(context.organizationId, id, context.actor);
       return NextResponse.json({ ok: true });
+    }
+    if (body.action === 'revert') {
+      await revertInventory(context.organizationId, id, { reason: body.reason }, context.actor);
+      return NextResponse.json({ inventory: await getInventory(context.organizationId, id) });
     }
     return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
   } catch (error) {

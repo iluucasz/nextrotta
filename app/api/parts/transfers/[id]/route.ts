@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompanyName } from '@/lib/parts/catalog';
-import { partsContext, partsError, requestIp } from '@/lib/parts/route-helpers';
+import { undoTransfer } from '@/lib/parts/corrections';
+import { partsContext, partsError, readJson, requestIp } from '@/lib/parts/route-helpers';
 import { acknowledgeTransfer, getTransfer } from '@/lib/parts/stock';
 
 export const runtime = 'nodejs';
@@ -26,12 +27,21 @@ export async function GET(request: NextRequest, { params }: Params) {
   }
 }
 
-/** The technician confirms they received the parts (the consignment receipt). */
+/**
+ * The technician confirms they received the parts (the consignment receipt). The admin, with action "undo", sends the units back
+ * where they came from when the remittance was launched wrong.
+ */
 export async function POST(request: NextRequest, { params }: Params) {
-  const context = await partsContext(request, 'technician');
+  const context = await partsContext(request, 'any');
   if (context instanceof NextResponse) return context;
   try {
     const { id } = await params;
+    if (context.isAdmin) {
+      const body = await readJson(request);
+      if (body.action !== 'undo') return NextResponse.json({ error: 'Ação inválida.' }, { status: 400 });
+      await undoTransfer(context.organizationId, id, { reason: body.reason }, context.actor);
+      return NextResponse.json({ transfer: await getTransfer(context.organizationId, id) });
+    }
     const transfer = await acknowledgeTransfer(context.organizationId, id, context.technicianId!, context.actor, requestIp(request));
     return NextResponse.json({ transfer: hideCost(transfer) });
   } catch (error) {

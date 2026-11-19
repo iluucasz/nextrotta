@@ -22,6 +22,8 @@ export const BACKUP_TABLES = [
 export const BACKUP_EXCLUDED = [
   'ai_request_locks', 'auth_handoffs', 'mercadopago_oauth_states', 'impersonation_sessions', 'leads',
   'organization_notes', 'organization_provisioning', 'worker_runs', 'organization_backups',
+  // What each spreadsheet import changed, kept only so it can be undone: a bookkeeping register, not company data.
+  'part_imports',
   // The log of the fines lookups through the paid provider: a record of what was asked and when, never rolled back with a restore.
   'fines_lookup_runs',
   // Left over from an earlier version (a switch the company no longer has); nothing reads it. To be dropped by a migration once the code that stopped reading it is live.

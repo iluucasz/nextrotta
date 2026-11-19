@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { partsContext, partsError, readJson } from '@/lib/parts/route-helpers';
-import { cancelSale, checkPayment, confirmReceived, getSale, retryPayment, sendPaymentLink, sendReceipt } from '@/lib/parts/sales';
+import { cancelSale, checkPayment, confirmReceived, editSale, getSale, retryPayment, sendPaymentLink, sendReceipt } from '@/lib/parts/sales';
 
 export const runtime = 'nodejs';
 
@@ -22,6 +22,7 @@ export async function GET(request: NextRequest, { params }: Params) {
  * - check: asks Mercado Pago whether the customer paid (screens poll it);
  * - retry: new charge, optionally with another paymentMethod (technician);
  * - confirm: the technician received in cash or outside the system;
+ * - edit: the admin corrects the customer data and, while there is no Mercado Pago charge, the parts and prices;
  * - cancel: parts back to the technician's stock (technician: unpaid only; admin: any);
  * - send-link / send-receipt: WhatsApp to the customer again.
  */
@@ -54,6 +55,11 @@ export async function POST(request: NextRequest, { params }: Params) {
       }
       case 'cancel': {
         const sale = await cancelSale(organizationId, id, { reason: body.reason, technicianId }, actor);
+        return NextResponse.json({ sale });
+      }
+      case 'edit': {
+        if (technicianId) break;
+        const sale = await editSale(organizationId, id, body, actor);
         return NextResponse.json({ sale });
       }
       case 'send-link': {

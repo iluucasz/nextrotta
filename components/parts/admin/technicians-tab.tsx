@@ -1,7 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Clock, Loader2, Plus, Printer, ScanBarcode, Trash2, Unplug } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Clock, Loader2, Plus, Printer, ScanBarcode, Trash2, Undo2, Unplug } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import type { TransferSummary } from '@/lib/parts/stock';
 import { normalizeBarcode, type Part } from '@/lib/parts/types';
 import { Alert, BarcodeScanner, Field, formatDateTime, inputClassName, PartImage, partsApi, Spinner, useParts } from '../shared';
 import type { CatalogResponse } from './catalog-tab';
+import { ReasonDialog } from './corrections';
 
 type TransferDetail = TransferSummary & {
   items: Array<{ partId: string; name: string; barcode: string | null; unit: string; quantity: number; unitTechnicianPrice: number; unitCost: number }>;
@@ -22,6 +23,7 @@ export function TechniciansTab() {
   const [dialog, setDialog] = useState<{ kind: 'out' | 'return'; technicianId: string } | null>(null);
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
+  const [undoing, setUndoing] = useState<TransferSummary | null>(null);
 
   const partsById = useMemo(() => new Map((catalog.data?.parts ?? []).map((part) => [part.id, part])), [catalog.data]);
 
@@ -160,7 +162,12 @@ export function TechniciansTab() {
                     <td className="py-2 pr-3 text-right tabular-nums">{transfer.units}</td>
                     <td className="py-2 pr-3 text-right tabular-nums">{formatCurrency(transfer.totalTechnicianPrice)}</td>
                     <td className="py-2 pr-3">
-                      {transfer.acknowledgedAt ? (
+                      {transfer.canceledAt ? (
+                        <span className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={transfer.cancelReason ?? undefined}>
+                          <Undo2 className="h-3.5 w-3.5" />
+                          Desfeita em {formatDateTime(transfer.canceledAt)}
+                        </span>
+                      ) : transfer.acknowledgedAt ? (
                         <span className="inline-flex items-center gap-1 text-xs text-emerald-700">
                           <CheckCircle2 className="h-3.5 w-3.5" />
                           {formatDateTime(transfer.acknowledgedAt)}
@@ -177,6 +184,12 @@ export function TechniciansTab() {
                         <Printer className="h-4 w-4" />
                         Termo
                       </Button>
+                      {!transfer.canceledAt ? (
+                        <Button variant="ghost" size="lg" className="text-rose-700" onClick={() => setUndoing(transfer)}>
+                          <Undo2 className="h-4 w-4" />
+                          Desfazer
+                        </Button>
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -185,6 +198,25 @@ export function TechniciansTab() {
           </div>
         )}
       </DataPanel>
+
+      <ReasonDialog
+        open={undoing !== null}
+        title={undoing ? `Desfazer ${undoing.direction === 'out' ? 'a remessa' : 'a devolução'} nº ${undoing.number}?` : ''}
+        description={
+          undoing?.direction === 'out'
+            ? `As ${undoing.units} peça(s) saem do carro de ${undoing.technicianName} e voltam para o estoque central. Só dá se ele ainda tiver todas.`
+            : `As ${undoing?.units ?? 0} peça(s) saem do estoque central e voltam para o carro de ${undoing?.technicianName ?? ''}. Só dá se o central ainda tiver todas.`
+        }
+        confirmLabel="Desfazer"
+        onClose={() => setUndoing(null)}
+        onConfirm={async (reason) => {
+          await partsApi(`/api/parts/transfers/${undoing!.id}`, { method: 'POST', json: { action: 'undo', reason } });
+          setNotice(`${undoing!.direction === 'out' ? 'Remessa' : 'Devolução'} nº ${undoing!.number} desfeita.`);
+          setUndoing(null);
+          transfers.reload();
+          catalog.reload();
+        }}
+      />
 
       <Dialog open={dialog !== null} onOpenChange={(open) => !open && setDialog(null)}>
         <DialogContent className="max-h-[92vh] grid-cols-[minmax(0,1fr)] overflow-y-auto p-4 sm:p-6 sm:max-w-2xl">

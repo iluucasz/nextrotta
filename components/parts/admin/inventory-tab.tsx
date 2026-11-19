@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Loader2, Minus, Plus, ScanBarcode, Search } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, ChevronRight, ClipboardCheck, Loader2, Minus, Plus, ScanBarcode, Search, Undo2 } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
@@ -11,13 +11,14 @@ import type { InventoryLine } from '@/lib/parts/stock';
 import { addMonths } from '@/lib/parts/types';
 import { Alert, BarcodeScanner, currentMonthKey, Field, formatDateTime, inputClassName, PartImage, partsApi, Spinner, useParts, inputClass } from '../shared';
 import type { CatalogResponse } from './catalog-tab';
+import { ReasonDialog } from './corrections';
 
 interface InventorySummary {
   id: string;
   number: number;
   technicianId: string | null;
   technicianName: string | null;
-  status: 'open' | 'closed' | 'canceled';
+  status: 'open' | 'closed' | 'canceled' | 'reverted';
   startedAt: string;
   closedAt: string | null;
   counted: number;
@@ -33,8 +34,8 @@ interface InventoryDetail extends Omit<InventorySummary, 'counted' | 'surplusUni
   totals: { expected: number; counted: number; missingUnits: number; surplusUnits: number; missingValue: number };
 }
 
-const STATUS_LABELS = { open: 'Em contagem', closed: 'Encerrado', canceled: 'Cancelado' } as const;
-const STATUS_TONES = { open: 'warning', closed: 'success', canceled: 'neutral' } as const;
+const STATUS_LABELS = { open: 'Em contagem', closed: 'Encerrado', canceled: 'Cancelado', reverted: 'Desfeito' } as const;
+const STATUS_TONES = { open: 'warning', closed: 'success', canceled: 'neutral', reverted: 'neutral' } as const;
 
 type HistoryResult = 'all' | 'shortage' | 'clean' | 'canceled';
 
@@ -83,7 +84,7 @@ export function InventoryTab() {
 
   // Past counts can be searched by number or place, narrowed to one place and to one result.
   const locations = Array.from(new Map(history.map((inventory): [string, string] => [inventory.technicianId ?? 'central', inventory.technicianName ?? 'Estoque central'])).entries());
-  const resultOf = (inventory: InventorySummary): Exclude<HistoryResult, 'all'> => (inventory.status === 'canceled' ? 'canceled' : inventory.shortageValue ? 'shortage' : 'clean');
+  const resultOf = (inventory: InventorySummary): Exclude<HistoryResult, 'all'> => (inventory.status === 'canceled' || inventory.status === 'reverted' ? 'canceled' : inventory.shortageValue ? 'shortage' : 'clean');
   const term = normalizeText(historySearch);
   const matching = history.filter(
     (inventory) =>
@@ -95,7 +96,7 @@ export function InventoryTab() {
     ['all', 'Todos', matching.length],
     ['shortage', 'Com faltas', matching.filter((inventory) => resultOf(inventory) === 'shortage').length],
     ['clean', 'Sem faltas', matching.filter((inventory) => resultOf(inventory) === 'clean').length],
-    ['canceled', 'Cancelados', matching.filter((inventory) => resultOf(inventory) === 'canceled').length],
+    ['canceled', 'Cancelados e desfeitos', matching.filter((inventory) => resultOf(inventory) === 'canceled').length],
   ];
 
   return (
@@ -237,6 +238,7 @@ function InventoryScreen({ id, onBack }: { id: string; onBack: () => void }) {
   const [closeError, setCloseError] = useState('');
   const [closing, setClosing] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [reverting, setReverting] = useState(false);
   const [resolutions, setResolutions] = useState<Record<string, 'charge' | 'absorb'>>({});
   const [installments, setInstallments] = useState('1');
   const [firstDueMonth, setFirstDueMonth] = useState(currentMonthKey());
@@ -346,6 +348,12 @@ function InventoryScreen({ id, onBack }: { id: string; onBack: () => void }) {
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
           <h2 className="text-lg font-semibold">Inventário nº {inventory.number}</h2>
           <StatusBadge tone={STATUS_TONES[inventory.status]}>{STATUS_LABELS[inventory.status]}</StatusBadge>
+          {inventory.status === 'closed' ? (
+            <Button variant="ghost" size="sm" className="ml-auto text-rose-700" onClick={() => setReverting(true)}>
+              <Undo2 className="h-4 w-4" />
+              Desfazer inventário
+            </Button>
+          ) : null}
         </div>
         <p className="-mt-2 text-sm text-muted-foreground">
           {where} · {open ? `começou em ${formatDateTime(inventory.startedAt)}` : `encerrado em ${formatDateTime(inventory.closedAt)}`}
@@ -588,6 +596,19 @@ function InventoryScreen({ id, onBack }: { id: string; onBack: () => void }) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      <ReasonDialog
+        open={reverting}
+        title={`Desfazer o inventário nº ${inventory.number}?`}
+        description={`O estoque volta a ser o que era antes da contagem${inventory.debtNumber ? ` e o débito nº ${inventory.debtNumber} do técnico é cancelado` : ''}. Só dá se as sobras que ele lançou ainda estiverem no estoque.`}
+        confirmLabel="Desfazer inventário"
+        onClose={() => setReverting(false)}
+        onConfirm={async (reason) => {
+          const result = await partsApi<{ inventory: InventoryDetail }>(`/api/parts/inventories/${id}`, { method: 'POST', json: { action: 'revert', reason } });
+          setData(result);
+          setReverting(false);
+        }}
+      />
 
       <Dialog open={canceling} onOpenChange={(value) => !busy && setCanceling(value)}>
         <DialogContent className="grid-cols-[minmax(0,1fr)] p-4 sm:max-w-md sm:p-6">

@@ -380,6 +380,9 @@ export async function importParts(organizationId: string, rows: ImportRow[], act
   let created = 0;
   let updated = 0;
   let units = 0;
+  const importId = randomUUID();
+  // The parts the import changes, as they are now: what "Desfazer importação" puts back.
+  const previous: Array<Record<string, unknown>> = [];
   const queries = [];
   for (const item of plan) {
     if (!item) continue;
@@ -387,12 +390,19 @@ export async function importParts(organizationId: string, rows: ImportRow[], act
     if (item.isNew) {
       created += 1;
       queries.push(sql`
-        INSERT INTO parts (id, organization_id, name, barcode, sku, category, brand, unit, cost_price, technician_price, suggested_price, min_stock, created_by)
+        INSERT INTO parts (id, organization_id, name, barcode, sku, category, brand, unit, cost_price, technician_price, suggested_price, min_stock, created_by, import_id)
         VALUES (${id}, ${organizationId}, ${data.name}, ${data.barcode}, ${data.sku}, ${data.category}, ${data.brand}, ${data.unit},
-                ${data.costPrice}, ${data.technicianPrice}, ${data.suggestedPrice}, ${data.minStock}, ${actor.id})
+                ${data.costPrice}, ${data.technicianPrice}, ${data.suggestedPrice}, ${data.minStock}, ${actor.id}, ${importId})
       `);
     } else {
       updated += 1;
+      const before = existing.find((part) => part.id === id);
+      if (before && !previous.some((item) => item.id === id)) {
+        previous.push({
+          id, name: before.name, barcode: before.barcode, sku: before.sku, category: before.category, brand: before.brand, unit: before.unit,
+          costPrice: before.costPrice, technicianPrice: before.technicianPrice, suggestedPrice: before.suggestedPrice, minStock: before.minStock,
+        });
+      }
       queries.push(sql`
         UPDATE parts SET name = ${data.name}, barcode = ${data.barcode}, sku = ${data.sku}, category = ${data.category}, brand = ${data.brand},
           unit = ${data.unit}, cost_price = ${data.costPrice}, technician_price = ${data.technicianPrice},
@@ -403,12 +413,18 @@ export async function importParts(organizationId: string, rows: ImportRow[], act
     if (quantity > 0) {
       units += quantity;
       queries.push(sql`
-        INSERT INTO part_movements (organization_id, part_id, technician_id, quantity, kind, unit_cost, unit_technician_price, note, created_by)
-        VALUES (${organizationId}, ${id}, NULL, ${quantity}, 'purchase', ${data.costPrice}, ${data.technicianPrice}, 'Importação de planilha', ${actor.id})
+        INSERT INTO part_movements (organization_id, part_id, technician_id, quantity, kind, unit_cost, unit_technician_price, note, created_by, import_id)
+        VALUES (${organizationId}, ${id}, NULL, ${quantity}, 'purchase', ${data.costPrice}, ${data.technicianPrice}, 'Importação de planilha', ${actor.id}, ${importId})
       `);
     }
   }
-  await sql.transaction(queries);
+  await sql.transaction([
+    sql`
+      INSERT INTO part_imports (id, organization_id, created_count, updated_count, units, previous, created_by)
+      VALUES (${importId}, ${organizationId}, ${created}, ${updated}, ${units}, ${JSON.stringify(previous)}::jsonb, ${actor.id})
+    `,
+    ...queries,
+  ]);
 
   await recordAudit({
     organizationId,
@@ -416,7 +432,7 @@ export async function importParts(organizationId: string, rows: ImportRow[], act
     actorRole: actor.role,
     impersonationId: actor.impersonationId,
     action: 'part.imported',
-    details: { created, updated, units },
+    details: { created, updated, units, importId },
   });
-  return { created, updated, units };
+  return { created, updated, units, importId };
 }

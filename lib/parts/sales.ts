@@ -90,6 +90,10 @@ export interface Sale {
   createdAt: string;
   canceledAt: string | null;
   cancelReason: string | null;
+  /** Last correction by the admin (items, price or customer), if any. */
+  editedAt: string | null;
+  /** The sale has a charge in Mercado Pago, so its parts and prices are no longer editable. */
+  hasMercadoPagoCharge: boolean;
   items: SaleItem[];
 }
 
@@ -126,6 +130,8 @@ function toSale(row: Record<string, unknown>, items: SaleItem[], includeCost: bo
     createdAt: toIso(row.created_at)!,
     canceledAt: toIso(row.canceled_at),
     cancelReason: (row.cancel_reason as string | null) ?? null,
+    editedAt: toIso(row.edited_at),
+    hasMercadoPagoCharge: Boolean(row.mp_order_id || row.mp_preference_id || row.mp_payment_id),
     items,
   };
 }
@@ -598,8 +604,9 @@ export async function cancelSale(organizationId: string, saleId: unknown, input:
       ),
       sql`
         INSERT INTO part_account_entries (organization_id, technician_id, kind, amount, due_month, sale_id, description, created_by)
-        SELECT ${organizationId}, technician_id, 'sale_canceled', -amount, ${currentMonth()}, sale_id, ${`Venda nº ${row.number} cancelada: ${reason}`}, ${actor.id}
-        FROM part_account_entries WHERE sale_id = ${row.id} AND kind = 'sale'
+        SELECT ${organizationId}, technician_id, 'sale_canceled', -SUM(amount), ${currentMonth()}, sale_id, ${`Venda nº ${row.number} cancelada: ${reason}`}, ${actor.id}
+        FROM part_account_entries WHERE sale_id = ${row.id} AND kind IN ('sale', 'adjustment')
+        GROUP BY technician_id, sale_id HAVING SUM(amount) <> 0
       `,
     ]);
   } catch (error) {
@@ -611,6 +618,165 @@ export async function cancelSale(organizationId: string, saleId: unknown, input:
     action: 'part.sale_canceled', targetType: 'part_sale', targetId: String(row.id), details: { reason, wasPaid: row.status === 'paid' },
   });
   return getSale(organizationId, row.id, input.technicianId);
+}
+
+/**
+ * The admin corrects a sale that was launched wrong: customer data and, while there is no charge in Mercado Pago, the parts,
+ * quantities and prices. Nothing in the ledger is rewritten: the units that change go in as delta movements and what the
+ * technician owes changes by one adjustment entry, so the history shows the sale as launched and what was corrected.
+ */
+export async function editSale(organizationId: string, saleId: unknown, input: Record<string, unknown>, actor: PartsActor) {
+  const row = await loadSaleRow(organizationId, saleId);
+  if (row.status === 'canceled') throw new PartsError('Venda cancelada não pode ser editada.', 409);
+  const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim().slice(0, 300) : null;
+  if (!reason) throw new PartsError('Informe o motivo da correção.');
+
+  const customerName = typeof input.customerName === 'string' ? input.customerName.trim().slice(0, 120) || null : (row.customer_name as string | null) ?? null;
+  const orderCode = typeof input.orderCode === 'string' ? input.orderCode.trim().slice(0, 60) || null : (row.order_code as string | null) ?? null;
+  const note = typeof input.note === 'string' ? input.note.trim().slice(0, 300) || null : (row.note as string | null) ?? null;
+  let customerPhone = (row.customer_phone as string | null) ?? null;
+  if (typeof input.customerPhone === 'string' && input.customerPhone.trim() && input.customerPhone.replace(/\D/g, '') !== String(customerPhone ?? '').replace(/\D/g, '')) {
+    const phone = validatePhone(input.customerPhone);
+    if (phone.status !== 'valid') throw new PartsError('WhatsApp do cliente inválido (use o DDD).');
+    customerPhone = phone.e164;
+  }
+
+  const technicianId = String(row.technician_id);
+  const currentItems = await sql`SELECT part_id, part_name, quantity, unit_price, unit_technician_price, unit_cost FROM part_sale_items WHERE sale_id = ${row.id}`;
+  const queries: ReturnType<typeof sql>[] = [];
+  let totals = { amount: money(row.total_amount), technician: money(row.total_technician_price), cost: money(row.total_cost) };
+  let itemsChanged = false;
+  const before = currentItems.map((item) => ({ partId: String(item.part_id), name: String(item.part_name), quantity: Number(item.quantity), unitPrice: money(item.unit_price) }));
+  let after = before;
+
+  if (Array.isArray(input.items)) {
+    const requested = new Map<string, { quantity: number; unitPrice: number }>();
+    for (const item of input.items as Array<Record<string, unknown>>) {
+      if (!isUuid(item?.partId)) throw new PartsError('Peça inválida na venda.');
+      const quantity = parseQuantity(item.quantity);
+      const unitPrice = parseAmount(item.unitPrice);
+      if (unitPrice === null || unitPrice <= 0) throw new PartsError('Informe o valor cobrado de cada peça (maior que zero).');
+      const previous = requested.get(item.partId);
+      if (previous && previous.unitPrice !== unitPrice) throw new PartsError('A mesma peça aparece com dois preços diferentes.');
+      requested.set(item.partId, { quantity: (previous?.quantity ?? 0) + quantity, unitPrice });
+    }
+    if (!requested.size) throw new PartsError('A venda precisa ter ao menos uma peça. Para desfazê-la, cancele a venda.');
+
+    const current = new Map(currentItems.map((item) => [String(item.part_id), item]));
+    const changed = Array.from(new Set([...current.keys(), ...requested.keys()])).filter((partId) => {
+      const old = current.get(partId);
+      const next = requested.get(partId);
+      return !old || !next || Number(old.quantity) !== next.quantity || money(old.unit_price) !== next.unitPrice;
+    });
+    if (changed.length) {
+      if (row.mp_order_id || row.mp_preference_id || row.mp_payment_id) {
+        throw new PartsError('Esta venda tem cobrança no Mercado Pago: só dá para corrigir os dados do cliente. Para mudar as peças, cancele a venda e lance outra.', 409);
+      }
+      itemsChanged = true;
+      const newIds = Array.from(requested.keys()).filter((partId) => !current.has(partId));
+      const newParts = newIds.length
+        ? await sql`SELECT id, name, cost_price, technician_price FROM parts WHERE organization_id = ${organizationId} AND deleted_at IS NULL AND id = ANY(${newIds}::uuid[])`
+        : [];
+      if (newParts.length !== newIds.length) throw new PartsError('Uma das peças não foi encontrada.', 404);
+      const info = new Map(newParts.map((part) => [String(part.id), part]));
+      const originals = new Map(
+        (await sql`SELECT id, part_id FROM part_movements WHERE sale_id = ${row.id} AND kind = 'sale' AND corrects_id IS NULL`).map((move) => [String(move.part_id), String(move.id)]),
+      );
+
+      const guards: ReturnType<typeof sql>[] = [];
+      const lines: Array<{ partId: string; name: string; quantity: number; unitPrice: number; technicianPrice: number; cost: number }> = [];
+      for (const partId of changed) {
+        const old = current.get(partId);
+        const next = requested.get(partId);
+        const technicianPrice = old ? money(old.unit_technician_price) : money(info.get(partId)!.technician_price);
+        const cost = old ? money(old.unit_cost) : money(info.get(partId)!.cost_price);
+        const name = old ? String(old.part_name) : String(info.get(partId)!.name);
+        const more = (next?.quantity ?? 0) - Number(old?.quantity ?? 0);
+        if (more > 0) guards.push(requireUnits(organizationId, technicianId, partId, more));
+        if (more !== 0) {
+          const original = originals.get(partId);
+          queries.push(
+            original
+              ? sql`
+                  INSERT INTO part_movements (organization_id, part_id, technician_id, quantity, kind, unit_cost, unit_technician_price, sale_id, corrects_id, correction_kind, note, created_by)
+                  VALUES (${organizationId}, ${partId}, ${technicianId}, ${-more}, 'sale', ${cost}, ${technicianPrice}, ${row.id}, ${original}, 'delta', ${`Venda corrigida: ${reason}`}, ${actor.id})
+                `
+              : sql`
+                  INSERT INTO part_movements (organization_id, part_id, technician_id, quantity, kind, unit_cost, unit_technician_price, sale_id, note, created_by)
+                  VALUES (${organizationId}, ${partId}, ${technicianId}, ${-more}, 'sale', ${cost}, ${technicianPrice}, ${row.id}, ${`Venda corrigida: ${reason}`}, ${actor.id})
+                `,
+          );
+        }
+        if (!next) queries.push(sql`DELETE FROM part_sale_items WHERE sale_id = ${row.id} AND part_id = ${partId}`);
+        else if (old) queries.push(sql`UPDATE part_sale_items SET quantity = ${next.quantity}, unit_price = ${next.unitPrice} WHERE sale_id = ${row.id} AND part_id = ${partId}`);
+        else {
+          queries.push(sql`
+            INSERT INTO part_sale_items (organization_id, sale_id, part_id, part_name, quantity, unit_price, unit_technician_price, unit_cost)
+            VALUES (${organizationId}, ${row.id}, ${partId}, ${name}, ${next.quantity}, ${next.unitPrice}, ${technicianPrice}, ${cost})
+          `);
+        }
+        lines.push({ partId, name, quantity: next?.quantity ?? 0, unitPrice: next?.unitPrice ?? 0, technicianPrice, cost });
+      }
+
+      // The totals come from the final lines: the ones that stay as they were plus the ones that changed.
+      const final = new Map<string, { quantity: number; unitPrice: number; technicianPrice: number; cost: number }>();
+      for (const [partId, item] of current) {
+        final.set(partId, { quantity: Number(item.quantity), unitPrice: money(item.unit_price), technicianPrice: money(item.unit_technician_price), cost: money(item.unit_cost) });
+      }
+      for (const line of lines) {
+        if (line.quantity > 0) final.set(line.partId, line);
+        else final.delete(line.partId);
+      }
+      const all = Array.from(final.values());
+      totals = {
+        amount: money(all.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0)),
+        technician: money(all.reduce((sum, item) => sum + item.quantity * item.technicianPrice, 0)),
+        cost: money(all.reduce((sum, item) => sum + item.quantity * item.cost, 0)),
+      };
+      after = Array.from(requested, ([partId, item]) => ({
+        partId,
+        name: String(current.get(partId)?.part_name ?? info.get(partId)?.name ?? ''),
+        quantity: item.quantity,
+        unitPrice: item.unitPrice,
+      }));
+      if (MERCADOPAGO_METHODS.includes(row.payment_method as PaymentMethod) && totals.amount < 1) {
+        throw new PartsError('Para cobrar pelo Mercado Pago o total precisa ser de pelo menos R$ 1,00.');
+      }
+
+      const owedChange = money(totals.technician - money(row.total_technician_price));
+      queries.push(sql`
+        UPDATE part_sales SET total_amount = ${totals.amount}, total_technician_price = ${totals.technician}, total_cost = ${totals.cost}
+        WHERE id = ${row.id} AND organization_id = ${organizationId}
+      `);
+      if (owedChange !== 0) {
+        queries.push(sql`
+          INSERT INTO part_account_entries (organization_id, technician_id, kind, amount, due_month, sale_id, description, created_by)
+          VALUES (${organizationId}, ${technicianId}, 'adjustment', ${owedChange}, ${currentMonth()}, ${row.id}, ${`Venda nº ${row.number} corrigida: ${reason}`}, ${actor.id})
+        `);
+      }
+      queries.unshift(lockStock(organizationId, technicianId), ...guards);
+    }
+  }
+
+  const detailsChanged =
+    customerName !== ((row.customer_name as string | null) ?? null) ||
+    orderCode !== ((row.order_code as string | null) ?? null) ||
+    note !== ((row.note as string | null) ?? null) ||
+    customerPhone !== ((row.customer_phone as string | null) ?? null);
+  if (!itemsChanged && !detailsChanged) throw new PartsError('Nada mudou na venda.');
+
+  queries.push(sql`
+    UPDATE part_sales SET customer_name = ${customerName}, customer_phone = ${customerPhone}, order_code = ${orderCode}, note = ${note},
+      edited_at = NOW(), edited_by = ${actor.id}, edit_reason = ${reason}
+    WHERE id = ${row.id} AND organization_id = ${organizationId}
+  `);
+  await runStockTransaction(queries);
+  await recordAudit({
+    organizationId, actorId: actor.id, actorRole: actor.role, impersonationId: actor.impersonationId,
+    action: 'part.sale_edited', targetType: 'part_sale', targetId: String(row.id),
+    details: { reason, itemsChanged, before: itemsChanged ? { items: before, total: money(row.total_amount) } : undefined, after: itemsChanged ? { items: after, total: totals.amount } : undefined },
+  });
+  return getSale(organizationId, row.id);
 }
 
 // ---------------------------------------------------------------- messages to the customer

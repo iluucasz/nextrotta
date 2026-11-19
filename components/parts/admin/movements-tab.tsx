@@ -1,11 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, Download, Loader2, PackagePlus, Search, ShoppingCart, SlidersHorizontal } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, Download, Loader2, MoreHorizontal, PackagePlus, Pencil, Search, ShoppingCart, SlidersHorizontal, Undo2 } from 'lucide-react';
+import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import type { MovementKind } from '@/lib/parts/types';
 import { Alert, Field, formatDateTime, inputClass, partsApi, Spinner, useParts } from '../shared';
 import type { CatalogResponse } from './catalog-tab';
+import { ReasonDialog } from './corrections';
 
 interface MovementRow {
   id: string;
@@ -16,7 +19,15 @@ interface MovementRow {
   quantity: number;
   kind: MovementKind;
   kindLabel: string;
+  unitCost: number | null;
+  transferId: string | null;
   transferNumber: number | null;
+  /** The remittance was undone by the admin. */
+  transferCanceled: boolean;
+  /** This row corrects another one (an undo or an adjustment of an edited sale). */
+  correctsId: string | null;
+  /** An entry or adjustment that was already undone. */
+  reversed: boolean;
   saleNumber: number | null;
   inventoryNumber: number | null;
   note: string | null;
@@ -110,6 +121,11 @@ export function MovementsTab() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [version, setVersion] = useState(0);
+  const [action, setAction] = useState<{ kind: 'reverse' | 'correct' | 'undo-transfer'; row: MovementRow } | null>(null);
+  const [fixQuantity, setFixQuantity] = useState('');
+  const [fixCost, setFixCost] = useState('');
   const requestId = useRef(0);
 
   useEffect(() => {
@@ -149,7 +165,30 @@ export function MovementsTab() {
       .finally(() => {
         if (current === requestId.current) setLoading(false);
       });
-  }, [query]);
+  }, [query, version]);
+
+  function openAction(kind: 'reverse' | 'correct' | 'undo-transfer', row: MovementRow) {
+    setFixQuantity(String(row.quantity));
+    setFixCost(row.unitCost === null ? '' : row.unitCost.toFixed(2).replace('.', ','));
+    setAction({ kind, row });
+  }
+
+  async function runAction(reason: string) {
+    if (!action) return;
+    const { kind, row } = action;
+    if (kind === 'undo-transfer') {
+      await partsApi(`/api/parts/transfers/${row.transferId}`, { method: 'POST', json: { action: 'undo', reason } });
+      setNotice(`Remessa nº ${row.transferNumber} desfeita.`);
+    } else if (kind === 'reverse') {
+      await partsApi(`/api/parts/movements/${row.id}`, { method: 'POST', json: { action: 'reverse', reason } });
+      setNotice(`${row.kindLabel} de ${row.partName} desfeito.`);
+    } else {
+      await partsApi(`/api/parts/movements/${row.id}`, { method: 'POST', json: { action: 'correct', reason, quantity: Number(fixQuantity), unitCost: fixCost.replace(/\./g, '').replace(',', '.') } });
+      setNotice(`Entrada de ${row.partName} corrigida.`);
+    }
+    setAction(null);
+    setVersion((value) => value + 1);
+  }
 
   async function loadMore() {
     const current = requestId.current;
@@ -305,6 +344,7 @@ export function MovementsTab() {
       </div>
 
       {error ? <Alert>{error}</Alert> : null}
+      {notice ? <Alert tone="success">{notice}</Alert> : null}
 
       <section className="grid gap-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -344,10 +384,41 @@ export function MovementsTab() {
                         {row.note ? ` · ${row.note}` : ''}
                       </p>
                     </div>
-                    <span className={`text-xl font-semibold tabular-nums sm:text-right ${row.quantity > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
-                      {row.quantity > 0 ? '+' : ''}
-                      {row.quantity}
-                    </span>
+                    <div className="flex items-center gap-2 sm:justify-end">
+                      {row.reversed ? <StatusBadge tone="neutral">Desfeito</StatusBadge> : null}
+                      <span className={`text-xl font-semibold tabular-nums sm:text-right ${row.quantity > 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+                        {row.quantity > 0 ? '+' : ''}
+                        {row.quantity}
+                      </span>
+                      {canFix(row) ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="icon" aria-label={`Corrigir ${row.partName}`}>
+                              <MoreHorizontal className="h-4 w-4" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end">
+                            {row.kind === 'purchase' ? (
+                              <DropdownMenuItem onSelect={() => openAction('correct', row)}>
+                                <Pencil className="h-4 w-4" />
+                                Corrigir quantidade ou custo
+                              </DropdownMenuItem>
+                            ) : null}
+                            {row.kind === 'transfer' ? (
+                              <DropdownMenuItem onSelect={() => openAction('undo-transfer', row)} className="text-rose-700">
+                                <Undo2 className="h-4 w-4" />
+                                Desfazer a remessa inteira
+                              </DropdownMenuItem>
+                            ) : (
+                              <DropdownMenuItem onSelect={() => openAction('reverse', row)} className="text-rose-700">
+                                <Undo2 className="h-4 w-4" />
+                                Desfazer este lançamento
+                              </DropdownMenuItem>
+                            )}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : null}
+                    </div>
                   </div>
                 </li>
               );
@@ -367,6 +438,55 @@ export function MovementsTab() {
           </div>
         ) : null}
       </section>
+
+      <ReasonDialog
+        open={action !== null}
+        tone={action?.kind === 'correct' ? 'primary' : 'danger'}
+        title={
+          action?.kind === 'correct'
+            ? `Corrigir a entrada de ${action.row.partName}`
+            : action?.kind === 'undo-transfer'
+              ? `Desfazer a remessa nº ${action.row.transferNumber}?`
+              : `Desfazer ${action?.row.kindLabel.toLowerCase() ?? ''}?`
+        }
+        description={
+          action?.kind === 'correct'
+            ? 'A entrada antiga é desfeita e a nova entra no lugar. As duas ficam no histórico.'
+            : action?.kind === 'undo-transfer'
+              ? 'Todas as peças desta remessa voltam para onde estavam. Só dá se o destino ainda tiver todas.'
+              : 'Entra uma linha com a quantidade oposta; a original continua no histórico.'
+        }
+        confirmLabel={action?.kind === 'correct' ? 'Corrigir entrada' : 'Desfazer'}
+        canConfirm={action?.kind !== 'correct' || (Number(fixQuantity) > 0 && fixCost.trim() !== '')}
+        onClose={() => setAction(null)}
+        onConfirm={runAction}
+      >
+        {action?.kind === 'correct' ? (
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Quantidade certa">
+              <input className={inputClass('h-11 text-base sm:text-sm')} inputMode="numeric" value={fixQuantity} onChange={(event) => setFixQuantity(event.target.value.replace(/\D/g, ''))} />
+            </Field>
+            <Field label="Custo unitário certo (R$)">
+              <input className={inputClass('h-11 text-base sm:text-sm')} inputMode="decimal" value={fixCost} onChange={(event) => setFixCost(event.target.value)} />
+            </Field>
+          </div>
+        ) : null}
+        {action && action.kind !== 'correct' ? (
+          <p className="rounded-lg bg-muted/50 px-3 py-2 text-sm">
+            {action.row.partName} · {action.row.quantity > 0 ? '+' : ''}
+            {action.row.quantity} · {action.row.technicianName ? `Carro de ${action.row.technicianName}` : 'Estoque central'}
+          </p>
+        ) : null}
+      </ReasonDialog>
     </div>
   );
+}
+
+/** What can still be fixed here: entries, adjustments and the central leg of a remittance (sales and counts have their own button). */
+function canFix(row: MovementRow) {
+  if (row.correctsId || row.reversed) return false;
+  if (row.kind === 'purchase') return !row.technicianId;
+  if (row.kind === 'adjustment') return true;
+  if (row.kind === 'transfer') return !row.technicianId && !row.transferCanceled && Boolean(row.transferId);
+  return false;
 }

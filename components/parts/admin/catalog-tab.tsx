@@ -30,6 +30,7 @@ import { formatCurrency, normalizeText } from '@/lib/formatters';
 import type { PartDetail } from '@/lib/parts/detail';
 import { normalizeBarcode, parseAmount, SALE_STATUS_LABELS, type MovementKind, type Part } from '@/lib/parts/types';
 import { Alert, BarcodeScanner, Field, formatDateTime, inputClassName, PartImage, partsApi, resizeImage, Spinner, useParts, inputClass } from '../shared';
+import { ImportHistory, PurgeForm } from './purge';
 
 export interface CatalogResponse {
   parts: Part[];
@@ -44,6 +45,7 @@ type Dialogs =
   | { kind: 'history'; part: Part }
   | { kind: 'detail'; part: Part }
   | { kind: 'import' }
+  | { kind: 'purge'; ids: string[] }
   | null;
 
 const money = (value: number) => value.toFixed(2).replace('.', ',');
@@ -55,6 +57,8 @@ export function CatalogTab() {
   const [dialog, setDialog] = useState<Dialogs>(null);
   const [notice, setNotice] = useState('');
   const [actionError, setActionError] = useState('');
+  // Parts ticked for a permanent delete (the same list the table shows, so "all" means all that match the search).
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   // Typing stays responsive on a long catalog: the box updates at once, the list catches up right after.
   const deferredSearch = useDeferredValue(search);
@@ -66,6 +70,18 @@ export function CatalogTab() {
         (!term || normalizeText(`${part.name} ${part.barcode ?? ''} ${part.sku ?? ''} ${part.brand ?? ''} ${part.category ?? ''}`).includes(term)),
     );
   }, [data, deferredSearch, showInactive]);
+
+  const selectedIds = useMemo(() => parts.filter((part) => selected.has(part.id)).map((part) => part.id), [parts, selected]);
+  const allSelected = parts.length > 0 && selectedIds.length === parts.length;
+
+  function toggle(partId: string) {
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(partId)) next.delete(partId);
+      else next.add(partId);
+      return next;
+    });
+  }
 
   async function archive(part: Part) {
     if (!window.confirm(`Arquivar "${part.name}"? Ela some do catálogo (o histórico fica guardado).`)) return;
@@ -81,6 +97,7 @@ export function CatalogTab() {
 
   function done(message: string) {
     setDialog(null);
+    setSelected(new Set());
     setNotice(message);
     setActionError('');
     reload();
@@ -120,15 +137,42 @@ export function CatalogTab() {
             Mostrar inativas
           </label>
         </div>
+        {selectedIds.length ? (
+          <div className="mb-3 flex flex-wrap items-center gap-3 rounded-lg border border-primary/30 bg-primary/5 px-3 py-2 text-sm">
+            <span className="font-medium">
+              {selectedIds.length} selecionada{selectedIds.length === 1 ? '' : 's'}
+            </span>
+            {!allSelected ? (
+              <button type="button" className="text-primary underline-offset-2 hover:underline" onClick={() => setSelected(new Set(parts.map((part) => part.id)))}>
+                Selecionar todas as {parts.length} da lista
+              </button>
+            ) : null}
+            <button type="button" className="text-muted-foreground underline-offset-2 hover:underline" onClick={() => setSelected(new Set())}>
+              Limpar
+            </button>
+            <Button variant="destructive" size="sm" className="ml-auto" onClick={() => setDialog({ kind: 'purge', ids: selectedIds })}>
+              <Trash2 className="h-4 w-4" />
+              Excluir para sempre
+            </Button>
+          </div>
+        ) : null}
         {loading && !data ? (
           <Spinner />
         ) : !data?.parts.length ? (
           <EmptyState icon={PackagePlus} title="Nenhuma peça cadastrada" description="Cadastre as peças uma a uma ou importe uma planilha." />
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[860px] text-sm">
+            <table className="w-full min-w-[900px] text-sm">
               <thead className="text-left text-xs text-muted-foreground">
                 <tr className="border-b">
+                  <th className="w-8 py-2 pr-2">
+                    <input
+                      type="checkbox"
+                      aria-label="Selecionar todas as peças da lista"
+                      checked={allSelected}
+                      onChange={() => setSelected(allSelected ? new Set() : new Set(parts.map((part) => part.id)))}
+                    />
+                  </th>
                   <th className="py-2 pr-3 font-medium">Peça</th>
                   <th className="py-2 pr-3 text-right font-medium">Custo</th>
                   <th className="py-2 pr-3 text-right font-medium">Técnico</th>
@@ -154,6 +198,9 @@ export function CatalogTab() {
                         }
                       }}
                     >
+                      <td className="w-8 py-2 pr-2" onClick={(event) => event.stopPropagation()}>
+                        <input type="checkbox" aria-label={`Selecionar ${part.name}`} checked={selected.has(part.id)} onChange={() => toggle(part.id)} />
+                      </td>
                       <td className="py-2 pr-3">
                         <div className="flex items-center gap-3">
                           <PartImage src={part.imageUrl} alt={part.name} className="h-10 w-10" />
@@ -210,6 +257,10 @@ export function CatalogTab() {
                               <Archive className="h-4 w-4" />
                               Arquivar
                             </DropdownMenuItem>
+                            <DropdownMenuItem onSelect={() => setDialog({ kind: 'purge', ids: [part.id] })} className="text-rose-700">
+                              <Trash2 className="h-4 w-4" />
+                              Excluir para sempre
+                            </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
                       </td>
@@ -232,6 +283,7 @@ export function CatalogTab() {
             <PartDetailView part={dialog.part} onAction={(kind) => setDialog({ kind, part: dialog.part })} />
           ) : null}
           {dialog?.kind === 'import' ? <ImportForm onSaved={(message) => done(message)} /> : null}
+          {dialog?.kind === 'purge' ? <PurgeForm ids={dialog.ids} onClose={() => setDialog(null)} onDone={(message) => done(message)} /> : null}
         </DialogContent>
       </Dialog>
     </div>
@@ -1361,6 +1413,7 @@ function ImportForm({ onSaved }: { onSaved: (message: string) => void }) {
           Importar {rows ? `${rows.length} linha(s)` : ''}
         </Button>
       </DialogFooter>
+      <ImportHistory onUndone={onSaved} />
     </div>
   );
 }

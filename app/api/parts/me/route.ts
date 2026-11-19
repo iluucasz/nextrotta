@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       settlementDay: settings.settlementDay,
       mercadoPago,
       account: summary[0] ?? null,
-      pendingTransfers: transfers.filter((transfer) => !transfer.acknowledgedAt).map(({ totalCost: _cost, ...transfer }) => transfer),
+      pendingTransfers: transfers.filter((transfer) => !transfer.acknowledgedAt && !transfer.canceledAt).map(({ totalCost: _cost, ...transfer }) => transfer),
       pendingDebts: debts.filter((debt) => debt.status === 'active' && !debt.acknowledgedAt),
     });
   } catch (error) {
