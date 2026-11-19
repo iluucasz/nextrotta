@@ -201,12 +201,17 @@ export function sourcesFor(state: string): { sources: FineSource[]; detranCovere
   return { sources: detran ? [detran, PRF] : [PRF], detranCovered: Boolean(detran) };
 }
 
-/** `deferred`: not asked at all because the time budget of this lookup ran out; the next lookup does it. */
 /**
  * `deferred`: not asked at all because the time budget of this lookup ran out; the next lookup does it.
  * `refused`: the agency refused the plate or the Renavam (code 608): asking again is useless and billed, so it waits for the data to be edited.
  */
-export type LookupResult = { ok: true; fines: ExternalFine[] } | { ok: false; message: string; deferred?: boolean; refused?: boolean };
+/**
+ * `unavailable`: the query is not set up on the platform's side yet (not enabled on the provider's account, or the gov.br login is not
+ * ready). Nothing the company can fix, so it is never shown as a problem; and within one lookup it is not asked again.
+ */
+export type LookupResult =
+  | { ok: true; fines: ExternalFine[] }
+  | { ok: false; message: string; deferred?: boolean; refused?: boolean; unavailable?: boolean };
 
 /** One query: asks the provider and reads the answer. Never throws; a failure comes back as a message (the token is never put in it). */
 export type Fetcher = (source: FineSource, car: CarToLookUp) => Promise<LookupResult>;
@@ -242,13 +247,13 @@ async function attempt(token: string, source: FineSource, car: CarToLookUp, fetc
       // nothing about it, and the text of the provider carries the platform's own account details, so it goes to the log only.
       if (body.code === 603) {
         console.error(`[carros] ${source.key}: o provedor recusou o acesso (603): ${first || text(body.code_message)}`);
-        return { transient: false, result: { ok: false, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` } };
+        return { transient: false, result: { ok: false, unavailable: true, message: `${source.label}: a consulta ainda não foi habilitada pelo NextRotta.` } };
       }
       // 606 / 620 about the gov.br login (missing, or not yet authorised by hand on the Detran's page): the platform's setup, not the
       // company's. The provider's text names the platform's account and a link, so it goes to the log only.
       if ((body.code === 606 || body.code === 620) && /gov\.?br/i.test(`${first} ${text(body.code_message)}`)) {
         console.error(`[carros] ${source.key}: o login do gov.br da plataforma não está pronto (${body.code}): ${first || text(body.code_message)}`);
-        return { transient: false, result: { ok: false, message: `${source.label}: a consulta ainda não está pronta no NextRotta.` } };
+        return { transient: false, result: { ok: false, unavailable: true, message: `${source.label}: a consulta ainda não está pronta no NextRotta.` } };
       }
       // 608: the agency's site refused the data we sent: the plate and the Renavam do not match a car there. Nothing to ask again.
       if (body.code === 608) {

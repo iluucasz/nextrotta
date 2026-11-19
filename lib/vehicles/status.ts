@@ -206,6 +206,70 @@ export const RUN_STATUS_LABEL = { running: 'Em andamento', ok: 'Concluída', par
 
 export type RunLite = { kind: 'weekly' | 'manual'; status: 'running' | 'ok' | 'partial' | 'error'; startedAt: string; cars: number; created: number; failed: number; message: string | null };
 
+/**
+ * What one agency said about one car in a lookup. `unavailable`: the query is not set up on the platform yet (never the company's
+ * problem, so the screen leaves it out); `deferred`: not asked because this lookup ran out of time.
+ */
+export type RunSourceDetail = {
+  label: string;
+  result: 'ok' | 'failed' | 'unavailable' | 'deferred';
+  /** Fines the agency listed for the car (already registered or not). */
+  found: number;
+  /** The ones that were new to the company: registered by this lookup. */
+  created: Array<{ ait: string; description: string; amount: number }>;
+  message: string | null;
+};
+export type RunCarDetail = { plate: string; sources: RunSourceDetail[] };
+export type RunDetails = { cars: RunCarDetail[] };
+
+/** One agency's answer in words, with the tone of its dot. */
+export function describeSource(source: RunSourceDetail): { tone: Tone; text: string } {
+  switch (source.result) {
+    case 'ok': {
+      if (source.found === 0) return { tone: 'success', text: 'Consultou: nenhuma multa.' };
+      const news = source.created.length
+        ? `${source.created.length} ${plural(source.created.length, 'nova', 'novas')}`
+        : 'nenhuma nova (já estavam registradas)';
+      return { tone: source.created.length ? 'warning' : 'success', text: `Consultou: ${source.found} ${plural(source.found, 'multa', 'multas')}, ${news}.` };
+    }
+    case 'failed':
+      // The message already starts with the agency's name ("Detran-SP: ..."), and the line shows the name beside it.
+      return { tone: 'danger', text: source.message ? source.message.replace(`${source.label}: `, '') : 'Não respondeu.' };
+    case 'deferred':
+      return { tone: 'neutral', text: 'Ficou para a próxima verificação (acabou o tempo desta).' };
+    default:
+      return { tone: 'neutral', text: 'Consulta ainda não disponível.' };
+  }
+}
+
+/** The agencies worth showing the company: the ones not yet set up on the platform are left out. */
+export const visibleSources = (car: RunCarDetail): RunSourceDetail[] => car.sources.filter((source) => source.result !== 'unavailable');
+
+/** Cars that no agency could be asked about yet (all of them unavailable). */
+export const carsWithoutLookup = (details: RunDetails): RunCarDetail[] => details.cars.filter((car) => visibleSources(car).length === 0);
+
+/** How many cars in a lookup had something to look at: a new fine or an agency that failed. For the headline of the window. */
+export function runHighlights(details: RunDetails): { withNewFines: number; withFailures: number } {
+  const visible = details.cars.map(visibleSources);
+  return {
+    withNewFines: visible.filter((sources) => sources.some((source) => source.created.length > 0)).length,
+    withFailures: visible.filter((sources) => sources.some((source) => source.result === 'failed')).length,
+  };
+}
+
+/** Cars with a fine still open, by car id: what the list of cars flags so the company knows which one to open. */
+export function openFinesByCar(fines: Array<FineState & { vehicleId: string }>, today: string): Map<string, { open: number; urgent: boolean }> {
+  const byCar = new Map<string, { open: number; urgent: boolean }>();
+  for (const fine of fines) {
+    if (fineStage(fine) === 'resolved') continue;
+    const entry = byCar.get(fine.vehicleId) ?? { open: 0, urgent: false };
+    entry.open += 1;
+    if (['soon', 'overdue'].includes(indicationState(fine, today))) entry.urgent = true;
+    byCar.set(fine.vehicleId, entry);
+  }
+  return byCar;
+}
+
 /** "16/11 08:05" in Brasília time. */
 export function shortDateTime(iso: string): string {
   const local = new Date(Date.parse(iso) - 3 * 3_600_000).toISOString();

@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { AlertTriangle, CheckCircle2, PlugZap } from 'lucide-react';
 import { Panel } from '@/components/management-ui';
 import { formatPlate } from '@/lib/vehicles/rules';
@@ -7,6 +8,7 @@ import { automationState, carLookupSituation, RUN_STATUS_LABEL, shortDateTime } 
 import type { VehicleRow } from '@/lib/vehicles/store';
 import type { FinesData } from './fines';
 import { cn } from '@/lib/utils';
+import { RunDialog } from './run-dialog';
 
 const TONE_ICON = { neutral: PlugZap, success: CheckCircle2, warning: AlertTriangle, danger: AlertTriangle } as const;
 
@@ -40,6 +42,7 @@ export function HistoryTab({
   running: boolean;
   onOpenCar: (car: VehicleRow) => void;
 }) {
+  const [openRun, setOpenRun] = useState<string | null>(null);
   return (
     <>
       <AutomationCard lookup={lookup} />
@@ -48,7 +51,7 @@ export function HistoryTab({
       <div className="cr-layout">
         <Panel
           title="Verificações"
-          help="Cada vez que o sistema consulta as multas dos carros aparece aqui: a automática de domingo e as que você pediu. Mostra quantos carros foram consultados e quantas multas novas apareceram."
+          help="Cada vez que o sistema consulta as multas dos carros aparece aqui: a automática de domingo e as que você pediu. Clique em uma linha para ver o que cada órgão respondeu, carro por carro, e quais multas eram novas."
         >
           {lookup.runs.length === 0 ? (
             <p className="cr-empty-line">{lookup.enabled ? 'Nenhuma verificação ainda. A primeira sai no próximo domingo.' : 'Nenhuma verificação: a consulta automática está desligada.'}</p>
@@ -66,7 +69,19 @@ export function HistoryTab({
                 </thead>
                 <tbody>
                   {lookup.runs.map((run) => (
-                    <tr key={run.id}>
+                    <tr
+                      key={run.id}
+                      className="cr-row-click"
+                      tabIndex={0}
+                      aria-label={`Ver o detalhe da verificação de ${shortDateTime(run.startedAt)}`}
+                      onClick={() => setOpenRun(run.id)}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                          event.preventDefault();
+                          setOpenRun(run.id);
+                        }
+                      }}
+                    >
                       <td className="cr-nowrap">{shortDateTime(run.startedAt)}</td>
                       <td>{run.kind === 'weekly' ? 'Automática' : 'Manual'}</td>
                       <td className="cr-num">{run.status === 'running' ? '—' : run.cars}</td>
@@ -101,6 +116,7 @@ export function HistoryTab({
           </ul>
         </Panel>
       </div>
+      {openRun ? <RunDialog runId={openRun} onClose={() => setOpenRun(null)} /> : null}
     </>
   );
 }

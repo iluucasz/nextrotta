@@ -2,6 +2,7 @@
 
 // Small pieces shared by the Carros screens (cars, fines, the technician's own fines).
 import type { ReactNode } from 'react';
+import { TriangleAlert } from 'lucide-react';
 import { dueState, type DueState } from '@/lib/vehicles/rules';
 import type { VehicleRow } from '@/lib/vehicles/store';
 import { brDate } from './call';
@@ -41,6 +42,17 @@ export function Dues({ car, today, empty = false }: { car: Pick<VehicleRow, 'lic
     <span className="cr-dues">
       <DueBadge label="Licenc." state={licensing} date={car.licensingDue} />
       <DueBadge label="Seguro" state={insurance} date={car.insuranceDue} />
+    </span>
+  );
+}
+
+/** "2 multas": flags a car that has fines still open, so the company knows which one to open. Red when a deadline is near or gone. */
+export function FineFlag({ fines }: { fines: { open: number; urgent: boolean } | undefined }) {
+  if (!fines) return null;
+  const text = fines.open === 1 ? '1 multa' : `${fines.open} multas`;
+  return (
+    <span className={`cr-fine-flag${fines.urgent ? ' is-urgent' : ''}`} title={fines.urgent ? `${text} em aberto, com prazo acabando` : `${text} em aberto`}>
+      <TriangleAlert size={13} aria-hidden="true" /> {text}
     </span>
   );
 }

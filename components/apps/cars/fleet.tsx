@@ -5,14 +5,14 @@ import { Bell, CarFront, History as HistoryIcon, Pencil, Plus, TriangleAlert } f
 import { ModalNotice, SegmentedControl } from '@/components/modal-kit';
 import { Panel } from '@/components/management-ui';
 import { formatPlate, VEHICLE_STATUS_LABELS } from '@/lib/vehicles/rules';
-import { carsStatus, finesStatus, fleetProblems, lastLookup, nextDues, type StatusAction, type StatusCard } from '@/lib/vehicles/status';
+import { carsStatus, finesStatus, fleetProblems, lastLookup, nextDues, openFinesByCar, type StatusAction, type StatusCard } from '@/lib/vehicles/status';
 import type { VehicleRow } from '@/lib/vehicles/store';
 import { AlertsTab } from './alerts-tab';
 import { CarDetail } from './car-detail';
 import { CarDialog } from './car-dialog';
 import { brDate, brDay, call, money } from './call';
 import { FineDialog, FinesList, useFinesLookup, type FinesData } from './fines';
-import { carName, Dues, type Technician } from './kit';
+import { carName, Dues, FineFlag, type Technician } from './kit';
 import { HistoryTab } from './history-tab';
 import { LookupSummary } from './lookup-panel';
 import { StatusHero } from './status';
@@ -24,11 +24,12 @@ type Tab = 'cars' | 'fines' | 'alerts' | 'history';
 type View = 'technicians' | 'cars';
 
 /** A button for one car: its plate, its name and its paper dates. */
-function CarChip({ car, today, onOpen }: { car: VehicleRow; today: string; onOpen: (car: VehicleRow) => void }) {
+function CarChip({ car, today, fines, onOpen }: { car: VehicleRow; today: string; fines: { open: number; urgent: boolean } | undefined; onOpen: (car: VehicleRow) => void }) {
   return (
-    <button type="button" className="cr-car" onClick={() => onOpen(car)}>
+    <button type="button" className={`cr-car${fines ? ' has-fine' : ''}`} onClick={() => onOpen(car)}>
       <span className="cr-plate">{formatPlate(car.plate)}</span>
       {carName(car) ? <span className="cr-muted">{carName(car)}</span> : null}
+      <FineFlag fines={fines} />
       <Dues car={car} today={today} />
     </button>
   );
@@ -99,6 +100,8 @@ export function FleetApp() {
   const cars = useMemo(() => fleet?.vehicles ?? [], [fleet]);
   const today = fleet?.today ?? '';
   const lookupEnabled = Boolean(fines?.lookup.enabled);
+  // The cars with a fine still open are flagged in both lists, so the company sees which one to click.
+  const finesByCar = useMemo(() => openFinesByCar(fines?.fines ?? [], today), [fines, today]);
 
   const problems = useMemo(
     () => (fleet && fines ? fleetProblems({ cars, fines: fines.fines, today: fleet.today, lookupEnabled }) : []),
@@ -285,6 +288,7 @@ export function FleetApp() {
                           <th>Carro</th>
                           <th>Técnico</th>
                           <th>Km</th>
+                          <th>Multas</th>
                           <th>Documentos</th>
                           <th>Situação</th>
                           <th aria-label="Editar" />
@@ -292,7 +296,7 @@ export function FleetApp() {
                       </thead>
                       <tbody>
                         {cars.map((car) => (
-                          <tr key={car.id} className="cr-row-click" onClick={() => setDetailCar(car)}>
+                          <tr key={car.id} className={`cr-row-click${finesByCar.has(car.id) ? ' has-fine' : ''}`} onClick={() => setDetailCar(car)}>
                             <td>
                               <button type="button" className="cr-plate-button" aria-label={`Ver a situação do carro ${formatPlate(car.plate)}`} onClick={() => setDetailCar(car)}>
                                 <span className="cr-plate">{formatPlate(car.plate)}</span>
@@ -319,6 +323,7 @@ export function FleetApp() {
                               </select>
                             </td>
                             <td className="cr-num">{car.odometer === null ? '—' : car.odometer.toLocaleString('pt-BR')}</td>
+                            <td>{finesByCar.get(car.id) ? <FineFlag fines={finesByCar.get(car.id)} /> : <span className="cr-muted">—</span>}</td>
                             <td>
                               <Dues car={car} today={today} empty />
                             </td>
@@ -350,7 +355,7 @@ export function FleetApp() {
                           <span className="cr-row-name">{group.name}</span>
                           <div className="cr-row-cars">
                             {group.cars.map((car) => (
-                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setDetailCar(item)} />
+                              <CarChip key={car.id} car={car} today={today} fines={finesByCar.get(car.id)} onOpen={(item) => setDetailCar(item)} />
                             ))}
                           </div>
                         </li>
@@ -360,7 +365,7 @@ export function FleetApp() {
                           <span className="cr-row-name">No pátio</span>
                           <div className="cr-row-cars">
                             {yard.map((car) => (
-                              <CarChip key={car.id} car={car} today={today} onOpen={(item) => setDetailCar(item)} />
+                              <CarChip key={car.id} car={car} today={today} fines={finesByCar.get(car.id)} onOpen={(item) => setDetailCar(item)} />
                             ))}
                           </div>
                         </li>

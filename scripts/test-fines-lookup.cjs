@@ -593,6 +593,50 @@ test('filling in the Renavam and the state clears the old "missing data" mark at
   assert.deepEqual([row.fines_check_status, row.fines_check_message], [null, null], 'saving the data clears it, with no wait for the next lookup');
 });
 
+test('an agency not set up on the platform (code 603) is never a problem for the company: no message, no failure, asked once per lookup, and the detail says what each agency answered', { skip: !hasDatabase }, async () => {
+  const { org, who } = await ownCompany('u');
+  const plates = ['UNA1A11', 'UNB2B22', 'UNC3C33'];
+  for (const plate of plates) await vehicles.createVehicle(who, carRules.parseVehicleInput({ plate, renavam: '12345678900', state: 'MS' }).value, null);
+  const rj = await vehicles.createVehicle(who, carRules.parseVehicleInput({ plate: 'UNR4R44', renavam: '98765432103', state: 'RJ' }).value, null);
+  const notSetUp = { ok: false, unavailable: true, message: 'PRF (rodovias federais): a consulta ainda não foi habilitada pelo NextRotta.' };
+  calls = [];
+  const asking = async (source, target) => {
+    calls.push(`${source.key}:${target.plate}`);
+    if (source.key === 'prf') return notSetUp;
+    return target.plate === 'UNB2B22' ? { ok: true, fines: [{ ...msFine, ait: 'UN100' }] } : { ok: true, fines: [] };
+  };
+  const summary = await sync.lookupOrganization(org, asking, { today, mode: 'weekly' });
+  assert.deepEqual([summary.cars, summary.created, summary.failed], [3, 1, 0], 'the three MS cars were looked up; the RJ car has nothing to ask yet');
+  assert.equal(calls.filter((entry) => entry.startsWith('prf:')).length, 1, 'the PRF said "not set up" once and was not asked again by the other cars');
+
+  const line = (await runsOf(org))[0];
+  assert.deepEqual([line.status, line.failed], ['ok', 0], 'the history does not say it failed');
+  assert.doesNotMatch(String(line.message), /PRF|habilitada/, 'and does not nag about the PRF');
+  assert.match(line.message, /1 carro sem consulta de multas disponível ainda/);
+  const marks = await sql`SELECT plate, fines_check_status, fines_check_message FROM vehicles WHERE organization_id = ${org} ORDER BY plate`;
+  assert.deepEqual(marks.filter((row) => row.plate.startsWith('UN') && row.plate !== 'UNR4R44').map((row) => row.fines_check_status), ['ok', 'ok', 'ok'], 'the Detran answered, so the car is up to date');
+  const noLookup = marks.find((row) => row.plate === 'UNR4R44');
+  assert.equal(noLookup.fines_check_status, 'partial');
+  assert.match(noLookup.fines_check_message, /Ainda não há consulta de multas disponível para RJ/);
+
+  // The list says there is a detail; the detail has each car and what each agency answered.
+  const listed = (await sync.listLookupRuns(org))[0];
+  assert.equal(listed.hasDetails, true);
+  assert.equal('details' in listed, false, 'the list stays light: the detail is fetched when a line is opened');
+  const run = await sync.getLookupRun(org, listed.id);
+  assert.deepEqual(run.details.cars.map((entry) => entry.plate), ['UNA1A11', 'UNB2B22', 'UNC3C33', 'UNR4R44']);
+  const withFine = run.details.cars.find((entry) => entry.plate === 'UNB2B22');
+  assert.deepEqual(withFine.sources.map((entry) => [entry.label, entry.result, entry.found, entry.created.length]), [['Detran-MS', 'ok', 1, 1], ['PRF (rodovias federais)', 'unavailable', 0, 0]]);
+  assert.equal(withFine.sources[0].created[0].ait, 'UN100');
+  assert.equal(run.details.cars.find((entry) => entry.plate === 'UNR4R44').sources.every((entry) => entry.result === 'unavailable'), true);
+
+  // Another company cannot open it, and an id that is not one is simply not found.
+  const other = (await ownCompany('v')).org;
+  assert.equal(await sync.getLookupRun(other, listed.id), null);
+  assert.equal(await sync.getLookupRun(org, '00000000-0000-0000-0000-000000000000'), null);
+  assert.ok(rj);
+});
+
 test('the owner sees and switches the lookup of a company in its Integrações tab (the detail and the feature route)', { skip: !hasDatabase }, async () => {
   const { getOrganizationDetail } = require('../lib/platform/organizations.ts');
   const { setOrganizationFeature } = require('../lib/platform/features.ts');

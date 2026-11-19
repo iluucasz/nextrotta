@@ -5,9 +5,10 @@ import { recordAudit } from '../audit';
 import { organizationHasFeature } from '../billing/entitlements';
 import { sql } from '../db';
 import { createNotification } from '../notifications';
-import { createProviderFetcher, providerToken, sourcesFor, type ExternalFine, type Fetcher } from './fines-provider';
+import { createProviderFetcher, providerToken, sourcesFor, type ExternalFine, type Fetcher, type LookupResult } from './fines-provider';
 import { suggestDriver, sundayOnOrBefore } from './fines-rules';
 import { formatPlate, isValidRenavam } from './rules';
+import type { RunCarDetail, RunDetails, RunSourceDetail } from './status';
 
 /** The feature (granted by the owner, company by company) that turns the automatic lookup on. */
 export const FINES_LOOKUP_FEATURE = 'fines_lookup';
@@ -53,6 +54,8 @@ export type LookupRun = {
   created: number;
   failed: number;
   message: string | null;
+  /** Whether the line has the per-car detail (the ones recorded before it existed do not). The detail itself comes from `getLookupRun`. */
+  hasDetails: boolean;
 };
 
 /** `deferred`: cars left for the next lookup because the time budget of this one ran out ("Verificar agora" has 300 s). */
@@ -93,10 +96,11 @@ export async function beginRun(organizationId: string, kind: RunKind, triggeredB
   return rows[0] ? String(rows[0].id) : null;
 }
 
-async function finishRun(runId: string, summary: { cars: number; created: number; failed: number }, status: RunStatus, message: string | null) {
+async function finishRun(runId: string, summary: { cars: number; created: number; failed: number }, status: RunStatus, message: string | null, details: RunDetails | null = null) {
   await sql`
     UPDATE fines_lookup_runs SET
       status = ${status}, finished_at = NOW(), cars = ${summary.cars}, created = ${summary.created}, failed = ${summary.failed}, message = ${message},
+      details = ${details ? JSON.stringify(details) : null}::jsonb,
       lock_day = CASE WHEN ${status === 'error' || !MANUAL_ONCE_A_DAY} THEN NULL ELSE lock_day END
     WHERE id = ${runId}
   `;
@@ -117,7 +121,7 @@ export async function manualLockedToday(organizationId: string, today: string): 
 /** The latest lookups of the company, newest first (what the screen lists). */
 export async function listLookupRuns(organizationId: string, limit = 8): Promise<LookupRun[]> {
   const rows = await sql`
-    SELECT id, kind, status, started_at, finished_at, cars, created, failed, message
+    SELECT id, kind, status, started_at, finished_at, cars, created, failed, message, (details IS NOT NULL) AS has_details
     FROM fines_lookup_runs WHERE organization_id = ${organizationId}
     ORDER BY started_at DESC LIMIT ${limit}
   `;
@@ -134,8 +138,34 @@ export async function listLookupRuns(organizationId: string, limit = 8): Promise
       created: Number(row.created),
       failed: Number(row.failed),
       message: stale ? 'A consulta não terminou.' : ((row.message as string | null) ?? null),
+      hasDetails: Boolean(row.has_details),
     };
   });
+}
+
+/** One lookup of the company with what each agency said about each car (the window of the History tab); null when it is not theirs. */
+export async function getLookupRun(organizationId: string, runId: string): Promise<(LookupRun & { details: RunDetails | null }) | null> {
+  const rows = await sql`
+    SELECT id, kind, status, started_at, finished_at, cars, created, failed, message, details
+    FROM fines_lookup_runs WHERE organization_id = ${organizationId} AND id = ${runId}::uuid
+  `;
+  const row = rows[0];
+  if (!row) return null;
+  const startedAt = new Date(row.started_at as string).toISOString();
+  const stale = row.status === 'running' && Date.now() - Date.parse(startedAt) > STALE_RUN_MINUTES * 60_000;
+  return {
+    id: String(row.id),
+    kind: row.kind as RunKind,
+    status: stale ? 'error' : (row.status as RunStatus),
+    startedAt,
+    finishedAt: row.finished_at ? new Date(row.finished_at as string).toISOString() : null,
+    cars: Number(row.cars),
+    created: Number(row.created),
+    failed: Number(row.failed),
+    message: stale ? 'A consulta não terminou.' : ((row.message as string | null) ?? null),
+    hasDetails: Boolean(row.details),
+    details: (row.details as RunDetails | null) ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------------------------------- lookup
@@ -261,13 +291,23 @@ export async function lookupOrganization(
     const nowIso = new Date().toISOString();
     const found: Array<{ plate: string; fine: ExternalFine }> = [];
     const problems = new Set<string>();
+    const carDetails: RunCarDetail[] = [];
+    let withoutLookup = 0;
 
     // The time budget is checked when a call's turn in the agency's queue comes (every car is picked up at once, but the calls wait in line):
     // out of time, the call is not made and the car is left for the next lookup, keeping its old mark so it is the first one asked next time.
-    const bounded: Fetcher = async (source, car) =>
-      options.deadlineMs && Date.now() > options.deadlineMs
-        ? { ok: false, deferred: true, message: `${source.label}: ficou para a próxima verificação (acabou o tempo desta).` }
-        : fetcher(source, car);
+    // A query that is not set up on the platform (`unavailable`) is asked once per lookup: the next cars get the same answer without a call.
+    const unavailable = new Map<string, LookupResult>();
+    const bounded: Fetcher = async (source, car) => {
+      if (options.deadlineMs && Date.now() > options.deadlineMs) {
+        return { ok: false, deferred: true, message: `${source.label}: ficou para a próxima verificação (acabou o tempo desta).` };
+      }
+      const known = unavailable.get(source.key);
+      if (known) return known;
+      const result = await fetcher(source, car);
+      if (!result.ok && result.unavailable) unavailable.set(source.key, result);
+      return result;
+    };
     const queued = serializePerSource(bounded);
     await mapLimit(toLookUp, PARALLEL_CARS, async (car) => {
       const { sources, detranCovered } = sourcesFor(car.state as string);
@@ -276,27 +316,42 @@ export async function lookupOrganization(
       let succeeded = 0;
       // Both agencies of a car are asked at the same time; what they answered is then handled one by one.
       const answers = await Promise.all(sources.map((source) => queued(source, target)));
-      if (answers.every((answer) => !answer.ok && answer.deferred)) {
+      const left = answers.every((answer) => !answer.ok && (answer.deferred || answer.unavailable));
+      if (left && answers.some((answer) => !answer.ok && answer.deferred)) {
         summary.deferred += 1;
         return;
       }
-      summary.cars += 1;
-      for (const result of answers) {
+      // Every agency of this car is not set up yet: nothing was looked up, and it is no failure of the car.
+      const notSetUp = left;
+      if (notSetUp) withoutLookup += 1;
+      else summary.cars += 1;
+      const detail: RunCarDetail = { plate: car.plate, sources: [] };
+      for (const [index, result] of answers.entries()) {
+        const sourceDetail: RunSourceDetail = { label: sources[index].label, result: 'ok', found: 0, created: [], message: null };
+        detail.sources.push(sourceDetail);
         if (!result.ok) {
-          errors.push(result.message);
+          sourceDetail.result = result.unavailable ? 'unavailable' : result.deferred ? 'deferred' : 'failed';
+          if (sourceDetail.result === 'failed') sourceDetail.message = result.message;
+          if (!result.unavailable) errors.push(result.message);
           continue;
         }
         succeeded += 1;
+        sourceDetail.found = result.fines.length;
         for (const fine of result.fines) {
           if (await registerFound(organizationId, car, fine, nowIso)) {
             found.push({ plate: car.plate, fine });
+            sourceDetail.created.push({ ait: fine.ait, description: fine.description, amount: fine.amount });
             summary.created += 1;
           }
         }
       }
+      carDetails.push(detail);
 
+      // An agency that is not set up yet is not the company's problem: it is neither a message nor a failure.
       errors.forEach((message) => problems.add(message));
-      if (succeeded === 0) {
+      if (notSetUp) {
+        await markCar(car.id, 'partial', `Ainda não há consulta de multas disponível para ${car.state}.`, false);
+      } else if (succeeded === 0) {
         summary.failed += 1;
         if (answers.some((answer) => !answer.ok && answer.refused)) {
           // The agency refused the data: it is asked no more until the car is edited.
@@ -334,14 +389,16 @@ export async function lookupOrganization(
       const notes = [
         problems.size ? Array.from(problems).join(' ') : '',
         summary.deferred ? `${summary.deferred} ${summary.deferred === 1 ? 'carro ficou' : 'carros ficaram'} para a próxima verificação (acabou o tempo desta).` : '',
-        !problems.size && !summary.deferred && summary.cars === 0
+        withoutLookup ? `${withoutLookup} ${withoutLookup === 1 ? 'carro' : 'carros'} sem consulta de multas disponível ainda.` : '',
+        !problems.size && !summary.deferred && !withoutLookup && summary.cars === 0
           ? recentlyChecked > 0
             ? `Os carros com dados já foram consultados há menos de ${MANUAL_RECENT_HOURS} horas.`
             : 'Nenhum carro com Renavam e estado para consultar.'
           : '',
       ].filter(Boolean);
       const message = notes.length ? notes.join(' ').slice(0, 500) : null;
-      await finishRun(runId, summary, status, message);
+      carDetails.sort((a, b) => a.plate.localeCompare(b.plate));
+      await finishRun(runId, summary, status, message, { cars: carDetails });
     }
     return summary;
   } catch (error) {

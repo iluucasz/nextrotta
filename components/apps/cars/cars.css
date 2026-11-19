@@ -975,3 +975,92 @@
 .mg-dashboard .cr-alert-groups .cr-problems {
   margin: 0;
 }
+
+/* a car with fines still open: the flag, and a tint so the eye finds it in the list */
+.cr-fine-flag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #ffe4e8;
+  color: #be123c;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.cr-fine-flag.is-urgent {
+  background: #be123c;
+  color: #fff;
+}
+.mg-dashboard .cr-car.has-fine {
+  background: #fff7f8;
+  box-shadow: inset 3px 0 0 #e11d48;
+}
+.mg-dashboard .cr-car.has-fine:hover {
+  background: #ffeef1;
+}
+.mg-dashboard .cr-table tr.has-fine td:first-child {
+  box-shadow: inset 3px 0 0 #e11d48;
+}
+
+/* the window of one lookup */
+.cr-runs-table tr.cr-row-click:focus-visible {
+  outline: 2px solid #7c3aed;
+  outline-offset: -2px;
+}
+.cr-run-cars {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.cr-run-car {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 6px 14px;
+  padding: 12px 0;
+  border-top: 1px solid var(--border);
+}
+.cr-run-cars li:first-child {
+  border-top: 0;
+  padding-top: 0;
+}
+.cr-run-car-sources {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.cr-run-car-sources li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+}
+.cr-run-car-sources .cr-run-dot {
+  margin-top: 7px;
+}
+.cr-run-new-fines {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.cr-run-new-fines li {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #fff7f8;
+}
+.cr-run-new-fines li > span:first-child {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}

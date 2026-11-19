@@ -173,3 +173,40 @@ test('a car says how its own lookup is doing', () => {
   assert.equal(status.carLookupSituation(car({ renavam: '12345678900', state: 'MS' }), true).tone, 'neutral', 'good data and nothing looked up yet');
   assert.equal(status.carLookupSituation(car({ renavam: null, state: null }), false).tone, 'neutral', 'with the lookup off nobody is asked for data');
 });
+
+test('a car with a fine still open is flagged, red when the deadline to name the driver is near; resolved fines flag nothing', () => {
+  const onCar = (vehicleId, extra = {}) => ({ vehicleId, technicianId: 't1', notifiedAt: null, acknowledgedAt: null, indicatedAt: null, appealStatus: 'none', paidAt: null, indicationDeadline: '2027-01-10', ...extra });
+  const flagged = status.openFinesByCar(
+    [
+      onCar('a'),
+      onCar('a', { indicationDeadline: '2026-11-18' }),
+      onCar('b', { notifiedAt: '2026-10-30T12:00:00Z', acknowledgedAt: '2026-10-31T12:00:00Z', indicatedAt: '2026-11-01T12:00:00Z', paidAt: '2026-11-02T12:00:00Z' }),
+      onCar('c', { appealStatus: 'won' }),
+    ],
+    TODAY,
+  );
+  assert.deepEqual([...flagged.keys()], ['a'], 'only the car with open fines');
+  assert.deepEqual(flagged.get('a'), { open: 2, urgent: true });
+  assert.deepEqual(status.openFinesByCar([onCar('d')], TODAY).get('d'), { open: 1, urgent: false });
+});
+
+test('a lookup in words: what each agency said, and the agencies not set up yet are left out of the company\'s view', () => {
+  const source = (extra = {}) => ({ label: 'Detran-SP', result: 'ok', found: 0, created: [], message: null, ...extra });
+  assert.deepEqual(status.describeSource(source()), { tone: 'success', text: 'Consultou: nenhuma multa.' });
+  assert.deepEqual(status.describeSource(source({ found: 2, created: [{ ait: 'A1', description: 'x', amount: 1 }] })), { tone: 'warning', text: 'Consultou: 2 multas, 1 nova.' });
+  assert.deepEqual(status.describeSource(source({ found: 1 })), { tone: 'success', text: 'Consultou: 1 multa, nenhuma nova (já estavam registradas).' });
+  assert.deepEqual(status.describeSource(source({ result: 'failed', message: 'Detran-SP: o órgão demorou.' })), { tone: 'danger', text: 'o órgão demorou.' });
+  assert.equal(status.describeSource(source({ result: 'deferred' })).tone, 'neutral');
+
+  const details = {
+    cars: [
+      { plate: 'AAA1A11', sources: [source(), source({ label: 'PRF', result: 'unavailable' })] },
+      { plate: 'BBB2B22', sources: [source({ label: 'PRF', result: 'unavailable' })] },
+      { plate: 'CCC3C33', sources: [source({ result: 'failed', message: 'x' }), source({ label: 'PRF', result: 'unavailable' })] },
+      { plate: 'DDD4D44', sources: [source({ found: 1, created: [{ ait: 'A2', description: 'y', amount: 2 }] })] },
+    ],
+  };
+  assert.deepEqual(status.visibleSources(details.cars[0]).map((item) => item.label), ['Detran-SP'], 'the PRF not set up is not shown');
+  assert.deepEqual(status.carsWithoutLookup(details).map((item) => item.plate), ['BBB2B22'], 'a car no agency could be asked about');
+  assert.deepEqual(status.runHighlights(details), { withNewFines: 1, withFailures: 1 });
+});
