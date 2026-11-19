@@ -445,6 +445,8 @@ test('"Verificar agora" moves the fleet forward: it skips cars answered a moment
 
   // Everything was just answered: the next click says so instead of paying again.
   calls = [];
+  // With the daily rule on the second click of the same day is refused (tested apart): let the day go to test what the line says.
+  await sql`UPDATE fines_lookup_runs SET lock_day = NULL WHERE organization_id = ${org}`;
   const again = await sync.beginRun(org, 'manual', null, today);
   const none = await sync.lookupOrganization(org, fetcher, { today, mode: 'manual', runId: again });
   assert.deepEqual([none.cars, calls.length], [0, 0]);
@@ -490,6 +492,8 @@ test('"Verificar agora" works once a day: the second click is refused, and the d
   // A lookup where nothing could be asked (every car failed) does not use up the day.
   await wipe();
   answers = { 'detran-ms': { ok: false, message: 'Detran-MS: fora do ar.' }, prf: { ok: false, message: 'PRF: fora do ar.' } };
+  // The cars were answered a moment ago by the earlier tests, and "Verificar agora" skips those: make them due.
+  await sql`UPDATE vehicles SET fines_checked_at = NULL WHERE organization_id = ${actor.organizationId}`;
   const failed = await manual();
   assert.ok(failed.failed >= 1);
   assert.equal((await runs()).at(-1).status, 'error');

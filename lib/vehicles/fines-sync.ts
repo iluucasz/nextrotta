@@ -31,12 +31,11 @@ export const MANUAL_RECENT_HOURS = 6;
 const PARALLEL_CARS = 8;
 
 /**
- * The manual "Verificar agora" is meant to work once a day per company (the line of the day holds a lock until the next day).
- * TEMPORARILY OFF (owner's decision, 16/11/2026, while the lookup is being tried out): while it is false, a manual lookup can be
- * started again as soon as the previous one finishes, and only a lookup still running blocks another (no double click, no double
- * cost). Set it to true to bring the daily rule back; nothing else has to change.
+ * The manual "Verificar agora" works once a day per company (the line of the day holds a lock until the next day; a lookup that ends in an
+ * error lets the day go). Owner's decision, 19/11/2026: it was off from 16/11 while the lookup was being tried out, and is on again.
+ * Set it to false to let a manual lookup start again as soon as the previous one finishes (a lookup still running always blocks another).
  */
-export const MANUAL_ONCE_A_DAY = false;
+export const MANUAL_ONCE_A_DAY = true;
 
 /** A run that says "running" for longer than this died on the way (a restart, a timeout): it neither counts nor locks. */
 const STALE_RUN_MINUTES = 15;
