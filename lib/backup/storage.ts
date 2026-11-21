@@ -12,6 +12,12 @@ export async function saveBackupFile(organizationId: string, name: string, body:
   return blob.url;
 }
 
+/** A copy of the whole platform (platform-backups/), already encrypted: it is opaque to the storage. */
+export async function savePlatformBackupFile(name: string, body: Buffer): Promise<string> {
+  const blob = await put(`platform-backups/${name}`, body, { access: 'private', contentType: 'application/octet-stream' });
+  return blob.url;
+}
+
 /** The file as a Buffer, or null when the storage no longer has it. */
 export async function readBackupFile(url: string): Promise<Buffer | null> {
   const file = await get(url, { access: 'private' });

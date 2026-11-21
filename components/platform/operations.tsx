@@ -4,12 +4,13 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { api, date, ORGANIZATION_STATUS_LABELS, useResource, type OrganizationStatusKey } from './api';
 import { useNotify } from './notice';
-import { Badge, DataTable, Editor, Empty, ErrorState, Loading, Metric, Panel, Title } from './ui';
+import { Badge, DataTable, Editor, ErrorState, Loading, Metric, Panel, Title } from './ui';
+import { BackupsTab, type BackupOverview } from './backups';
 import { CapacityTab } from './capacity';
 import { StorageTab } from './storage';
 import { AlertsTab, CleanupTab, ContainersTab, CostsTab, PortoQueueTab, VpsTab } from './vps';
 
-const TABS = ['Visão geral', 'Capacidade', 'Armazenamento', 'VPS', 'Containers', 'Limpeza', 'Gastos', 'Fila do Porto', 'Alertas'] as const;
+const TABS = ['Visão geral', 'Backups', 'Capacidade', 'Armazenamento', 'VPS', 'Containers', 'Limpeza', 'Gastos', 'Fila do Porto', 'Alertas'] as const;
 type Tab = (typeof TABS)[number];
 
 type Operations = {
@@ -42,7 +43,7 @@ type Operations = {
   }>;
   databaseMb: number;
   maintenance: { enabled: boolean; message: string };
-  backupsConfigured: boolean;
+  backups: BackupOverview;
 };
 
 const JOB_LABELS: Record<string, string> = {
@@ -51,6 +52,10 @@ const JOB_LABELS: Record<string, string> = {
   billing: 'Inadimplência',
   coupons: 'Encerramento de cupons',
   ai_credits: 'Cota mensal de créditos de IA',
+  backups: 'Backups das empresas',
+  backup_cleanup: 'Limpeza dos backups vencidos',
+  platform_backup: 'Backup da plataforma inteira',
+  platform_backup_cleanup: 'Limpeza dos backups da plataforma',
 };
 
 const RUN_STATUS_LABELS: Record<string, string> = {
@@ -101,6 +106,7 @@ export function OperationsScreen() {
           <button key={name} role="tab" aria-selected={name === tab} onClick={() => setTab(name)}>{name}</button>
         ))}
       </div>
+      {tab === 'Backups' && <BackupsTab overview={operations.backups} reload={data.reload} />}
       {tab === 'Capacidade' && <CapacityTab />}
       {tab === 'Armazenamento' && <StorageTab />}
       {tab === 'VPS' && <VpsTab />}
@@ -167,16 +173,6 @@ export function OperationsScreen() {
           ]}
           actions={(row) => <Link href={`/plataforma/organizacoes/${row.id}`}>Gerenciar</Link>}
         />
-      </Panel>
-      <Panel title="Backups diários">
-        {operations.backupsConfigured ? (
-          <Empty title="Nenhum backup gerado ainda" text="A rotina diária do worker registra os backups aqui." />
-        ) : (
-          <Empty
-            title="Rotina de backup não configurada"
-            text="Os backups diários por organização dependem de um armazenamento externo (BACKUP_STORAGE_URL) e do worker em execução. Até lá, a exportação completa de cada organização fica na aba Dados dela."
-          />
-        )}
       </Panel>
       </>)}
       {maintenance && (

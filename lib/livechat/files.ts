@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { get, put } from '@vercel/blob';
-import { ATTACHMENT_TYPES, INLINE_ATTACHMENT_TYPES, safeFileName } from './rules';
+import { INLINE_ATTACHMENT_TYPES, safeFileName, WHATSAPP_MEDIA_TYPES } from './rules';
 
 /** A file of a chat as kept in the private store. */
 export type SavedFile = { fileName: string; contentType: string; size: number; url: string };
@@ -23,7 +23,7 @@ export async function saveChatFile(input: { organizationId: string | null; conve
 export async function chatFileResponse(attachment: { url: string; fileName: string; contentType: string }, download: boolean): Promise<Response> {
   const file = await get(attachment.url, { access: 'private' });
   if (!file || file.statusCode !== 200 || !file.stream) return Response.json({ error: 'Arquivo não encontrado.' }, { status: 404 });
-  const type = attachment.contentType in ATTACHMENT_TYPES ? attachment.contentType : 'application/octet-stream';
+  const type = attachment.contentType in WHATSAPP_MEDIA_TYPES ? attachment.contentType : 'application/octet-stream';
   const inline = !download && INLINE_ATTACHMENT_TYPES.has(type);
   return new Response(file.stream, {
     headers: {

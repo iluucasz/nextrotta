@@ -23,11 +23,12 @@ const stamp = Date.now();
 const realFetch = global.fetch;
 process.env.EVOLUTION_API_URL = 'http://evolution.test';
 process.env.EVOLUTION_API_KEY = 'test-key';
-const evo = { sink: [], scope: null, fail: false, ids: 0 };
+const evo = { sink: [], scope: null, fail: false, ids: 0, media: null };
 global.fetch = async (url, init) => {
   if (!String(url).startsWith('http://evolution.test')) return realFetch(url, init);
   (evo.scope ?? evo.sink).push({ url: String(url), body: JSON.parse(init.body) });
   evo.ids += 1;
+  if (String(url).includes('/getBase64FromMediaMessage/') && !evo.fail) return { ok: true, status: 200, text: async () => '', json: async () => evo.media ?? {} };
   return evo.fail ? { ok: false, status: 500, text: async () => 'down', json: async () => ({}) } : { ok: true, status: 200, text: async () => '', json: async () => ({ key: { id: `WA-MOCK-${stamp}-${evo.ids}` } }) };
 };
 
@@ -47,8 +48,8 @@ test('rules: a text message of the webhook becomes an inbound message', () => {
 
 test('rules: text of every shape, and a placeholder for what only WhatsApp can open', () => {
   assert.equal(rules.readMessageText({ extendedTextMessage: { text: 'link https://x.com' } }).text, 'link https://x.com');
-  assert.deepEqual(rules.readMessageText({ imageMessage: { caption: 'o defeito' } }), { text: '📷 Imagem: o defeito', media: true });
-  assert.deepEqual(rules.readMessageText({ audioMessage: {} }), { text: '🎤 Áudio', media: true });
+  assert.deepEqual([rules.readMessageText({ imageMessage: { caption: 'o defeito' } }).text, rules.readMessageText({ imageMessage: { caption: 'o defeito' } }).media], ['📷 Imagem: o defeito', true]);
+  assert.deepEqual([rules.readMessageText({ audioMessage: {} }).text, rules.readMessageText({ audioMessage: {} }).media], ['🎤 Áudio', true]);
   assert.equal(rules.readMessageText({ reactionMessage: {} }), null, 'reactions and the like are not messages');
 });
 
@@ -621,6 +622,192 @@ test('attachments from the team: sent through the official number as media, kept
     assert.equal(calls[0].body.caption, 'Segue o print', 'on a WhatsApp conversation there is no ticket prefix');
     savedBlobs.push((await store.getAttachment((await store.getMessages(wa.id)).find((m) => m.attachment).attachment.id)).url);
   });
+});
+
+// ------------------------------------------------------------------------------ files from WhatsApp, typing and read marks
+
+const evoEvent = (event, data) => ({ event, instance: 'nextrotta-suporte', data });
+const PNG_BASE64 = Buffer.from('89504e470d0a1a0a0000000d49484452', 'hex').toString('base64');
+
+test('rules: a photo, voice note and document keep what is needed to fetch them, and the caption apart', () => {
+  const image = rules.readMessageText({ imageMessage: { caption: 'o defeito', mimetype: 'image/jpeg' } });
+  assert.deepEqual([image.text, image.media, image.mediaKind, image.caption, image.mimetype], ['📷 Imagem: o defeito', true, 'image', 'o defeito', 'image/jpeg']);
+  const audio = rules.readMessageText({ audioMessage: { mimetype: 'audio/ogg; codecs=opus' } });
+  assert.deepEqual([audio.text, audio.mediaKind, audio.caption], ['🎤 Áudio', 'audio', '']);
+  // a document with a caption comes wrapped one level deeper
+  const document = rules.readMessageText({ documentWithCaptionMessage: { message: { documentMessage: { caption: 'segue', fileName: 'os.pdf', mimetype: 'application/pdf' } } } });
+  assert.deepEqual([document.mediaKind, document.caption, document.fileName], ['document', 'segue', 'os.pdf']);
+  // a location has no file to keep
+  assert.equal(rules.readMessageText({ locationMessage: {} }).mediaKind, null);
+});
+
+test('rules: which files from WhatsApp are kept', () => {
+  assert.equal(rules.baseMime('audio/ogg; codecs=opus'), 'audio/ogg');
+  assert.equal(rules.whatsappMediaProblem({ type: 'audio/ogg; codecs=opus', size: 4000 }), null);
+  assert.equal(rules.whatsappMediaProblem({ type: 'video/mp4', size: 15 * 1024 * 1024 }), null, 'a video of the phone is bigger than the chat box accepts');
+  assert.match(rules.whatsappMediaProblem({ type: 'video/mp4', size: 17 * 1024 * 1024 }), /16 MB/);
+  assert.match(rules.whatsappMediaProblem({ type: 'application/x-msdownload', size: 10 }), /não aceito/);
+  assert.match(rules.whatsappMediaProblem({ type: 'image/png', size: 0 }), /vazio/);
+  assert.equal(rules.isAudioType('audio/ogg'), true);
+  assert.equal(rules.isVideoType('video/mp4'), true);
+  assert.equal(rules.safeFileName(null, 'audio/ogg'), 'arquivo.ogg');
+  // what the chat box accepts did not widen: a customer still can't upload a video or audio there
+  assert.equal(rules.attachmentProblem({ type: 'video/mp4', size: 100 }) !== null, true);
+});
+
+test('rules: the customer typing, and WhatsApp delivering or reading, come out of the webhook', () => {
+  const typing = rules.parseEvolutionWebhook(evoEvent('presence.update', { id: '5521988887777@s.whatsapp.net', presences: { '5521988887777@s.whatsapp.net': { lastKnownPresence: 'composing' } } }));
+  assert.deepEqual(typing, [{ kind: 'presence', phone: '5521988887777', typing: true }]);
+  assert.equal(rules.parseEvolutionWebhook(evoEvent('PRESENCE_UPDATE', { presences: { '5521988887777@s.whatsapp.net': { lastKnownPresence: 'paused' } } }))[0].typing, false);
+  assert.deepEqual(rules.parseEvolutionWebhook(evoEvent('presence.update', { presences: { '1203630@g.us': { lastKnownPresence: 'composing' } } })), [], 'groups are ignored');
+
+  assert.deepEqual(rules.parseEvolutionWebhook(evoEvent('messages.update', { keyId: 'WA-X', remoteJid: '5521988887777@s.whatsapp.net', fromMe: true, status: 'DELIVERY_ACK' })), [{ kind: 'status', waId: 'WA-X', status: 'delivered' }]);
+  assert.deepEqual(rules.parseEvolutionWebhook(evoEvent('MESSAGES_UPDATE', { keyId: 'WA-X', fromMe: true, status: 'READ' })), [{ kind: 'status', waId: 'WA-X', status: 'read' }]);
+  // the older shape: a list with key.id and a numeric status (4 = read)
+  assert.deepEqual(rules.parseEvolutionWebhook(evoEvent('messages.update', [{ key: { id: 'WA-Y', fromMe: true }, update: { status: 4 } }])), [{ kind: 'status', waId: 'WA-Y', status: 'read' }]);
+  // sent to the server only, or about a message of the customer: nothing to mark
+  assert.deepEqual(rules.parseEvolutionWebhook(evoEvent('messages.update', { keyId: 'WA-Z', fromMe: true, status: 'SERVER_ACK' })), []);
+  assert.deepEqual(rules.parseEvolutionWebhook(evoEvent('messages.update', { keyId: 'WA-Z', fromMe: false, status: 'READ' })), []);
+  assert.deepEqual([rules.receiptOf({ deliveredAt: null, readAt: null }), rules.receiptOf({ deliveredAt: 'x', readAt: null }), rules.receiptOf({ deliveredAt: 'x', readAt: 'y' })], ['sent', 'delivered', 'read']);
+});
+
+test('whatsapp: a photo and a voice note are fetched and kept with the message; what cannot be kept stays a notice', async () => {
+  const { saveInboundMedia } = require('../lib/livechat/whatsapp.ts');
+  const phone = '5521955550903';
+  const parse = (message, id) => rules.parseEvolutionWebhook(upsert({ key: { remoteJid: `${phone}@s.whatsapp.net`, fromMe: false, id } }, { message, messageTimestamp: Math.floor(Date.now() / 1000) }))[0];
+  evo.media = { base64: PNG_BASE64, mimetype: 'image/png', fileName: 'defeito.png' };
+
+  const photo = parse({ imageMessage: { caption: 'o defeito', mimetype: 'image/png' } }, `WA-${stamp}-IMG`);
+  const savedPhoto = await store.storeWhatsAppMessage(photo);
+  assert.equal(savedPhoto.body, '📷 Imagem: o defeito', 'first a notice, so nothing is lost while the file is fetched');
+  assert.equal(await saveInboundMedia(photo, savedPhoto.id), true);
+  const conv = (await store.listConversations({ status: 'open', search: phone })).find((item) => item.channel === 'whatsapp');
+  const [kept] = (await store.getMessages(conv.id)).filter((message) => message.id === savedPhoto.id);
+  assert.deepEqual([kept.body, kept.kind, kept.attachment.fileName, kept.attachment.contentType], ['o defeito', 'text', 'defeito.png', 'image/png']);
+  const row = (await sql`SELECT counted FROM livechat_attachments WHERE id = ${kept.attachment.id}`)[0];
+  assert.equal(row.counted, false, 'it came in through the platform number: not charged to a company');
+  savedBlobs.push((await store.getAttachment(kept.attachment.id)).url);
+
+  evo.media = { base64: PNG_BASE64, mimetype: 'audio/ogg; codecs=opus', fileName: null };
+  const voice = parse({ audioMessage: { mimetype: 'audio/ogg; codecs=opus' } }, `WA-${stamp}-AUD`);
+  const savedVoice = await store.storeWhatsAppMessage(voice);
+  assert.equal(await saveInboundMedia(voice, savedVoice.id), true);
+  const [voiceKept] = (await store.getMessages(conv.id)).filter((message) => message.id === savedVoice.id);
+  assert.deepEqual([voiceKept.body, voiceKept.attachment.contentType, voiceKept.attachment.fileName], ['', 'audio/ogg', 'arquivo.ogg']);
+  savedBlobs.push((await store.getAttachment(voiceKept.attachment.id)).url);
+  // fetching again changes nothing (the same message twice)
+  assert.equal(await saveInboundMedia(voice, savedVoice.id), false);
+
+  // a type that is not accepted, and a server that does not answer: the notice stays
+  evo.media = { base64: PNG_BASE64, mimetype: 'application/x-msdownload', fileName: 'x.exe' };
+  const exe = parse({ documentMessage: { mimetype: 'application/x-msdownload', fileName: 'x.exe' } }, `WA-${stamp}-EXE`);
+  const savedExe = await store.storeWhatsAppMessage(exe);
+  assert.equal(await saveInboundMedia(exe, savedExe.id), false);
+  const stillNotice = (await store.getMessages(conv.id)).find((message) => message.id === savedExe.id);
+  assert.deepEqual([stillNotice.attachment, stillNotice.kind, stillNotice.body], [null, 'media', '📄 Documento']);
+  evo.media = { base64: PNG_BASE64, mimetype: 'image/png' };
+  await withEvolution(async () => assert.equal(await saveInboundMedia(photo, (await store.storeWhatsAppMessage(parse({ imageMessage: {} }, `WA-${stamp}-DOWN`))).id), false), { fail: true });
+
+  await sql`UPDATE livechat_conversations SET status = 'closed', closed_at = NOW() WHERE contact_phone = ${phone} AND status = 'open'`;
+});
+
+test('read marks: what the team sent is delivered and read, by WhatsApp or by the customer\'s window; the customer sees "Visto"', async () => {
+  const ticketId = await makeTicket(org, user, `Marcas de leitura ${stamp}`);
+  extraTickets.push(ticketId);
+  const chat = await store.startWebConversation({ organizationId: org, userId: user, ticketId, userName: 'Carla Chat', opening: { message: 'Preciso de ajuda' } });
+
+  // the team answers: sent, not delivered yet
+  const answer = await store.storeOwnerMessage(chat.id, 'Já estou olhando');
+  assert.deepEqual([answer.deliveredAt, answer.readAt], [null, null]);
+  assert.equal(rules.receiptOf(answer), 'sent');
+  assert.equal((await store.getReceipts(chat.id, 'out'))[0].readAt, null);
+
+  // the customer's window fetches: delivered and read
+  await store.markReadByCustomer(chat.id, new Date(Date.now() + 1000));
+  const [receipt] = await store.getReceipts(chat.id, 'out');
+  assert.ok(receipt.deliveredAt && receipt.readAt);
+  // a message that arrived after the fetch started is NOT marked
+  const later = await store.storeOwnerMessage(chat.id, 'Mais uma coisa');
+  await store.markReadByCustomer(chat.id, new Date(Date.now() - 60 * 1000));
+  assert.equal((await store.getReceipts(chat.id, 'out')).find((item) => item.id === later.id).readAt, null);
+
+  // the customer's own message is read when the team opens the conversation
+  assert.equal((await store.getMessages(chat.id)).find((message) => message.direction === 'in' && message.kind === 'text').readAt, null);
+  assert.deepEqual(await store.markReadByOwner(chat.id), [], 'a web message has no WhatsApp id to tell WhatsApp about');
+  assert.ok((await store.getMessages(chat.id)).find((message) => message.direction === 'in' && message.kind === 'text').readAt);
+  assert.equal((await store.getReceipts(chat.id, 'in')).filter((item) => item.readAt).length > 0, true);
+
+  // WhatsApp: delivered, then read (its id of the sent message is what ties them)
+  const phone = '5521955550904';
+  const [incoming] = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: `${phone}@s.whatsapp.net`, fromMe: false, id: `WA-${stamp}-RC` } }, { messageTimestamp: Math.floor(Date.now() / 1000) }));
+  await store.storeWhatsAppMessage(incoming);
+  const wa = (await store.listConversations({ status: 'open', search: phone })).find((item) => item.channel === 'whatsapp');
+  await withEvolution(async () => {
+    const sent = await sendOwnerReply(wa.id, 'Olá, Maria');
+    const waId = (await sql`SELECT wa_message_id FROM livechat_messages WHERE id = ${sent.message.id}`)[0].wa_message_id;
+    assert.ok(waId, 'the id WhatsApp gave is kept');
+    await store.applyWhatsAppReceipt(waId, 'delivered');
+    let [mark] = (await store.getMessages(wa.id)).filter((message) => message.id === sent.message.id);
+    assert.deepEqual([rules.receiptOf(mark), mark.readAt], ['delivered', null]);
+    await store.applyWhatsAppReceipt(waId, 'read');
+    [mark] = (await store.getMessages(wa.id)).filter((message) => message.id === sent.message.id);
+    assert.equal(rules.receiptOf(mark), 'read');
+    // the customer's message, read by the team, gives back the id to tell WhatsApp (the blue ticks)
+    assert.deepEqual(await store.markReadByOwner(wa.id), [`WA-${stamp}-RC`]);
+    assert.deepEqual(await store.markReadByOwner(wa.id), [], 'told once');
+  });
+  await sql`UPDATE livechat_conversations SET status = 'closed', closed_at = NOW() WHERE contact_phone = ${phone} AND status = 'open'`;
+});
+
+test('typing: each side sees the other typing for a few seconds, and sending a message ends it', async () => {
+  const ticketId = await makeTicket(org, user, `Digitando ${stamp}`);
+  extraTickets.push(ticketId);
+  const chat = await store.startWebConversation({ organizationId: org, userId: user, ticketId, userName: 'Carla Chat', opening: { message: 'Oi' } });
+  assert.deepEqual([(await store.getConversation(chat.id)).customerTyping, (await store.getConversation(chat.id)).ownerTyping], [false, false]);
+
+  assert.equal(await store.setTyping(chat.id, 'owner'), true, 'the first signal of a burst');
+  assert.equal(await store.setTyping(chat.id, 'owner'), false, 'repeating it does not start another burst (WhatsApp is told once)');
+  assert.equal((await store.getConversation(chat.id)).ownerTyping, true);
+  assert.equal((await store.getConversation(chat.id)).customerTyping, false);
+  await store.storeOwnerMessage(chat.id, 'Resposta');
+  assert.equal((await store.getConversation(chat.id)).ownerTyping, false, 'sending the message ends it');
+
+  await store.setTyping(chat.id, 'customer');
+  assert.equal((await store.getConversation(chat.id)).customerTyping, true);
+  await sql`UPDATE livechat_conversations SET customer_typing_until = NOW() - interval '1 second' WHERE id = ${chat.id}`;
+  assert.equal((await store.getConversation(chat.id)).customerTyping, false, 'it expires by itself');
+
+  // the customer typing on WhatsApp reaches the conversation of that number
+  const phone = '5521955550905';
+  const [incoming] = rules.parseEvolutionWebhook(upsert({ key: { remoteJid: `${phone}@s.whatsapp.net`, fromMe: false, id: `WA-${stamp}-TY` } }, { messageTimestamp: Math.floor(Date.now() / 1000) }));
+  await store.storeWhatsAppMessage(incoming);
+  const wa = (await store.listConversations({ status: 'open', search: phone })).find((item) => item.channel === 'whatsapp');
+  await store.setCustomerTypingByPhone(phone, true);
+  assert.equal((await store.getConversation(wa.id)).customerTyping, true);
+  await store.setCustomerTypingByPhone(phone, false);
+  assert.equal((await store.getConversation(wa.id)).customerTyping, false);
+  await store.setCustomerTypingByPhone('5521900000000', true); // nobody is talking to that number: nothing happens
+  await sql`UPDATE livechat_conversations SET status = 'closed', closed_at = NOW() WHERE contact_phone = ${phone} AND status = 'open'`;
+});
+
+test('the customer\'s and the team\'s typing reach WhatsApp as "digitando…" once per burst', async () => {
+  const { showTypingOnWhatsApp, markWhatsAppRead } = require('../lib/livechat/whatsapp.ts');
+  await withEvolution(async (calls) => {
+    await showTypingOnWhatsApp('5521955550906');
+    await markWhatsAppRead('5521955550906', ['WA-A', 'WA-B']);
+    await markWhatsAppRead(null, ['WA-A']);
+    await showTypingOnWhatsApp(null);
+    assert.equal(calls.length, 2, 'nothing is sent without a number');
+    assert.match(calls[0].url, /\/chat\/sendPresence\/nextrotta-suporte$/);
+    assert.deepEqual([calls[0].body.presence, calls[0].body.number], ['composing', '5521955550906']);
+    assert.match(calls[1].url, /\/chat\/markMessageAsRead\/nextrotta-suporte$/);
+    assert.deepEqual(calls[1].body.readMessages.map((item) => [item.id, item.fromMe, item.remoteJid]), [['WA-A', false, '5521955550906@s.whatsapp.net'], ['WA-B', false, '5521955550906@s.whatsapp.net']]);
+  });
+  // a failing server never throws: it is only an indicator
+  await withEvolution(async () => {
+    await showTypingOnWhatsApp('5521955550906');
+    await markWhatsAppRead('5521955550906', ['WA-A']);
+  }, { fail: true });
 });
 
 after(async () => {

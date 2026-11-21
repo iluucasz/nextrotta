@@ -4,7 +4,7 @@ import { firstName, ticketVariable } from '@/lib/livechat/auto-messages';
 import { getAutoMessage } from '@/lib/livechat/auto-store';
 import { cleanMessage } from '@/lib/livechat/rules';
 import { alertOwnerOfChat, endConversation } from '@/lib/livechat/whatsapp';
-import { findWebConversation, getMessages, markReadByCustomer, sendCustomerMessage, setConversationPhone, startWebConversation } from '@/lib/livechat/store';
+import { findWebConversation, getMessages, getReceipts, markReadByCustomer, sendCustomerMessage, setConversationPhone, startWebConversation } from '@/lib/livechat/store';
 import { normalizePhone } from '@/lib/whatsapp/phone';
 import { PlatformError } from '@/lib/platform/errors';
 
@@ -19,9 +19,13 @@ export async function GET(request: NextRequest, context: Context) {
     await authorizeCustomer(request, ticketId);
     const conversation = await findWebConversation(ticketId);
     if (!conversation) return NextResponse.json({ conversation: null, messages: [] });
+    // The window only polls while the tab is visible: fetching is reading. What the team sent up to the start of this fetch is read.
+    const startedAt = new Date();
     const messages = await getMessages(conversation.id, request.nextUrl.searchParams.get('after'));
-    if (conversation.unreadCustomer > 0) await markReadByCustomer(conversation.id);
-    return NextResponse.json({ conversation: conversationView(conversation), messages: messages.map(forCustomer) });
+    await markReadByCustomer(conversation.id, startedAt);
+    // seen: which of the customer's own messages the team has read ("Visto"), and whether the team is typing.
+    const seen = (await getReceipts(conversation.id, 'in')).filter((receipt) => receipt.readAt).map((receipt) => receipt.id);
+    return NextResponse.json({ conversation: conversationView(conversation), messages: messages.map(forCustomer), seen });
   } catch (error) {
     return failure(error);
   }

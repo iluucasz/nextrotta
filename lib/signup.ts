@@ -13,7 +13,7 @@ import { notifyPlatform } from './platform/notice-alerts';
 import { quoteBuilderSelection } from './platform/modules';
 import { checkSlugAvailability } from './platform/organizations';
 import { getPlatformSettings } from './platform/settings';
-import { calculateSubscriptionValue, planFromRow, type BillingCycle, type SubscriptionModule } from './plans';
+import { annualFactor, calculateSubscriptionValue, planFromRow, type BillingCycle, type SubscriptionModule } from './plans';
 import { autoAssignQuietly } from './platform/storage-containers';
 import { validatePhone } from './whatsapp/phone';
 
@@ -96,6 +96,7 @@ export async function quoteSignup(planKey: unknown, cycle: unknown, billingDay: 
       includedTechnicians,
       discountPercent: 0,
       discountAmount: 0,
+      annualFactor: annualFactor(plan),
     },
     0,
   ).value;

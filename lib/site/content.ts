@@ -79,7 +79,7 @@ export const siteContent: SiteContent = {
     'O NextRotta é atualizado periodicamente com novos recursos — sem aumentar sua mensalidade. Toda melhoria geral chega para todos os clientes do plano.',
   securityTitle: 'Seus dados são seus. Sempre.',
   pricingFootnote:
-    'Implantação inclui configuração e treinamento. Atualizações sem custo extra. Seus dados nunca são apagados por atraso.',
+    'Implantação inclui configuração e treinamento. Atualizações sem custo extra. Se a assinatura atrasar, seus dados ficam guardados por 3 meses.',
   defaultCycle: 'monthly',
   benefits: [
     {
@@ -129,7 +129,7 @@ export const siteContent: SiteContent = {
     {
       id: 'seg3',
       title: 'Backup todos os dias',
-      text: 'Guardado por 3 meses no Essencial e 6 meses no Pro.',
+      text: 'Guardado por 30 dias no Essencial e 90 dias no Pro.',
     },
   ],
   testimonials: [],
@@ -147,7 +147,7 @@ export const siteContent: SiteContent = {
     {
       id: 'f3',
       title: 'O que acontece se eu atrasar?',
-      text: 'O acesso pode ser pausado após a carência, mas seus dados são preservados. O administrador pode regularizar e exportar os dados.',
+      text: 'O acesso é pausado após a carência, mas seus dados ficam guardados por 3 meses: o administrador pode baixar tudo ou regularizar o pagamento e voltar na hora. Sem regularização nesse prazo, os dados são excluídos de forma permanente, conforme a LGPD.',
     },
     {
       id: 'f4',
@@ -166,7 +166,7 @@ export const siteContent: SiteContent = {
   seoDescription:
     'Organize técnicos, ordens de serviço, escala, folha e financeiro em um só lugar.',
   terms:
-    '# Termos de uso\n\nVersão preliminar, em revisão jurídica antes do lançamento comercial.\n\n## Uso da plataforma\nO NextRotta organiza a operação de equipes técnicas. O administrador é responsável pelos acessos da sua organização.\n\n## Assinatura e dados\nPlanos e limites são informados na contratação. Atraso ou cancelamento não apagam os dados. A organização pode exportar suas informações.\n\n## Inteligência artificial\nO assistente oferece análises e sugestões que devem ser conferidas pelo usuário. Serviços de terceiros podem processar os dados necessários às consultas.',
+    '# Termos de uso\n\nVersão preliminar, em revisão jurídica antes do lançamento comercial.\n\n## Uso da plataforma\nO NextRotta organiza a operação de equipes técnicas. O administrador é responsável pelos acessos da sua organização.\n\n## Assinatura e dados\nPlanos e limites são informados na contratação. Atraso ou cancelamento pausam o acesso; os dados ficam guardados por 3 meses e, sem regularização, são excluídos de forma permanente, conforme a LGPD. Nesse período a organização pode exportar suas informações.\n\n## Inteligência artificial\nO assistente oferece análises e sugestões que devem ser conferidas pelo usuário. Serviços de terceiros podem processar os dados necessários às consultas.',
   privacy:
     '# Política de privacidade\n\nVersão preliminar, em revisão jurídica antes do lançamento comercial.\n\n## Dados tratados\nDados de contato, informações operacionais e registros de acesso são usados para prestar o serviço.\n\n## Prestadores e IA\nConsultas de IA podem ser processadas por provedores terceiros, incluindo DeepSeek, fora do Brasil. Há transferência internacional dos dados necessários à consulta.\n\n## Seus direitos\nSolicitações de acesso, correção e exportação podem ser encaminhadas ao contato da plataforma.',
 };

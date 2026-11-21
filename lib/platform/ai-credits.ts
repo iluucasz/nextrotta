@@ -124,6 +124,10 @@ export async function getCreditPricing() {
   const costPerUse = costOf(prompt, completion);
   const costPerCredit = costPerUse / ai.creditsPerUse;
   const margin = ai.targetMarginPercent;
+  // Asaas keeps a fixed amount and a percentage of every paid charge: both come out of the owner's share.
+  const feeFixed = ai.asaasFeeFixed;
+  const feePercent = ai.asaasFeePercent;
+  const keepShare = margin === null ? 0 : 1 - margin / 100 - feePercent / 100;
   return {
     answersMeasured: answers,
     source: measured ? ('measured' as const) : ('estimate' as const),
@@ -134,14 +138,31 @@ export async function getCreditPricing() {
     costPerUseP90: measured ? costOf(Number(usage.prompt_p90), Number(usage.completion_p90)) : null,
     costPerCredit,
     targetMarginPercent: margin,
-    minPricePerCredit: margin === null || costPerCredit <= 0 ? null : costPerCredit / (1 - margin / 100),
+    asaasFeeFixed: feeFixed,
+    asaasFeePercent: feePercent,
+    /** What is left of each real of price after the margin and the percentage fee: price = (cost + fixed fee) ÷ keepShare. */
+    keepShare,
+    /** The part of the price that grows with the credits (the fixed fee is per charge, see priceForMargin). */
+    minPricePerCredit: margin === null || costPerCredit <= 0 || keepShare <= 0 ? null : costPerCredit / keepShare,
     pricesConfigured: ai.inputCostPerMillion > 0 || ai.outputCostPerMillion > 0,
   };
 }
 
-/** The price that gives the target margin, rounded up to R$ 0,50 so it never ends below it. */
-function priceForMargin(credits: number, minPricePerCredit: number) {
-  return Math.max(0.5, Math.ceil(credits * minPricePerCredit * 2) / 2);
+type Pricing = Awaited<ReturnType<typeof getCreditPricing>>;
+
+/** What Asaas keeps of one paid charge of this price. */
+export function asaasFee(price: number, pricing: Pick<Pricing, 'asaasFeeFixed' | 'asaasFeePercent'>) {
+  return price > 0 ? pricing.asaasFeeFixed + (price * pricing.asaasFeePercent) / 100 : 0;
+}
+
+/**
+ * The price that leaves the target margin AFTER the provider's cost and Asaas's fee, rounded up to R$ 0,50 so it never ends
+ * below it: price × (1 − margin − fee%) = cost + fixed fee.
+ */
+export function priceForMargin(credits: number, pricing: Pricing) {
+  if (pricing.minPricePerCredit === null || pricing.keepShare <= 0) return null;
+  const price = (credits * pricing.costPerCredit + pricing.asaasFeeFixed) / pricing.keepShare;
+  return Math.max(0.5, Math.ceil(price * 2) / 2);
 }
 
 /** Sets every active package to the price of the target margin (new purchases only). */
@@ -154,8 +175,8 @@ export async function applyTargetMargin(input: Record<string, unknown>, actor: A
   const packages = await listCreditPackages({ activeOnly: true });
   const changes = [];
   for (const item of packages) {
-    const price = priceForMargin(item.credits, pricing.minPricePerCredit);
-    if (price === item.price) continue;
+    const price = priceForMargin(item.credits, pricing);
+    if (price === null || price === item.price) continue;
     await sql`UPDATE ai_credit_packages SET price = ${price}, updated_at = NOW() WHERE id = ${item.id}`;
     await audit(actor, 'ai_package.updated', item.id, {
       before: { price: item.price },
@@ -178,7 +199,7 @@ export async function getCreditsOverview(period: { from: string; to: string }) {
         AND (created_at AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN ${period.from}::date AND ${period.to}::date
     `,
     sql.query(
-      `SELECT COALESCE(SUM(value), 0)::float AS total FROM billing_charges
+      `SELECT COALESCE(SUM(value), 0)::float AS total, COUNT(*)::int AS charges FROM billing_charges
        WHERE kind = 'credits' AND status IN ${PAID}
          AND (COALESCE(paid_at, created_at) AT TIME ZONE 'America/Sao_Paulo')::date BETWEEN $1::date AND $2::date`,
       [period.from, period.to],
@@ -205,17 +226,21 @@ export async function getCreditsOverview(period: { from: string; to: string }) {
     consumedCredits: Number(consumption[0].credits),
     providerCost: Number(consumption[0].cost),
     revenue: Number(revenue[0].total),
+    /** What Asaas kept of those paid charges (comes out of the margin). */
+    asaasFees: Math.round((Number(revenue[0].charges) * pricing.asaasFeeFixed + (Number(revenue[0].total) * pricing.asaasFeePercent) / 100) * 100) / 100,
     organizations: top.map((row) => ({ id: String(row.id), name: String(row.name), consumed: Number(row.consumed), balance: Number(row.balance) })),
     conversion: settings.ai,
-    pricing,
+    pricing: { ...pricing, priceForThousand: priceForMargin(1000, pricing) },
     packages: packages.map((item) => {
       const cost = item.credits * pricing.costPerCredit;
       return {
         ...item,
         /** What the answers of this package cost the owner at the provider. */
         cost,
-        marginPercent: item.price > 0 && pricing.pricesConfigured ? ((item.price - cost) / item.price) * 100 : null,
-        priceForMargin: pricing.minPricePerCredit === null ? null : priceForMargin(item.credits, pricing.minPricePerCredit),
+        /** What Asaas keeps when this package is paid. */
+        fee: asaasFee(item.price, pricing),
+        marginPercent: item.price > 0 && pricing.pricesConfigured ? ((item.price - cost - asaasFee(item.price, pricing)) / item.price) * 100 : null,
+        priceForMargin: priceForMargin(item.credits, pricing),
       };
     }),
   };

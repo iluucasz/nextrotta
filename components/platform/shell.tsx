@@ -2,7 +2,7 @@
 import { useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Activity, ArrowUpRight, Bell, Blocks, BookOpen, Building2, CircleDollarSign, CreditCard, Gauge, Globe, History, LayoutDashboard, Menu, MessageSquare, ShieldCheck, Sparkles, TicketPercent, Users, X } from 'lucide-react';
+import { Activity, ArrowUpRight, Bell, Blocks, BookOpen, Building2, CircleDollarSign, CreditCard, Gauge, Globe, History, LayoutDashboard, Menu, MessageSquare, Puzzle, ShieldCheck, Sparkles, TicketPercent, Users, X } from 'lucide-react';
 import { BrandLogo } from '@/components/brand-logo';
 import { NoticeProvider } from './notice';
 import { ScreenState } from './ui';
@@ -17,6 +17,7 @@ export const fullNavigation = [
   { label: 'Organizações', path: '/organizacoes', icon: Building2 },
   { label: 'Financeiro', path: '/financeiro', icon: CircleDollarSign },
   { label: 'Planos', path: '/planos', icon: CreditCard },
+  { label: 'Monte o seu (módulos)', path: '/modulos', icon: Puzzle },
   { label: 'Cupons e descontos', path: '/cupons', icon: TicketPercent },
   { label: 'Créditos de IA', path: '/creditos-ia', icon: Sparkles },
   { label: 'Catálogo de recursos', path: '/recursos', icon: Blocks },

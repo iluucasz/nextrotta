@@ -132,15 +132,24 @@ export interface SubscriptionPricing {
   includedTechnicians: number;
   discountPercent: number;
   discountAmount: number;
+  /**
+   * How many monthly payments the annual price asks for (the plan's annualFactor). Extra technicians
+   * follow it, like modules do, so the annual cycle keeps its discount on them too. Defaults to 10.
+   */
+  annualFactor?: number;
 }
+
+/** Monthly payments an annual price asks for when the plan's own factor isn't at hand ("2 months free"). */
+export const DEFAULT_ANNUAL_FACTOR = 10;
 
 /**
  * What the organization pays per cycle: base price plus technicians beyond the included ones
- * (the extra price is monthly, so an annual cycle charges twelve of it), minus the discounts.
+ * (the extra price is monthly, so an annual cycle charges as many of it as the plan's annual price
+ * asks of the base: 10 for "2 months free"), minus the discounts.
  */
 export function calculateSubscriptionValue(pricing: SubscriptionPricing, activeTechnicians: number) {
   const extraTechnicians = Math.max(0, activeTechnicians - pricing.includedTechnicians);
-  const extraMonths = pricing.cycle === 'annual' ? 12 : 1;
+  const extraMonths = pricing.cycle === 'annual' ? pricing.annualFactor ?? DEFAULT_ANNUAL_FACTOR : 1;
   const gross = pricing.basePrice + extraTechnicians * pricing.extraTechnicianPrice * extraMonths;
   const discounted = gross * (1 - pricing.discountPercent / 100) - pricing.discountAmount;
   return {

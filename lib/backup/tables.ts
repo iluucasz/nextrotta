@@ -34,6 +34,8 @@ export const BACKUP_EXCLUDED = [
   'livechat_conversations', 'livechat_attachments',
   // The team's cases (internal records about conversations and contacts): never part of a company's backup or restore.
   'support_cases',
+  // The team's own inbox of alerts about companies and the platform: records of the platform, never rolled back with a restore.
+  'platform_notices',
 ] as const;
 
 /**

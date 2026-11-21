@@ -96,9 +96,16 @@ limita o corpo de uma requisição a 4,5 MB); nada de HTML, SVG ou executável (
   tela, o resto baixa).
 - **Cota:** o que o **cliente** envia conta no armazenamento do plano dele (a view `organization_files` já alimenta limites, capacidade e
   custos; a mensagem de limite cheio é a de sempre). O que a **equipe** envia fica na pasta dele mas **não é cobrado** (`counted = false`).
-- **WhatsApp:** o arquivo que o dono envia no Livechat vai também ao WhatsApp do cliente (imagem ou documento, com a legenda "*Suporte
-  NextRotta* — chamado #N"), e numa conversa de WhatsApp só é guardado se o WhatsApp aceitar. **O que o cliente manda pelo WhatsApp
-  (foto, áudio, documento) continua chegando como aviso** ("📷 Imagem"); baixar a mídia do WhatsApp para o armazenamento é o próximo passo.
+- **WhatsApp, saída:** o arquivo que o dono envia no Livechat vai também ao WhatsApp do cliente (imagem ou documento, com a legenda "*Suporte
+  NextRotta* — chamado #N"), e numa conversa de WhatsApp só é guardado se o WhatsApp aceitar.
+- **WhatsApp, entrada (21/11/2026):** o que o cliente manda pelo WhatsApp (foto, vídeo, **áudio**, documento, figurinha) é baixado do
+  Evolution (`POST /chat/getBase64FromMediaMessage`), guardado na pasta da empresa (ou da plataforma, se o número é desconhecido) e
+  aparece no balão: imagem, **player de áudio**, **player de vídeo** ou cartão de arquivo, com o texto que o cliente escreveu junto.
+  Aceita os tipos acima mais áudio (ogg, mp3, m4a, aac, amr) e vídeo (mp4, 3gp), **até 16 MB** (é de servidor para servidor, sem o
+  limite da caixa de anexos; o upload do chat continua em 4 MB e sem áudio/vídeo). **Não conta no armazenamento do plano** (entrou pelo
+  número da plataforma). Roda depois da resposta do webhook (`after()`), e a mensagem nasce como aviso ("📷 Imagem") e vira arquivo
+  quando o download termina; se não der (grande demais, tipo recusado, Evolution fora), fica o aviso e o painel diz que o arquivo
+  abre no WhatsApp. Código: `saveInboundMedia` (`lib/livechat/whatsapp.ts`), `attachMediaToMessage` (`store.ts`).
 - Backup: `livechat_attachments` está em `BACKUP_EXCLUDED` (registros da plataforma), como a conversa.
 
 ## Janela do chat do cliente
@@ -139,11 +146,29 @@ com mensagens reais**: o recebimento (um cliente escrevendo para o número), a r
 - Webhook: `POST /api/webhooks/evolution` (token no cabeçalho `x-webhook-token`; só a instância `nextrotta-suporte`; grupos e
   status são ignorados; a mesma mensagem duas vezes conta uma).
 
+## "Digitando…" e confirmação de leitura (21/11/2026; migração `0070`)
+
+- **Digitando:** `livechat_conversations.customer_typing_until` / `owner_typing_until` (alguns segundos, renovados enquanto a pessoa digita,
+  no máximo um sinal a cada 3 s; enviar a mensagem encerra). O cliente digitando no chat do chamado (`POST /api/support/livechat/<chamado>/typing`)
+  aparece para o dono como três pontinhos; o dono digitando (`POST /api/platform/livechat/<id>/typing`) aparece no chat do cliente como
+  "Suporte digitando…". No WhatsApp: o dono digitando mostra "digitando…" no celular do cliente (`/chat/sendPresence`, uma vez por rajada),
+  e o cliente digitando no WhatsApp chega pelo evento `PRESENCE_UPDATE` (**depende de o WhatsApp/Evolution entregar esse evento**).
+- **Leitura:** `livechat_messages.delivered_at` / `read_at`. Sob o que a equipe enviou: ✓ enviada, ✓✓ recebida, ✓✓ azul lida. No chat do
+  chamado, é lida quando a janela do cliente (só com a aba visível) busca a conversa; no WhatsApp, pelos eventos `MESSAGES_UPDATE`
+  (entregue/lida). O que o cliente escreveu fica **lido** quando a equipe abre a conversa: no chat do chamado ele vê **"Visto"** sob a
+  última mensagem lida; no WhatsApp, o painel também avisa o WhatsApp (`/chat/markMessageAsRead`, os tiques azuis no celular do cliente).
+  As marcas chegam junto da consulta periódica (`receipts` / `seen`).
+- **Novos eventos do webhook:** `setEvolutionWebhook` agora assina `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `PRESENCE_UPDATE` e
+  `CONNECTION_UPDATE`. A instância que **já está conectada** só passa a receber os novos depois de **Reports → Livechat → Atualizar
+  recebimento** (botão do dono ao lado de Desconectar; repete com segurança o apontamento do webhook).
+- **Não provado com o número real:** os formatos de `messages.update` e `presence.update` são lidos de forma tolerante (formato v2 e antigo),
+  mas só foram testados com eventos simulados; confira no primeiro uso com mensagens reais.
+
 ## Limites
 
-- Só texto. Foto, áudio, documento e figurinha chegam como aviso ("📷 Imagem") e se abrem no WhatsApp do número oficial.
+- Foto, áudio, vídeo e documento do cliente viram arquivo (até 16 MB); localização e contato chegam como aviso.
 - Atualização por consulta periódica (sem WebSocket, para não pesar na Vercel): a janela do cliente consulta a cada 4 s com o chat
   aberto (20 s depois de encerrado) e só com a aba visível; o painel do dono, a lista a cada 6 s e a conversa aberta a cada 3 s.
-- Sem sinal de "digitando" nem de lida/entregue.
+  "Digitando" e as marcas de leitura têm esse atraso de alguns segundos.
 
 Teste: `node scripts/test-livechat.cjs` (regras e fluxo no banco com empresa de teste própria).

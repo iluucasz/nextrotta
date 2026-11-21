@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Building2, CheckCheck, FileText, FolderOpen, FolderPlus, Headset, LoaderCircle, MessageCircle, Paperclip, QrCode, Search, Send, Ticket, Unplug, X } from 'lucide-react';
+import { ArrowLeft, Building2, Check, CheckCheck, FileText, FolderOpen, FolderPlus, Headset, LoaderCircle, MessageCircle, Paperclip, QrCode, Search, Send, Ticket, Unplug, X } from 'lucide-react';
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { firstName, renderAutoMessage, ticketVariable, type ResolvedAutoMessage } from '@/lib/livechat/auto-messages';
-import { ATTACHMENT_TYPES, attachmentProblem, chatClosingMessage, isImageType } from '@/lib/livechat/rules';
+import { ATTACHMENT_TYPES, attachmentProblem, chatClosingMessage, isAudioType, isImageType, isVideoType, receiptOf } from '@/lib/livechat/rules';
 import { api, errorMessage } from './api';
 import { CaseWorkspace, CreateCaseDialog, type CaseSource } from './case-workspace';
 import { useNotify } from './notice';
@@ -27,6 +27,8 @@ type Conversation = {
   status: 'open' | 'closed';
   urgent: boolean;
   unreadOwner: number;
+  /** The customer is typing right now (WhatsApp or the chat window). */
+  customerTyping?: boolean;
   lastMessageAt: string;
   lastMessagePreview: string | null;
   /** The case this conversation was turned into (null = still just a conversation). */
@@ -34,7 +36,7 @@ type Conversation = {
   caseNumber: number | null;
   caseStatus: string | null;
 };
-type Message = { id: string; direction: 'in' | 'out'; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; autoKey?: string | null; attachment: { id: string; fileName: string; contentType: string; size: number } | null; createdAt: string };
+type Message = { id: string; direction: 'in' | 'out'; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; autoKey?: string | null; attachment: { id: string; fileName: string; contentType: string; size: number } | null; createdAt: string; deliveredAt?: string | null; readAt?: string | null };
 const sizeLabel = (bytes: number) => (bytes >= 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`);
 const ACCEPT = Object.keys(ATTACHMENT_TYPES).join(',');
 type WhatsAppStatus = { serverConfigured: boolean; instanceName: string; created: boolean; state: 'not_created' | 'connected' | 'connecting' | 'disconnected' | 'unknown'; number: string | null; webhookUrl: string | null; error: string | null };
@@ -66,6 +68,15 @@ const listTime = (value: string) => {
   const label = dayLabel(value);
   return label === 'Hoje' ? clock(value) : label === 'Ontem' ? 'Ontem' : new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit' }).format(new Date(value));
 };
+/** The mark under what the team sent: one tick sent, two received, two blue read. */
+function Ticks({ mark }: { mark: 'sent' | 'delivered' | 'read' }) {
+  const label = mark === 'read' ? 'Lida' : mark === 'delivered' ? 'Recebida' : 'Enviada';
+  return (
+    <span className={`lc-ticks ${mark}`} title={label} role="img" aria-label={label}>
+      {mark === 'sent' ? <Check size={14} /> : <CheckCheck size={14} />}
+    </span>
+  );
+}
 const phoneLabel = (digits: string | null) => {
   if (!digits) return '';
   const national = digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits;
@@ -172,6 +183,20 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
     return () => clearInterval(timer);
   }, [open, notify]);
 
+  /** The number is already connected: points the server's webhook at the app again, so new kinds of event (typing, read marks) arrive. */
+  async function refreshReceiving() {
+    setConnecting(true);
+    try {
+      const result = await api<{ status: WhatsAppStatus }>('/livechat/whatsapp', { method: 'POST' });
+      setWhatsapp(result.status);
+      notify('Recebimento atualizado: mensagens, arquivos, “digitando” e leitura.');
+    } catch (reason) {
+      notify(errorMessage(reason));
+    } finally {
+      setConnecting(false);
+    }
+  }
+
   async function connect() {
     setConnecting(true);
     try {
@@ -225,10 +250,16 @@ export function Livechat({ initialId = null }: { initialId?: string | null }) {
         {whatsapp && !whatsapp.webhookUrl && whatsapp.serverConfigured && !whatsapp.error ? <small>Sem endereço público: o recebimento de mensagens só funciona no site publicado.</small> : null}
         <span className="lc-status-actions">
           {!isOwner ? null : connected ? (
-            <button className="nr-btn" onClick={() => setConfirmDisconnect(true)}>
-              <Unplug size={16} />
-              Desconectar
-            </button>
+            <>
+              <button className="nr-btn" disabled={connecting} onClick={() => void refreshReceiving()} title="Aponta o servidor do WhatsApp de novo para este sistema. Use depois de uma atualização que traga novos tipos de aviso.">
+                {connecting ? <LoaderCircle size={16} className="animate-spin" /> : null}
+                Atualizar recebimento
+              </button>
+              <button className="nr-btn" onClick={() => setConfirmDisconnect(true)}>
+                <Unplug size={16} />
+                Desconectar
+              </button>
+            </>
           ) : (
             <button className="nr-btn primary" disabled={connecting || !whatsapp?.serverConfigured} onClick={() => void connect()}>
               {connecting ? <LoaderCircle size={16} className="animate-spin" /> : <QrCode size={16} />}
@@ -418,6 +449,9 @@ function Thread({ conversation, onBack, onChanged, casePanelOpen, onToggleCasePa
   const textRef = useRef<HTMLTextAreaElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const lastAt = useRef<string | null>(null);
+  // "digitando…" of the customer, and when the team's own typing was last signalled.
+  const [customerTyping, setCustomerTyping] = useState(false);
+  const lastTypingPing = useRef(0);
 
   const merge = useCallback((incoming: Message[], replace = false) => {
     setMessages((previous) => {
@@ -432,8 +466,12 @@ function Thread({ conversation, onBack, onChanged, casePanelOpen, onToggleCasePa
   const refresh = useCallback(
     async (full: boolean) => {
       try {
-        const data = await api<{ messages: Message[] }>(`/livechat/${conversation.id}?read=1${!full && lastAt.current ? `&after=${encodeURIComponent(lastAt.current)}` : ''}`);
+        const data = await api<{ messages: Message[]; conversation?: { customerTyping?: boolean }; receipts?: Array<{ id: string; deliveredAt: string | null; readAt: string | null }> }>(`/livechat/${conversation.id}?read=1${!full && lastAt.current ? `&after=${encodeURIComponent(lastAt.current)}` : ''}`);
         merge(data.messages, full);
+        setCustomerTyping(Boolean(data.conversation?.customerTyping));
+        // The delivered/read marks of messages already on screen change after they were first fetched.
+        const receipts = data.receipts ?? [];
+        if (receipts.length) setMessages((previous) => previous && previous.map((message) => { const mark = receipts.find((receipt) => receipt.id === message.id); return mark ? { ...message, deliveredAt: mark.deliveredAt, readAt: mark.readAt } : message; }));
       } catch {
         /* the next poll tries again */
       }
@@ -454,7 +492,14 @@ function Thread({ conversation, onBack, onChanged, casePanelOpen, onToggleCasePa
   useEffect(() => {
     const body = bodyRef.current;
     if (body) body.scrollTop = body.scrollHeight;
-  }, [count]);
+  }, [count, customerTyping]);
+
+  /** Tells the customer the team is typing (at most every 3 s while the text changes). It never matters if it fails. */
+  function signalTyping(value: string) {
+    if (!value.trim() || conversation.status === 'closed' || Date.now() - lastTypingPing.current < 3000) return;
+    lastTypingPing.current = Date.now();
+    void fetch(`/api/platform/livechat/${conversation.id}/typing`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mirror }) }).catch(() => undefined);
+  }
 
   useEffect(() => {
     if (!pending || !pending.type.startsWith('image/')) {
@@ -643,7 +688,13 @@ function Thread({ conversation, onBack, onChanged, casePanelOpen, onToggleCasePa
                   <div className={`lc-bubble ${message.direction} ${message.kind === 'media' ? 'media' : ''}`}>
                     {message.direction === 'in' && conversation.channel === 'web' && message.senderName ? <span className="lc-sender">{message.senderName}</span> : null}
                     {message.attachment ? (
-                      isImageType(message.attachment.contentType) ? (
+                      isAudioType(message.attachment.contentType) ? (
+                        // eslint-disable-next-line jsx-a11y/media-has-caption
+                        <audio className="lc-audio" controls preload="none" src={`/api/platform/livechat/files/${message.attachment.id}`} />
+                      ) : isVideoType(message.attachment.contentType) ? (
+                        // eslint-disable-next-line jsx-a11y/media-has-caption
+                        <video className="lc-video" controls preload="metadata" src={`/api/platform/livechat/files/${message.attachment.id}`} />
+                      ) : isImageType(message.attachment.contentType) ? (
                         <a className="lc-attach-img" href={`/api/platform/livechat/files/${message.attachment.id}`} target="_blank" rel="noreferrer">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img src={`/api/platform/livechat/files/${message.attachment.id}`} alt={message.attachment.fileName} loading="lazy" />
@@ -660,14 +711,26 @@ function Thread({ conversation, onBack, onChanged, casePanelOpen, onToggleCasePa
                     ) : null}
                     {message.body ? <span className="lc-text">{message.body}</span> : null}
                     {message.autoKey ? <span className="lc-auto">Mensagem automática</span> : null}
-                    <time>{clock(message.createdAt)}</time>
+                    <time>
+                      {clock(message.createdAt)}
+                      {message.direction === 'out' ? <Ticks mark={receiptOf({ deliveredAt: message.deliveredAt ?? null, readAt: message.readAt ?? null })} /> : null}
+                    </time>
                   </div>
                 </div>
               )}
             </div>
           );
         })}
-        {messages && conversation.channel === 'whatsapp' && messages.some((message) => message.kind === 'media') ? <p className="lc-hint">Fotos, áudios e documentos aparecem só como aviso aqui. Abra o WhatsApp do número oficial para vê-los.</p> : null}
+        {customerTyping && conversation.status === 'open' ? (
+          <div className="lc-row in">
+            <div className="lc-bubble in lc-typing" role="status" aria-label="O cliente está digitando">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        ) : null}
+        {messages && messages.some((message) => message.kind === 'media' && !message.attachment) ? <p className="lc-hint">Alguns arquivos não puderam ser baixados do WhatsApp (muito grandes ou de um tipo não aceito). Abra o WhatsApp do número oficial para vê-los.</p> : null}
       </div>
 
       <form
@@ -741,7 +804,10 @@ function Thread({ conversation, onBack, onChanged, casePanelOpen, onToggleCasePa
           <textarea
             ref={textRef}
             value={text}
-            onChange={(event) => setText(event.target.value)}
+            onChange={(event) => {
+              setText(event.target.value);
+              signalTyping(event.target.value);
+            }}
             onPaste={(event) => {
               // A screenshot pasted (Ctrl+V) becomes the attachment.
               const file = Array.from(event.clipboardData.files)[0];

@@ -6,8 +6,11 @@ import {
   connectEvolutionInstance,
   createEvolutionInstance,
   fetchEvolutionInstance,
+  getEvolutionMedia,
   logoutEvolutionInstance,
+  markEvolutionRead,
   sendEvolutionMedia,
+  sendEvolutionPresence,
   sendEvolutionText,
   setEvolutionWebhook,
   type EvolutionQrCode,
@@ -17,9 +20,9 @@ import { PlatformError } from '../platform/errors';
 import { getSupportContact } from '../support-contact';
 import { AUTO_SENDS_PER_HOUR, AWAY_REPEAT_HOURS, describeHours, firstName, isWithinBusinessHours, MEDIA_REPEAT_HOURS, planInboundReplies, renderAutoMessage, ticketVariable, type AutoKey } from './auto-messages';
 import { getAutoMessage, loadAutoMessages } from './auto-store';
-import { mirroredText, ownerAlertKey, previewOf, type InboundMessage } from './rules';
+import { baseMime, mirroredText, ownerAlertKey, previewOf, whatsappMediaProblem, type InboundMessage } from './rules';
 import { saveChatFile } from './files';
-import { attachWaId, closeConversation, getConversation, storeOwnerAttachment, storeOwnerMessage, type Conversation } from './store';
+import { attachMediaToMessage, attachWaId, closeConversation, getConversation, storeOwnerAttachment, storeOwnerMessage, type Conversation } from './store';
 
 /**
  * The platform's official WhatsApp number (the live chat inbox). Its own instance on the shared Evolution server, separate from
@@ -355,5 +358,68 @@ export async function autoReplyToInbound(message: InboundMessage, storedMessageI
   } catch (error) {
     console.error('[livechat] automatic reply failed:', error);
     return [];
+  }
+}
+
+// ------------------------------------------------------------------------------------- files, typing and read marks on WhatsApp
+
+/**
+ * Keeps the photo, voice note, video or document a customer sent on WhatsApp: fetched from the server by the id of the message,
+ * stored in the private folder of the company (or the platform's), shown in the chat next to what they wrote. When it can't be
+ * kept (too big, a type that isn't accepted, the server doesn't answer) the message stays as the notice it already was.
+ * Never throws. Returns true when the file was kept.
+ */
+export async function saveInboundMedia(message: InboundMessage, storedMessageId: string): Promise<boolean> {
+  if (!message.media || !message.mediaKind || !message.waId) return false;
+  try {
+    const server = evolutionServer();
+    if (!server) return false;
+    const found = await getEvolutionMedia({ ...server, instance: LIVECHAT_INSTANCE }, message.waId);
+    if (!found.ok || !found.media) {
+      console.warn('[livechat] could not fetch the file of a WhatsApp message:', found.error);
+      return false;
+    }
+    const buffer = Buffer.from(found.media.base64, 'base64');
+    const type = baseMime(found.media.mimetype ?? message.mimetype);
+    const problem = whatsappMediaProblem({ type, size: buffer.length });
+    if (problem) {
+      console.warn('[livechat] file of a WhatsApp message not kept:', problem);
+      return false;
+    }
+    const conversation = (await sql`SELECT m.conversation_id, c.organization_id FROM livechat_messages m JOIN livechat_conversations c ON c.id = m.conversation_id WHERE m.id = ${storedMessageId}`)[0];
+    if (!conversation) return false;
+    const saved = await saveChatFile({
+      organizationId: (conversation.organization_id as string | null) ?? null,
+      conversationId: String(conversation.conversation_id),
+      fileName: found.media.fileName ?? message.fileName,
+      contentType: type,
+      buffer,
+    });
+    return Boolean(await attachMediaToMessage(storedMessageId, saved, message.caption));
+  } catch (error) {
+    console.error('[livechat] saving a WhatsApp file failed:', error);
+    return false;
+  }
+}
+
+/** Tells WhatsApp the team read these messages (the blue ticks on the customer's phone). Never throws. */
+export async function markWhatsAppRead(phone: string | null, waIds: string[]): Promise<void> {
+  try {
+    const server = evolutionServer();
+    if (!server || !phone || !waIds.length) return;
+    await markEvolutionRead({ ...server, instance: LIVECHAT_INSTANCE }, phone, waIds.slice(0, 50));
+  } catch (error) {
+    console.error('[livechat] marking as read on WhatsApp failed:', error);
+  }
+}
+
+/** Shows "digitando…" on the customer's phone while the team writes (once per burst: the panel repeats the signal). Never throws. */
+export async function showTypingOnWhatsApp(phone: string | null): Promise<void> {
+  try {
+    const server = evolutionServer();
+    if (!server || !phone) return;
+    await sendEvolutionPresence({ ...server, instance: LIVECHAT_INSTANCE }, phone, 'composing', 6000);
+  } catch (error) {
+    console.error('[livechat] typing on WhatsApp failed:', error);
   }
 }

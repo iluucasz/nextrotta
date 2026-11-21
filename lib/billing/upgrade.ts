@@ -4,7 +4,7 @@ import { grantBonusCredits, grantCurrentMonthCredits } from '../platform/ai-cred
 import { createBugReport } from '../platform/bugs';
 import { PlatformError } from '../platform/errors';
 import { getSubscription } from '../platform/plans';
-import { calculateSubscriptionValue, effectiveLimits, planFromRow, type Plan, type PlanLimits } from '../plans';
+import { annualFactor, calculateSubscriptionValue, effectiveLimits, planFromRow, type Plan, type PlanLimits } from '../plans';
 import { FEATURE_DESCRIPTIONS } from '../site/content';
 import { applyNewValueFromNextMonth, nextMonthDueDate } from './billing';
 
@@ -95,6 +95,7 @@ async function loadUpgradeContext(organizationId: string) {
           includedTechnicians: plan.includedTechnicians,
           discountPercent: subscription.discountPercent,
           discountAmount: subscription.discountAmount,
+          annualFactor: annualFactor(plan),
         },
         subscription.activeTechnicians,
       ).value;
@@ -130,6 +131,12 @@ async function firstChargeFromNextMonth(organizationId: string, billingDay: numb
 }
 
 const dateKey = (value: unknown) => (value ? new Date(value as string).toISOString().slice(0, 10) : null);
+
+/** The first charge the new value applies to (what the screens say as "a partir da cobrança de ..."). */
+export async function newValueStartsOn(organizationId: string, nextDueDate: unknown) {
+  const [row] = await sql`SELECT billing_day FROM subscriptions WHERE organization_id = ${organizationId}`;
+  return firstChargeFromNextMonth(organizationId, row?.billing_day ?? null, dateKey(nextDueDate));
+}
 
 /** Lifetime and test organizations don't pay: the owner changes their plan, not the company. */
 async function isLifetime(organizationId: string) {

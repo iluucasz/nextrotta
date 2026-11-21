@@ -353,7 +353,7 @@ export function MarketingCheckout() {
           />
         </div>
         <p style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 16, fontSize: 13, color: MUTED }}>
-          <ShieldCheck size={16} /> Sem fidelidade no plano mensal. Seus dados nunca são apagados.
+          <ShieldCheck size={16} /> Sem fidelidade no plano mensal. Você baixa seus dados quando quiser.
         </p>
       </div>
 

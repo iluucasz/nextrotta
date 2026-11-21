@@ -4,6 +4,7 @@ import { brasiliaDay } from '../lib/backup/dates';
 import { cleanupExpiredBackups, runDailyBackups } from '../lib/backup/service';
 import { backupStorageConfigured } from '../lib/backup/storage';
 import { runBillingMaintenance } from '../lib/billing/billing';
+import { cleanupExpiredPlatformBackups, runDailyPlatformBackup } from '../lib/platform/backup';
 import { grantMonthlyCredits } from '../lib/platform/ai-credits';
 import { expireCoupons } from '../lib/platform/coupons';
 import { runPlatformChecks } from '../lib/platform/notice-checks';
@@ -112,9 +113,18 @@ async function runBackups() {
   } catch (error) {
     log('Rotina de backups falhou:', error);
   }
+  // The whole platform, after the companies' copies (its own failure never stops the cleanup below).
+  try {
+    const made = await trackRun('platform_backup', null, runDailyPlatformBackup);
+    if (made) log('Backup da plataforma inteira: feito.');
+  } catch (error) {
+    log('Backup da plataforma inteira falhou:', error);
+  }
   try {
     const removed = await trackRun('backup_cleanup', null, cleanupExpiredBackups);
     if (removed) log(`Backups: ${removed} cópia(s) vencida(s) removida(s).`);
+    const removedPlatform = await trackRun('platform_backup_cleanup', null, cleanupExpiredPlatformBackups);
+    if (removedPlatform) log(`Backups da plataforma: ${removedPlatform} cópia(s) vencida(s) removida(s).`);
   } catch (error) {
     log('Limpeza dos backups vencidos falhou:', error);
   } finally {

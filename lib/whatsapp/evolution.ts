@@ -107,6 +107,70 @@ export async function sendEvolutionMedia(
   }
 }
 
+/** A file the customer sent (photo, voice note, document...), fetched from the server by the id of its message, as base64. */
+export async function getEvolutionMedia(
+  connection: EvolutionConnection,
+  messageId: string,
+): Promise<EvolutionResult & { media?: { base64: string; mimetype: string | null; fileName: string | null } }> {
+  try {
+    const response = await request(connection, `/chat/getBase64FromMediaMessage/${encodeURIComponent(connection.instance)}`, {
+      method: 'POST',
+      body: JSON.stringify({ message: { key: { id: messageId } }, convertToMp4: false }),
+    });
+    if (!response.ok) {
+      const body = await response.text().catch(() => '');
+      return { ok: false, error: `Evolution API respondeu ${response.status}${body ? `: ${body.slice(0, 200)}` : ''}` };
+    }
+    const data = (await response.json().catch(() => null)) as { base64?: unknown; mimetype?: unknown; fileName?: unknown } | null;
+    if (typeof data?.base64 !== 'string' || !data.base64) return { ok: false, error: 'A Evolution API não devolveu o arquivo.' };
+    // Some versions answer a data URL ("data:image/jpeg;base64,...").
+    const base64 = data.base64.replace(/^data:[^;]*;base64,/, '');
+    return {
+      ok: true,
+      error: null,
+      media: {
+        base64,
+        mimetype: typeof data.mimetype === 'string' ? data.mimetype : null,
+        fileName: typeof data.fileName === 'string' ? data.fileName : null,
+      },
+    };
+  } catch (error) {
+    return { ok: false, error: describeError(error) };
+  }
+}
+
+/** Shows "digitando…" (composing) or stops it (paused) on the customer's phone. Best effort. */
+export async function sendEvolutionPresence(connection: EvolutionConnection, phone: string, presence: 'composing' | 'paused', delayMs = 6000): Promise<EvolutionResult> {
+  const number = normalizePhone(phone);
+  if (!number) return { ok: false, error: 'Telefone inválido para WhatsApp.' };
+  try {
+    const response = await request(connection, `/chat/sendPresence/${encodeURIComponent(connection.instance)}`, {
+      method: 'POST',
+      body: JSON.stringify({ number, presence, delay: delayMs }),
+    });
+    if (!response.ok) return { ok: false, error: `Evolution API respondeu ${response.status}` };
+    return { ok: true, error: null };
+  } catch (error) {
+    return { ok: false, error: describeError(error) };
+  }
+}
+
+/** Marks messages of a customer as read on WhatsApp (the blue ticks on the customer's phone). */
+export async function markEvolutionRead(connection: EvolutionConnection, phone: string, messageIds: string[]): Promise<EvolutionResult> {
+  const number = normalizePhone(phone);
+  if (!number || !messageIds.length) return { ok: false, error: 'Nada a marcar.' };
+  try {
+    const response = await request(connection, `/chat/markMessageAsRead/${encodeURIComponent(connection.instance)}`, {
+      method: 'POST',
+      body: JSON.stringify({ readMessages: messageIds.map((id) => ({ remoteJid: `${number}@s.whatsapp.net`, fromMe: false, id })) }),
+    });
+    if (!response.ok) return { ok: false, error: `Evolution API respondeu ${response.status}` };
+    return { ok: true, error: null };
+  } catch (error) {
+    return { ok: false, error: describeError(error) };
+  }
+}
+
 export interface EvolutionConnectionState {
   connected: boolean;
   state: string | null;
@@ -236,7 +300,8 @@ export async function setEvolutionWebhook(server: EvolutionServer, instance: str
           byEvents: false,
           base64: false,
           headers: { 'x-webhook-token': config.token },
-          events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+          // UPDATE brings delivered/read of what the team sent; PRESENCE_UPDATE brings "digitando…" from the customer.
+          events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'PRESENCE_UPDATE', 'CONNECTION_UPDATE'],
         },
       }),
     });

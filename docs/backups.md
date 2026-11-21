@@ -114,8 +114,43 @@ confere), só administrador (nunca o modo preview) e é bloqueada nos estados de
 registrado em `worker_runs` (`backups`, `backup_cleanup`). Uma vez: `node dist/worker/index.js --run=backups`.
 O container precisa de `BLOB_READ_WRITE_TOKEN`; sem ele, o worker avisa no log e não faz nada.
 
+## Backup da plataforma inteira (21/11/2026; migração `0069`)
+
+Uma cópia de **todas as tabelas do banco** (todas as empresas, usuários, planos, cobranças, o site...), para recuperar de um desastre
+do banco. É separada do backup de cada empresa e só o dono vê. Código: `lib/platform/backup.ts` (banco e armazenamento),
+`lib/platform/backup-format.ts` (arquivo, chave e retenção, sem banco), `lib/platform/backup-restore.ts` (restauração).
+
+- **Quando:** todo dia, logo depois dos backups das empresas, no mesmo ciclo do worker (`worker_runs`: `platform_backup`, e
+  `platform_backup_cleanup` para a retenção); o dono pode fazer na hora em **Operação → Backups → Fazer backup agora** (uma a cada
+  2 minutos, registrado na auditoria). Falhou: aviso crítico no sino (e no WhatsApp do dono).
+- **O que tem:** cada tabela do schema `public`, exceto as amostras de monitoramento da VPS (`vps_metrics`,
+  `vps_container_metrics`: grandes e renováveis). Tabela nova entra sozinha (a lista vem do banco, não do código).
+  **Tem tudo, inclusive hashes de senha e credenciais**, por isso o arquivo é **cifrado** (AES-256-GCM) antes de sair do servidor.
+  Uma única transação de leitura (`REPEATABLE READ`) dá uma foto consistente entre as tabelas.
+- **Chave:** `PLATFORM_BACKUP_KEY` (base64 de 32 bytes) se existir; senão uma chave derivada da `PORTO_CREDENTIALS_KEY`, que o app e o
+  worker já têm. **Guarde essa chave fora do sistema**: sem ela a cópia não abre (e se a `PORTO_CREDENTIALS_KEY` mudar, as cópias
+  antigas só abrem com a antiga). Sem nenhuma das duas o painel avisa e nada é feito.
+- **Onde:** Blob privado, `platform-backups/<data>-<tipo>-<id>.nrpb`. A cópia é reaberta e conferida (linhas por tabela contra o fim
+  do arquivo) antes de contar como feita. **Retenção: 30 dias** (`PLATFORM_BACKUP_RETENTION_DAYS`); a mais recente nunca sai. É a
+  única outra exclusão definitiva do sistema, e só atinge cópias de backup.
+- **Baixar:** no painel (**Baixar**, registrado na auditoria) para guardar uma cópia em outro lugar.
+- **Restaurar:** `node scripts/restore-platform-backup.cjs --file <arquivo.nrpb>` confere o arquivo e mostra o que ele tem, sem mudar
+  nada; com `--apply` grava no banco do `DATABASE_URL`. Passos: criar o banco novo (Neon), apontar o `DATABASE_URL`, `pnpm db:migrate`
+  (cria as tabelas), rodar o script. Só preenche tabelas **vazias** e tudo numa transação: ou volta tudo, ou nada muda. Como o
+  papel do app não desliga chaves estrangeiras, as tabelas entram em ordem de dependência; nos círculos (`users` ↔ `organizations` ↔
+  `storage_containers`, `parts` ↔ `part_images`) uma coluna opcional é preenchida depois.
+- **Testado:** `node scripts/test-platform-backup.cjs` restaura uma cópia do banco real num schema de teste (`zz_restore_test`,
+  apagado ao fim) e confere linha a linha (hash de cada tabela). Também cobre a cifra (chave errada ou arquivo alterado não abrem),
+  arquivo cortado, retenção e a ordem da restauração. O primeiro backup real foi feito em 21/11/2026 (85 tabelas, ~46 mil linhas, 2 MB, 15 s).
+- **Falta no VPS:** o worker precisa ser reimplantado para rodar o backup da plataforma à noite (`docs/saas/vps.md`; até lá só o botão do painel).
+
+## Painel do dono
+
+Operação → **Backups** mostra o estado de tudo: a última rotina da noite, as empresas com atraso (mais de 36 h sem cópia; suspensas e
+canceladas não mudam), o backup da plataforma e a lista por empresa (último backup, cópias, espaço, última falha). A aba **Dados** de cada
+organização lista os backups dela (`GET /api/platform/organizations/:id/backups`).
+
 ## Ainda não existe
 
-- Backup da **plataforma** inteira (restauração pontual do Neon e cópia completa do banco): depende do plano do Neon.
-- O painel do dono (Operação → Backups diários, aba da organização) ainda mostra o texto antigo; falta ligar à lista real.
 - Os arquivos da biblioteca não são copiados (nunca são apagados): o backup guarda só o registro deles.
+- Cópia do backup da plataforma em um segundo provedor (hoje só no Blob; dá para baixar pelo painel).

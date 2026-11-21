@@ -17,6 +17,8 @@ export interface PlatformSettings {
   /**
    * lowBalanceAlert: warn the owner when the DeepSeek balance goes under it (provider currency); null = only when it runs out.
    * targetMarginPercent: share of what the customer pays for credits that stays with the owner; sets the minimum price per credit.
+   * asaasFeeFixed / asaasFeePercent: what Asaas keeps of each paid credit charge (R$ per charge and % of the value), taken
+   * out of the owner's margin. The defaults are Pix/boleto (R$ 1,99); a card charge costs a percentage more.
    */
   ai: {
     inputCostPerMillion: number;
@@ -24,6 +26,8 @@ export interface PlatformSettings {
     creditsPerUse: number;
     lowBalanceAlert: number | null;
     targetMarginPercent: number | null;
+    asaasFeeFixed: number;
+    asaasFeePercent: number;
   };
   /** Porto robot on the shared VPS: how many browsers may run at once across all organizations. */
   porto: { maxBrowsers: number };
@@ -73,7 +77,7 @@ export const DEFAULT_PLATFORM_SETTINGS: PlatformSettings = {
   readOnlyDays: 0,
   reservedSubdomains: [],
   maintenance: { enabled: false, message: '' },
-  ai: { inputCostPerMillion: 0, outputCostPerMillion: 0, creditsPerUse: 1, lowBalanceAlert: null, targetMarginPercent: null },
+  ai: { inputCostPerMillion: 0, outputCostPerMillion: 0, creditsPerUse: 1, lowBalanceAlert: null, targetMarginPercent: null, asaasFeeFixed: 1.99, asaasFeePercent: 0 },
   porto: { maxBrowsers: 2 },
   alerts: { phone: '', instanceName: '' },
   vps: { autoCleanup: false },
@@ -172,7 +176,13 @@ export async function updatePlatformSettings(input: Record<string, unknown>, act
         if (margin >= 95) throw new PlatformError('Margem desejada: menos de 95%.');
         return margin;
       })(),
+      asaasFeeFixed: 'asaasFeeFixed' in ai ? nonNegative(ai.asaasFeeFixed, 'Taxa fixa do Asaas') : current.ai.asaasFeeFixed,
+      asaasFeePercent: 'asaasFeePercent' in ai ? nonNegative(ai.asaasFeePercent, 'Taxa percentual do Asaas') : current.ai.asaasFeePercent,
     };
+    if (next.ai.asaasFeePercent >= 50) throw new PlatformError('Taxa percentual do Asaas: menos de 50%.');
+    if ((next.ai.targetMarginPercent ?? 0) + next.ai.asaasFeePercent >= 95) {
+      throw new PlatformError('Margem desejada somada à taxa percentual do Asaas: menos de 95%.');
+    }
   }
 
   if ('porto' in input) {

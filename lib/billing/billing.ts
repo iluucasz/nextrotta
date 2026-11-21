@@ -432,6 +432,21 @@ export async function buyCreditPackage(organizationId: string, packageId: string
   return { invoiceUrl: payment.invoiceUrl ?? null };
 }
 
+/** The setup fee of a module the admin just added: one charge, due in 3 days (reference "<organization>:module:<key>"). */
+export async function createModuleSetupCharge(organizationId: string, moduleKey: string, moduleName: string, value: number) {
+  const context = await loadContext(organizationId);
+  if (!context.asaas_customer_id) throw new PlatformError('A cobrança da sua assinatura ainda não foi ativada: a implantação do módulo não pôde ser gerada.');
+  const payment = await createPayment({
+    customer: String(context.asaas_customer_id),
+    value,
+    dueDate: addDays(brasiliaToday(), 3),
+    description: `NextRotta — implantação do módulo ${moduleName}`,
+    externalReference: `${organizationId}:module:${moduleKey}`,
+  }).catch(asPlatformError);
+  await upsertCharge(organizationId, payment);
+  return { invoiceUrl: payment.invoiceUrl ?? null };
+}
+
 /**
  * The owner makes a payment link for the company: the setup fee (what is still missing of it) or any other charge.
  * It is a normal charge of the gateway (mirrored here, the company sees it in Assinatura); the owner copies the link and sends it.

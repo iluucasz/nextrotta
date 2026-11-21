@@ -7,7 +7,7 @@ import { BugTable, type BugRow } from './bugs';
 import { couponValue } from './coupons';
 import type { CatalogFeature } from './features';
 import { useNotify } from './notice';
-import { Confirm, DataTable, Editor, Empty, ErrorState, Loading, Metric, Panel } from './ui';
+import { Badge, Confirm, DataTable, Editor, ErrorState, Loading, Metric, Panel } from './ui';
 
 type ActiveCoupon = { id: string; couponId: string; code: string; kind: 'percent' | 'fixed'; value: number; appliedAt: string; endsOn: string | null };
 
@@ -213,10 +213,21 @@ export function CreditsTab({ organizationId }: { organizationId: string }) {
 type TrashRow = { id: string; table: string; tableLabel: string; recordId: string; summary: string; technicianName: string | null; deletedAt: string; deletedByName: string | null };
 
 /** Export everything, and the trash: archived records that can be restored. */
+const BACKUP_KIND_LABELS: Record<string, string> = {
+  daily: 'Diário',
+  manual: 'Manual',
+  before_restore: 'Antes de restaurar',
+  closing: 'Antes do bloqueio',
+};
+
 export function DataTab({ organizationId }: { organizationId: string }) {
   const notify = useNotify();
   const trash = useResource<{ trash: TrashRow[] }>(`/organizations/${organizationId}/data`);
   const [restoring, setRestoring] = useState<TrashRow | null>(null);
+  const backups = useResource<{
+    backups: Array<{ id: string; kind: string; status: string; createdAt: string; sizeBytes: number; restoredAt: string | null }>;
+    retentionDays: number | null;
+  }>(`/organizations/${organizationId}/backups`);
 
   return (
     <>
@@ -251,10 +262,30 @@ export function DataTab({ organizationId }: { organizationId: string }) {
         )}
       </Panel>
       <Panel title="Backups diários">
-        <Empty
-          title="Rotina de backup não configurada"
-          text="Os backups diários dependem do armazenamento externo e do worker em execução (veja Operação). Até lá, use a exportação completa acima."
-        />
+        {backups.loading && !backups.data ? (
+          <Loading />
+        ) : backups.error ? (
+          <ErrorState message={backups.error} onRetry={backups.reload} />
+        ) : (
+          <>
+            <p className="nr-pad text-xs text-muted-foreground">
+              Todo dia às 00:00 (Brasília) · guardados por {backups.data!.retentionDays ? `${backups.data!.retentionDays} dias` : 'tempo ilimitado'} · o administrador da empresa baixa e restaura em Configurações → Backups.
+            </p>
+            <DataTable
+              rows={backups.data!.backups.map((backup) => ({ ...backup, kindText: BACKUP_KIND_LABELS[backup.kind] ?? backup.kind, statusText: backup.status === 'running' ? 'Em andamento' : 'Concluído' }))}
+              defaultSort="createdAt"
+              defaultDescending
+              columns={[
+                { key: 'createdAt', label: 'Feito em', render: (row) => date(row.createdAt, true) },
+                { key: 'kindText', label: 'Tipo' },
+                { key: 'sizeBytes', label: 'Tamanho', render: (row) => `${(row.sizeBytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} KB` },
+                { key: 'statusText', label: 'Estado', render: (row) => <Badge>{row.statusText}</Badge> },
+                { key: 'restoredAt', label: 'Restaurado', render: (row) => (row.restoredAt ? date(row.restoredAt, true) : '—') },
+              ]}
+              emptyText="Nenhum backup ainda: o primeiro sai na próxima meia-noite."
+            />
+          </>
+        )}
       </Panel>
       {restoring && (
         <Confirm

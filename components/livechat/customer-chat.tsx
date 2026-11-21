@@ -8,8 +8,8 @@ import { ATTACHMENT_TYPES, attachmentProblem } from '@/lib/livechat/rules';
 import { formatPhoneInput, validatePhone } from '@/lib/whatsapp/phone';
 
 type Attachment = { id: string; name: string; type: string; size: number; image: boolean };
-type Message = { id: string; mine: boolean; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; attachment: Attachment | null; createdAt: string };
-type ChatState = { conversation: { id: string; status: 'open' | 'closed'; unread: number; /** Digits with 55: where the team's answers are also sent. */ whatsapp: string | null } | null; messages: Message[] };
+type Message = { id: string; mine: boolean; senderName: string | null; body: string; kind: 'text' | 'media' | 'system'; attachment: Attachment | null; createdAt: string; /** The team read this message of mine. */ seen?: boolean };
+type ChatState = { conversation: { id: string; status: 'open' | 'closed'; unread: number; /** Digits with 55: where the team's answers are also sent. */ whatsapp: string | null; /** The team is typing right now. */ ownerTyping?: boolean } | null; messages: Message[]; /** Ids of my messages the team has read since the window opened. */ seen?: string[] };
 
 const nationalOf = (digits: string) => formatPhoneInput(digits.startsWith('55') && digits.length > 11 ? digits.slice(2) : digits);
 
@@ -42,6 +42,7 @@ export function LiveChatPanel({ ticketId, newChatHref, onStatusChange }: { ticke
   const listRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const lastAt = useRef<string | null>(null);
+  const lastTypingPing = useRef(0);
 
   const apply = useCallback((next: ChatState, replace: boolean) => {
     setState((previous) => {
@@ -49,7 +50,7 @@ export function LiveChatPanel({ ticketId, newChatHref, onStatusChange }: { ticke
       const known = new Set(base.map((message) => message.id));
       const merged = [...base, ...next.messages.filter((message) => !known.has(message.id))];
       lastAt.current = merged.length ? merged[merged.length - 1].createdAt : null;
-      return { conversation: next.conversation, messages: merged };
+      return { conversation: next.conversation, messages: merged, seen: Array.from(new Set([...(replace ? [] : previous?.seen ?? []), ...(next.seen ?? [])])) };
     });
   }, []);
 
@@ -169,6 +170,9 @@ export function LiveChatPanel({ ticketId, newChatHref, onStatusChange }: { ticke
   }
 
   const closedChat = state?.conversation?.status === 'closed';
+  // "Visto": under the last of my messages the team has read.
+  const seenIds = new Set(state?.seen ?? []);
+  const lastSeenId = [...(state?.messages ?? [])].reverse().find((message) => message.mine && (message.seen || seenIds.has(message.id)))?.id ?? null;
   const fileUrl = (attachment: Attachment, download = false) => `/api/support/livechat/${ticketId}/files/${attachment.id}${download ? '?download=1' : ''}`;
   let lastDay = '';
   return (
@@ -283,13 +287,26 @@ export function LiveChatPanel({ ticketId, newChatHref, onStatusChange }: { ticke
                         )
                       ) : null}
                       {message.body ? <p className="whitespace-pre-wrap break-words">{message.body}</p> : null}
-                      <p className={`mt-1 text-right text-[11px] ${message.mine ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>{clock(message.createdAt)}</p>
+                      <p className={`mt-1 text-right text-[11px] ${message.mine ? 'text-primary-foreground/75' : 'text-muted-foreground'}`}>
+                        {clock(message.createdAt)}
+                        {message.id === lastSeenId ? <span className="ml-1.5 font-medium">· Visto</span> : null}
+                      </p>
                     </div>
                   </div>
                 )}
               </div>
             );
           })}
+          {state?.conversation?.ownerTyping && live ? (
+            <div className="flex justify-start" role="status" aria-label="O suporte está digitando">
+              <div className="flex items-center gap-1.5 rounded-2xl rounded-bl-sm bg-secondary px-3.5 py-2.5 text-xs text-muted-foreground">
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.3s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60 [animation-delay:-0.15s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/60" />
+                <span className="ml-1">Suporte digitando…</span>
+              </div>
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -351,7 +368,14 @@ export function LiveChatPanel({ ticketId, newChatHref, onStatusChange }: { ticke
               </Button>
               <textarea
                 value={text}
-                onChange={(event) => setText(event.target.value)}
+                onChange={(event) => {
+                  setText(event.target.value);
+                  // Tells the team the customer is typing (at most every 3 s). It never matters if it fails.
+                  if (event.target.value.trim() && live && Date.now() - lastTypingPing.current > 3000) {
+                    lastTypingPing.current = Date.now();
+                    void fetch(`/api/support/livechat/${ticketId}/typing`, { method: 'POST' }).catch(() => undefined);
+                  }
+                }}
                 onKeyDown={(event) => {
                   if (event.key === 'Enter' && !event.shiftKey) {
                     event.preventDefault();

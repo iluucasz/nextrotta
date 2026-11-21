@@ -1,9 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { firstName, ticketVariable } from '@/lib/livechat/auto-messages';
 import { getAutoMessage } from '@/lib/livechat/auto-store';
 import { cleanMessage } from '@/lib/livechat/rules';
-import { getConversation, getMessages, markReadByOwner, reopenConversation, setUrgent } from '@/lib/livechat/store';
-import { endConversation, sendOwnerReply } from '@/lib/livechat/whatsapp';
+import { getConversation, getMessages, getReceipts, markReadByOwner, reopenConversation, setUrgent } from '@/lib/livechat/store';
+import { endConversation, markWhatsAppRead, sendOwnerReply } from '@/lib/livechat/whatsapp';
 import { PlatformError } from '@/lib/platform/errors';
 import { readJson, withPlatformStaff } from '@/lib/platform/route';
 
@@ -11,16 +11,19 @@ export const runtime = 'nodejs';
 
 type Context = { params: Promise<{ id: string }> };
 
-/** The conversation with its messages. ?after=<timestamp> returns only the newer messages; ?read=1 marks it as read. */
+/** The conversation with its messages. ?after=<timestamp> returns only the newer messages; ?read=1 marks it as read (and tells WhatsApp). */
 export async function GET(request: NextRequest, context: Context) {
   return withPlatformStaff(request, async () => {
     const { id } = await context.params;
     if (request.nextUrl.searchParams.get('read') === '1') {
-      await getConversation(id);
-      await markReadByOwner(id);
+      const opened = await getConversation(id);
+      const read = await markReadByOwner(id);
+      // What the customer wrote on WhatsApp is now read: tell WhatsApp too (the blue ticks), after the answer.
+      if (read.length && opened.contactPhone) after(() => markWhatsAppRead(opened.contactPhone, read));
     }
-    const [conversation, messages] = await Promise.all([getConversation(id), getMessages(id, request.nextUrl.searchParams.get('after'))]);
-    return NextResponse.json({ conversation, messages });
+    const [conversation, messages, receipts] = await Promise.all([getConversation(id), getMessages(id, request.nextUrl.searchParams.get('after')), getReceipts(id, 'out')]);
+    // receipts: the delivered/read marks of what the team sent, which change after the message was first fetched.
+    return NextResponse.json({ conversation, messages, receipts });
   });
 }
 

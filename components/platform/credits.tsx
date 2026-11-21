@@ -33,6 +33,9 @@ type Pricing = {
   costPerCredit: number;
   targetMarginPercent: number | null;
   minPricePerCredit: number | null;
+  priceForThousand: number | null;
+  asaasFeeFixed: number;
+  asaasFeePercent: number;
   pricesConfigured: boolean;
 };
 
@@ -40,8 +43,9 @@ type CreditsOverview = {
   consumedCredits: number;
   providerCost: number;
   revenue: number;
+  asaasFees: number;
   organizations: Array<{ id: string; name: string; consumed: number; balance: number }>;
-  conversion: { inputCostPerMillion: number; outputCostPerMillion: number; creditsPerUse: number; targetMarginPercent: number | null };
+  conversion: { inputCostPerMillion: number; outputCostPerMillion: number; creditsPerUse: number; targetMarginPercent: number | null; asaasFeeFixed: number; asaasFeePercent: number };
   pricing: Pricing;
   packages: CreditPackage[];
 };
@@ -83,7 +87,11 @@ export function AiCredits({ id }: { id?: string }) {
         <Metric label="Créditos consumidos" value={data.consumedCredits.toLocaleString('pt-BR')} />
         <Metric label="Receita de créditos" value={money(data.revenue)} accent />
         <Metric label="Custo real" value={money(data.providerCost)} detail="Cobrado pelo provedor de IA" />
-        <Metric label="Margem no período" value={data.revenue ? `${(((data.revenue - data.providerCost) / data.revenue) * 100).toFixed(1).replace('.', ',')}%` : '—'} />
+        <Metric
+          label="Margem no período"
+          value={data.revenue ? `${(((data.revenue - data.providerCost - data.asaasFees) / data.revenue) * 100).toFixed(1).replace('.', ',')}%` : '—'}
+          detail={`Depois da IA e de ${money(data.asaasFees)} de taxa do Asaas`}
+        />
       </div>
       <AiBalancePanel conversion={data.conversion} />
       {!pricing.pricesConfigured && (
@@ -155,7 +163,7 @@ export function AiCredits({ id }: { id?: string }) {
             ? `Custo por pergunta medido nas ${pricing.answersMeasured.toLocaleString('pt-BR')} resposta(s) dos últimos 90 dias`
             : 'Ainda sem respostas: custo por pergunta estimado') +
           ` (${pricing.promptTokens.toLocaleString('pt-BR')} tokens de entrada + ${pricing.completionTokens.toLocaleString('pt-BR')} de saída, em média), com os preços abaixo. ` +
-          'Preço mínimo por crédito = custo ÷ (1 − margem): com 50%, de cada R$ 100 que o cliente paga, R$ 50 ficam com você.'
+          'A margem é o que sobra do preço depois da IA e da taxa do Asaas: com 50%, de cada R$ 100 que o cliente paga, R$ 50 ficam com você.'
         }
         action={<button className="nr-btn" onClick={() => setConversion(true)}>Editar conversão e margem</button>}
       >
@@ -167,6 +175,7 @@ export function AiCredits({ id }: { id?: string }) {
             ['Custo por pergunta', pricing.pricesConfigured ? preciseMoney(pricing.costPerUse) : 'Preencha os preços'],
             ['Pergunta mais pesada (9 de 10 custam menos)', pricing.costPerUseP90 !== null && pricing.pricesConfigured ? preciseMoney(pricing.costPerUseP90) : '—'],
             ['Custo por crédito', pricing.pricesConfigured ? preciseMoney(pricing.costPerCredit) : '—'],
+            ['Taxa do Asaas por cobrança', `${preciseMoney(pricing.asaasFeeFixed)}${pricing.asaasFeePercent ? ` + ${percent(pricing.asaasFeePercent)}` : ''}`],
             ['Sua margem desejada', target === null ? 'Não definida' : percent(target)],
             ['Preço mínimo por crédito', pricing.minPricePerCredit === null ? '—' : preciseMoney(pricing.minPricePerCredit)],
           ].map(([label, value]) => (
@@ -195,8 +204,8 @@ export function AiCredits({ id }: { id?: string }) {
           title={editing === 'new' ? 'Novo pacote de créditos' : `Editar ${editing.name}`}
           description={
             (editing === 'new' ? 'Fica disponível para compra assim que for criado.' : 'O novo preço vale para as próximas compras; cobranças já emitidas mantêm o valor.') +
-            (pricing.minPricePerCredit !== null
-              ? ` Para a sua margem de ${percent(target!)}, cobre pelo menos ${preciseMoney(pricing.minPricePerCredit)} por crédito (ex.: 1.000 créditos = ${money(Math.ceil(1000 * pricing.minPricePerCredit * 2) / 2)}).`
+            (pricing.minPricePerCredit !== null && pricing.priceForThousand !== null
+              ? ` Para a sua margem de ${percent(target!)} (já com a taxa do Asaas), cobre pelo menos ${preciseMoney(pricing.minPricePerCredit)} por crédito mais ${money(pricing.asaasFeeFixed)} por cobrança (ex.: 1.000 créditos = ${money(pricing.priceForThousand)}).`
               : '')
           }
           fields={PACKAGE_FIELDS}
@@ -253,8 +262,10 @@ export function AiCredits({ id }: { id?: string }) {
               key: 'targetMarginPercent',
               label: 'Sua margem desejada (%)',
               type: 'number',
-              hint: 'Quanto do que o cliente paga pelos créditos fica com você. Ex.: 50 = de R$ 100, R$ 50 são seus. Vazio = sem margem definida.',
+              hint: 'Quanto do que o cliente paga pelos créditos fica com você, depois da IA e da taxa do Asaas. Ex.: 50 = de R$ 100, R$ 50 são seus. Vazio = sem margem definida.',
             },
+            { key: 'asaasFeeFixed', label: 'Taxa do Asaas por cobrança paga (R$)', type: 'number', hint: 'Pix ou boleto: R$ 1,99. Cartão cobra uma porcentagem a mais: use o campo ao lado.' },
+            { key: 'asaasFeePercent', label: 'Taxa do Asaas em % do valor', type: 'number', hint: '0 para Pix e boleto; no cartão, a porcentagem do contrato.' },
           ]}
           initial={{ ...data.conversion, targetMarginPercent: data.conversion.targetMarginPercent ?? '' }}
           reason
@@ -268,6 +279,8 @@ export function AiCredits({ id }: { id?: string }) {
                   outputCostPerMillion: Number(values.outputCostPerMillion),
                   creditsPerUse: Number(values.creditsPerUse),
                   targetMarginPercent: values.targetMarginPercent === '' ? null : Number(values.targetMarginPercent),
+                  asaasFeeFixed: Number(values.asaasFeeFixed || 0),
+                  asaasFeePercent: Number(values.asaasFeePercent || 0),
                 },
                 reason,
               },

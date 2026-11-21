@@ -33,7 +33,7 @@
 
 ## Estado atual (resumo; o registro detalhado está em `docs/saas/estado-atual.md`)
 
-**Funcionando e testado (Chrome real, testes em `scripts/`):** multi-tenant por organização com exclusão lógica; configurações por organização; painel do dono ligado à API (sem mocks); site de marketing + contratação pelo site (Asaas sandbox); planos (Essencial, Pro, "Monte o seu" com módulos), cupons, créditos e assistente de IA (DeepSeek), empresa vitalícia/de teste, upgrade pelo admin; cobrança e inadimplência com bloqueio imediato, "Verificar pagamento" e página de acesso encerrado completa; backups diários por empresa (planilha, restauração com desfazer, cópia antes do bloqueio), no worker da VPS desde 05/11; LGPD (termos com aceite, canal do titular, aviso de eliminação em 3 meses); notificações (sino e página); Venda de Peças; despesas e faturamento; suporte com chamados e **Livechat**; Evolution próprio na VPS, com o número oficial conectado.
+**Funcionando e testado (Chrome real, testes em `scripts/`; em 21/11/2026 entraram o backup da plataforma inteira, as telas de módulos e o Livechat com arquivos/digitando/leitura):** multi-tenant por organização com exclusão lógica; configurações por organização; painel do dono ligado à API (sem mocks); site de marketing + contratação pelo site (Asaas sandbox); planos (Essencial, Pro, "Monte o seu" com módulos), cupons, créditos e assistente de IA (DeepSeek), empresa vitalícia/de teste, upgrade pelo admin; cobrança e inadimplência com bloqueio imediato, "Verificar pagamento" e página de acesso encerrado completa; backups diários por empresa (planilha, restauração com desfazer, cópia antes do bloqueio), no worker da VPS desde 05/11; LGPD (termos com aceite, canal do titular, aviso de eliminação em 3 meses); notificações (sino e página); Venda de Peças; despesas e faturamento; suporte com chamados e **Livechat**; Evolution próprio na VPS, com o número oficial conectado.
 
 **Nunca testado de verdade:** o robô do Porto (precisa de credenciais de uma organização autorizada), o Mercado Pago real, o recebimento e o envio de mensagens reais pelo WhatsApp oficial (o número está conectado, mas o Livechat foi testado só com mensagens simuladas) e o Asaas de produção.
 
@@ -42,12 +42,12 @@
 2. **Rotina de exclusão permanente** (3 meses após o bloqueio) e, junto, DPA/Termos novos (versão nova, novo aceite) e a revisão do que a lei obriga a guardar (cobranças, fiscais).
 3. **Asaas de produção** (depende do CNPJ e da conta PJ) e cadastro do webhook `https://nextrotta.app/api/webhooks/asaas` (eventos de cobrança, token = `ASAAS_WEBHOOK_TOKEN`).
 4. **Mercado Pago real:** aplicativo do NextRotta com URL de retorno e de webhook de produção e `MERCADOPAGO_*` no ambiente.
-5. **Site e jurídico:** CNPJ, razão social, redes e endereço (em Conteúdo do site); revisão dos textos legais por advogado (`LEGAL_REVIEWED = false`); o texto **publicado** do site ainda diz "Nenhum dado é apagado" e "Seus dados nunca são apagados por atraso" (bloco `seg1` e `pricingFootnote`) — contradiz o prazo de 3 meses, trocar com a autorização do dono.
+5. **Site e jurídico:** CNPJ, razão social, redes e endereço (em Conteúdo do site); revisão dos textos legais por advogado (`LEGAL_REVIEWED = false`). (Os textos do site que contradiziam o prazo de 3 meses foram trocados e publicados em 21/11/2026; sobra `terms`/`privacy` do conteúdo antigo do site, que não são exibidos: as páginas legais vêm de `lib/legal`.)
 6. **Conferir a primeira meia-noite** com o worker novo (`worker_runs` jobs `backups` e `backup_cleanup`; um backup "Diário" 00:00 por empresa).
 7. **Banco:** criar no Neon o papel do app sem `DELETE`/TRUNCATE/DDL (hoje o app usa o dono do banco); textos da UI da empresa ainda falam em "excluir"/"DELETAR OS".
-8. **Painel do dono:** tela de preços dos módulos e "adicionar módulo" pelo admin; o painel ainda pode mostrar o texto antigo de "backups não configurado"; backup da plataforma inteira (Neon) não existe.
-9. **Custos e preços:** a taxa do Asaas ainda não entra na margem dos créditos de IA; `DEEPSEEK_MODEL` pode passar para `deepseek-flash`; no ciclo anual o técnico extra é cobrado ×12; Venda de Peças ainda não está em nenhum plano.
-10. **Livechat:** só texto (foto/áudio/documento chegam como aviso), sem "digitando" nem confirmação de leitura.
+8. **Reimplantar o worker na VPS** (versão de 21/11/2026): sem isso o backup da plataforma inteira só roda pelo botão do painel, não à meia-noite (`docs/saas/vps.md`; só com confirmação do dono). Depois, **Reports → Livechat → Atualizar recebimento** (uma vez) para o número oficial assinar os eventos novos, e provar com mensagens reais: foto/áudio do cliente, "digitando" e leitura (formatos de `messages.update`/`presence.update` só foram testados simulados). Guardar a chave do backup (`PORTO_CREDENTIALS_KEY` ou `PLATFORM_BACKUP_KEY`) fora do sistema.
+9. **Custos e preços:** `DEEPSEEK_MODEL` pode passar para `deepseek-flash`; a taxa do Asaas dos créditos de IA está em 1,99 fixa (Pix/boleto): ajustar em Créditos de IA se o cartão passar a pesar; "adicionar módulo" pelo admin só existe para quem está no "Monte o seu" (quem tem Essencial/Pro sobe de pacote); copia do backup da plataforma em um segundo provedor.
+10. **Livechat:** localização e contato do WhatsApp ainda chegam como aviso (foto, vídeo, áudio e documento já viram arquivo).
 
 ## Stack
 
@@ -121,7 +121,7 @@ Os números dessas regras vêm de `organization_settings`; não escrever valores
 - `docs/saas/equipe.md` — equipe da NextRotta (dono e atendentes): o que cada papel vê, como o dono gerencia, onde a regra mora (`lib/platform-access.ts`, `withPlatformStaff`).
 - `docs/livechat.md` — Livechat (inclui **Casos** — tudo é caso, com tipo Suporte/Bug/Sugestão, tabela `bug_reports`, `lib/cases/` — e **Mensagens automáticas**, Reports → aba própria, `lib/livechat/auto-messages.ts`): chat ao vivo dos chamados urgentes + WhatsApp oficial (instância `nextrotta-suporte`, webhook `/api/webhooks/evolution`) numa caixa só em Reports → Livechat; limites e como conectar.
 - `docs/whatsapp-oficial.md` — número e e-mail oficiais, foto, capa e descrição do WhatsApp Business (imagens em `public/brand/`).
-- `docs/backups.md` — backups diários por empresa (00h, Blob privado, retenção do plano) e restauração pelo administrador.
+- `docs/backups.md` — backups diários por empresa (00h, Blob privado, retenção do plano) e restauração pelo administrador; **backup cifrado da plataforma inteira (Neon)** e como restaurar (`scripts/restore-platform-backup.cjs`).
 - `docs/dashboard-gerencial.md` — critérios financeiros do dashboard gerencial.
 - `docs/despesas.md` — Controle de despesas (`/admin/despesas`): contas a pagar e a receber, previsão, orçamento, avisos.
 - `docs/faturamento.md` — relatório de Faturamento (mesmo visual e critérios do dashboard, sem despesas gerais).

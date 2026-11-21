@@ -163,6 +163,8 @@ export const AUDIT_LABELS: Record<string, string> = {
 
 export const auditLabel = (action: string) => AUDIT_LABELS[action] ?? action;
 Object.assign(AUDIT_LABELS, {
+  'platform_backup.created': 'Backup da plataforma feito',
+  'platform_backup.downloaded': 'Backup da plataforma baixado',
   'notification.published': 'Notificação publicada',
   'notification.archived': 'Notificação retirada',
   'account.password_changed': 'Senha do dono alterada',

@@ -250,8 +250,9 @@ export async function middleware(request: NextRequest) {
       access?.onboarding === 'setup' &&
       !SAFE_METHODS.includes(request.method) &&
       !onboardingAllowedRoutes.includes(path) &&
-      // Upgrading the plan is a purchase, allowed while the team prepares the platform.
+      // Upgrading the plan or adding a module is a purchase, allowed while the team prepares the platform.
       path !== '/api/organization/billing/upgrade' &&
+      path !== '/api/organization/billing/modules' &&
       // Canceling is allowed at any time, including during the trial while the team still prepares the platform.
       path !== '/api/organization/billing/cancel' &&
       !path.startsWith('/api/auth/') &&

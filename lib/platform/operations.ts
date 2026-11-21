@@ -1,11 +1,65 @@
 import { asaasEnvironment, getBalance } from '../billing/asaas';
+import { backupStorageConfigured } from '../backup/storage';
+import { nextBackupAt } from '../backup/service';
 import { sql } from '../db';
 import { mercadoPagoMissingConfig } from '../mercadopago/config';
 import { checkWorkerHealth } from '../worker-health';
+import { getPlatformBackups } from './backup';
 import { getPlatformSettings } from './settings';
 
 function iso(value: unknown) {
   return value ? new Date(value as string).toISOString() : null;
+}
+
+/** The state of the backups: each company's copies, the last runs of the nightly jobs and the copies of the whole platform. */
+export async function getBackupOverview() {
+  const [organizations, runs, platform] = await Promise.all([
+    sql`
+      WITH s AS (
+        SELECT organization_id,
+          COUNT(*) FILTER (WHERE status = 'completed')::int AS copies,
+          COALESCE(SUM(size_bytes) FILTER (WHERE status = 'completed'), 0)::float AS bytes,
+          MAX(created_at) FILTER (WHERE status = 'completed') AS last_ok
+        FROM organization_backups GROUP BY organization_id
+      )
+      SELECT o.id, o.name, o.slug, o.status, COALESCE(s.copies, 0) AS copies, COALESCE(s.bytes, 0) AS bytes, s.last_ok,
+        (SELECT f.error FROM organization_backups f
+          WHERE f.organization_id = o.id AND f.status = 'failed' AND (s.last_ok IS NULL OR f.created_at > s.last_ok)
+          ORDER BY f.created_at DESC LIMIT 1) AS last_error
+      FROM organizations o LEFT JOIN s ON s.organization_id = o.id
+      WHERE o.deleted_at IS NULL
+      ORDER BY o.name
+    `,
+    sql`
+      SELECT DISTINCT ON (job) job, status, started_at, finished_at, error
+      FROM worker_runs WHERE job IN ('backups', 'backup_cleanup', 'platform_backup', 'platform_backup_cleanup')
+      ORDER BY job, started_at DESC
+    `,
+    getPlatformBackups(),
+  ]);
+  return {
+    // Whether THIS environment (the app) can store copies; the worker's own state is in the runs below.
+    storageConfigured: backupStorageConfigured(),
+    nextRunAt: nextBackupAt(),
+    runs: runs.map((row) => ({
+      job: String(row.job),
+      status: String(row.status),
+      startedAt: iso(row.started_at)!,
+      finishedAt: iso(row.finished_at),
+      error: (row.error as string | null) ?? null,
+    })),
+    organizations: organizations.map((row) => ({
+      id: String(row.id),
+      name: String(row.name),
+      slug: String(row.slug),
+      status: String(row.status),
+      copies: Number(row.copies),
+      sizeBytes: Math.round(Number(row.bytes)),
+      lastBackupAt: iso(row.last_ok),
+      lastError: (row.last_error as string | null) ?? null,
+    })),
+    platform,
+  };
 }
 
 /** Worker health, recent job runs, WhatsApp/automation/storage per organization and database size. */
@@ -86,8 +140,7 @@ export async function getOperations() {
     })),
     databaseMb: Math.round((Number(database[0].bytes) / (1024 * 1024)) * 10) / 10,
     maintenance: settings.maintenance,
-    // Backups need external storage (phase of the backup routine); until it's configured there are none.
-    backupsConfigured: Boolean(process.env.BACKUP_STORAGE_URL),
+    backups: await getBackupOverview(),
   };
 }
 

@@ -20,7 +20,7 @@ export type ChatMessage = ReturnType<typeof serializeMessage>;
 
 const COLUMNS = `
   c.id, c.channel, c.organization_id, c.ticket_id, c.user_id, c.contact_name, c.contact_phone, c.status, c.urgent,
-  c.unread_owner, c.unread_customer, c.last_message_at, c.last_message_preview, c.created_at, c.closed_at,
+  c.unread_owner, c.unread_customer, c.customer_typing_until, c.owner_typing_until, c.last_message_at, c.last_message_preview, c.created_at, c.closed_at,
   o.name AS organization_name, o.slug AS organization_slug, b.ticket_number, b.title AS ticket_title, u.name AS user_name,
   COALESCE(c.case_id, c.ticket_id) AS case_id, sc.ticket_number AS case_number, sc.status AS case_status
 `;
@@ -49,6 +49,9 @@ function serializeConversation(row: Record<string, unknown>) {
     urgent: Boolean(row.urgent),
     unreadOwner: Number(row.unread_owner ?? 0),
     unreadCustomer: Number(row.unread_customer ?? 0),
+    /** Who is typing right now ("digitando…"): the signal lasts a few seconds and is renewed while the person keeps typing. */
+    customerTyping: Boolean(row.customer_typing_until && new Date(row.customer_typing_until as string).getTime() > Date.now()),
+    ownerTyping: Boolean(row.owner_typing_until && new Date(row.owner_typing_until as string).getTime() > Date.now()),
     lastMessageAt: iso(row.last_message_at)!,
     lastMessagePreview: (row.last_message_preview as string | null) ?? null,
     createdAt: iso(row.created_at)!,
@@ -74,6 +77,9 @@ function serializeMessage(row: Record<string, unknown>) {
       ? { id: String(row.attachment_id), fileName: String(row.file_name), contentType: String(row.content_type), size: Number(row.file_size) }
       : null,
     createdAt: iso(row.created_at)!,
+    /** The team's messages: when the customer received / read them. The customer's: when the team read them. */
+    deliveredAt: iso(row.delivered_at),
+    readAt: iso(row.read_at),
   };
 }
 
@@ -121,7 +127,7 @@ export async function getConversation(id: string): Promise<Conversation> {
 export async function getMessages(conversationId: string, after?: string | null): Promise<ChatMessage[]> {
   const since = after && !Number.isNaN(new Date(after).getTime()) ? new Date(after).toISOString() : null;
   const rows = await sql`
-    SELECT m.id, m.direction, m.sender_name, m.body, m.kind, m.auto_key, m.created_at,
+    SELECT m.id, m.direction, m.sender_name, m.body, m.kind, m.auto_key, m.created_at, m.delivered_at, m.read_at,
            a.id AS attachment_id, a.file_name, a.content_type, a.file_size
     FROM livechat_messages m
     LEFT JOIN livechat_attachments a ON a.message_id = m.id
@@ -132,12 +138,93 @@ export async function getMessages(conversationId: string, after?: string | null)
   return rows.map(serializeMessage);
 }
 
-export async function markReadByOwner(conversationId: string) {
+/**
+ * The team opened the conversation: nothing unread, and the customer's messages are marked read (the customer sees "Visto").
+ * Returns the WhatsApp ids of the messages that were just read, so the caller can also tell WhatsApp (the blue ticks).
+ */
+export async function markReadByOwner(conversationId: string): Promise<string[]> {
   await sql`UPDATE livechat_conversations SET unread_owner = 0 WHERE id = ${conversationId} AND unread_owner > 0`;
+  const rows = await sql`
+    UPDATE livechat_messages SET read_at = NOW(), delivered_at = COALESCE(delivered_at, NOW())
+    WHERE conversation_id = ${conversationId} AND direction = 'in' AND kind <> 'system' AND read_at IS NULL
+    RETURNING wa_message_id
+  `;
+  return rows.map((row) => row.wa_message_id as string | null).filter((id): id is string => Boolean(id));
 }
 
-export async function markReadByCustomer(conversationId: string) {
+/**
+ * The customer's window fetched the conversation: nothing unread, and what the team sent up to `seenUntil` (the moment the fetch
+ * started, so a message that arrived meanwhile is not marked) is delivered and read.
+ */
+export async function markReadByCustomer(conversationId: string, seenUntil: Date = new Date()) {
   await sql`UPDATE livechat_conversations SET unread_customer = 0 WHERE id = ${conversationId} AND unread_customer > 0`;
+  await sql`
+    UPDATE livechat_messages SET read_at = NOW(), delivered_at = COALESCE(delivered_at, NOW())
+    WHERE conversation_id = ${conversationId} AND direction = 'out' AND kind <> 'system' AND read_at IS NULL AND created_at <= ${seenUntil.toISOString()}::timestamptz
+  `;
+}
+
+/** The marks of the messages one side sent that may still change (not read yet, or read a moment ago), for the polling windows. */
+export async function getReceipts(conversationId: string, sentBy: 'in' | 'out') {
+  const rows = await sql`
+    SELECT id, delivered_at, read_at FROM livechat_messages
+    WHERE conversation_id = ${conversationId} AND direction = ${sentBy} AND kind <> 'system' AND (read_at IS NULL OR read_at > NOW() - interval '2 minutes')
+    ORDER BY created_at DESC LIMIT 40
+  `;
+  return rows.map((row) => ({ id: String(row.id), deliveredAt: iso(row.delivered_at), readAt: iso(row.read_at) }));
+}
+
+/** WhatsApp says it delivered or read a message the team sent (found by WhatsApp's id of it). */
+export async function applyWhatsAppReceipt(waId: string, status: 'delivered' | 'read') {
+  await sql`
+    UPDATE livechat_messages
+    SET delivered_at = COALESCE(delivered_at, NOW()), read_at = CASE WHEN ${status === 'read'} THEN COALESCE(read_at, NOW()) ELSE read_at END
+    WHERE wa_message_id = ${waId} AND direction = 'out'
+  `;
+}
+
+// ------------------------------------------------------------------------------------------------------------- typing
+
+/** One side is typing now. Returns true when it just started (the caller then tells WhatsApp only once per burst). */
+export async function setTyping(conversationId: string, side: 'customer' | 'owner', seconds = 6): Promise<boolean> {
+  const column = side === 'customer' ? 'customer_typing_until' : 'owner_typing_until';
+  const rows = await sql.query(
+    `WITH previous AS (SELECT ${column} AS until FROM livechat_conversations WHERE id = $1)
+     UPDATE livechat_conversations SET ${column} = NOW() + make_interval(secs => $2) WHERE id = $1
+     RETURNING (SELECT until FROM previous) AS previous_until`,
+    [conversationId, seconds],
+  );
+  if (!rows[0]) return false;
+  const previous = rows[0].previous_until as string | null;
+  return !previous || new Date(previous).getTime() < Date.now();
+}
+
+/** The customer on WhatsApp started or stopped typing: the open conversation with that number (a web chat that gave it, or a WhatsApp one). */
+export async function setCustomerTypingByPhone(phone: string, typing: boolean) {
+  const web = await findOpenWebConversationByPhone(phone);
+  const rows = web ? [{ id: web }] : await sql`SELECT id FROM livechat_conversations WHERE channel = 'whatsapp' AND contact_phone = ${phone} AND status = 'open'`;
+  if (!rows[0]) return;
+  await sql`UPDATE livechat_conversations SET customer_typing_until = ${typing ? new Date(Date.now() + 8000).toISOString() : null}::timestamptz WHERE id = ${rows[0].id}`;
+}
+
+// ------------------------------------------------------------------------------------------------- files from WhatsApp
+
+/** A photo, voice note or document the customer sent on WhatsApp, kept with its message (what they wrote with it becomes the text). */
+export async function attachMediaToMessage(messageId: string, file: SavedFile, caption: string) {
+  const rows = await sql`
+    SELECT m.conversation_id, c.organization_id FROM livechat_messages m JOIN livechat_conversations c ON c.id = m.conversation_id WHERE m.id = ${messageId}
+  `;
+  if (!rows[0]) return null;
+  // Not charged to the customer's plan: it came in through the platform's own number.
+  const saved = await sql`
+    INSERT INTO livechat_attachments (message_id, conversation_id, organization_id, file_name, content_type, file_size, url, counted)
+    VALUES (${messageId}, ${rows[0].conversation_id}, ${rows[0].organization_id}, ${file.fileName}, ${file.contentType}, ${file.size}, ${file.url}, FALSE)
+    ON CONFLICT (message_id) DO NOTHING
+    RETURNING id
+  `;
+  if (!saved[0]) return null;
+  await sql`UPDATE livechat_messages SET body = ${caption}, kind = 'text' WHERE id = ${messageId}`;
+  return { id: String(saved[0].id), conversationId: String(rows[0].conversation_id), organizationId: (rows[0].organization_id as string | null) ?? null };
 }
 
 // ------------------------------------------------------------------------------------------------------------ writing
@@ -167,7 +254,7 @@ async function addMessage(input: {
     INSERT INTO livechat_messages (conversation_id, direction, sender_name, body, kind, wa_message_id, created_at, auto_key)
     VALUES (${input.conversationId}, ${input.direction}, ${input.senderName ?? null}, ${input.body}, ${kind}, ${input.waMessageId ?? null}, ${at}, ${input.autoKey ?? null})
     ON CONFLICT (wa_message_id) WHERE wa_message_id IS NOT NULL DO NOTHING
-    RETURNING id, direction, sender_name, body, kind, auto_key, created_at
+    RETURNING id, direction, sender_name, body, kind, auto_key, created_at, delivered_at, read_at
   `;
   if (!inserted[0]) return null;
   let attachment: ChatMessage['attachment'] = null;
@@ -186,6 +273,8 @@ async function addMessage(input: {
       SET last_message_at = GREATEST(last_message_at, ${at}::timestamptz), last_message_preview = ${previewOf(input.body || (input.attachment ? attachmentPreview(input.attachment.fileName) : ''))},
           unread_owner = unread_owner + ${fromCustomer ? 1 : 0},
           unread_customer = unread_customer + ${fromCustomer ? 0 : 1},
+          customer_typing_until = CASE WHEN ${fromCustomer} THEN NULL ELSE customer_typing_until END,
+          owner_typing_until = CASE WHEN ${fromCustomer} THEN owner_typing_until ELSE NULL END,
           status = CASE WHEN ${fromCustomer} THEN 'open' ELSE status END,
           closed_at = CASE WHEN ${fromCustomer} THEN NULL ELSE closed_at END
       WHERE id = ${input.conversationId}

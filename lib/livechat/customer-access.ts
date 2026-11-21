@@ -23,10 +23,12 @@ export const forCustomer = (message: ChatMessage) => ({
   kind: message.kind,
   attachment: message.attachment ? { id: message.attachment.id, name: message.attachment.fileName, type: message.attachment.contentType, size: message.attachment.size, image: isImageType(message.attachment.contentType) } : null,
   createdAt: message.createdAt,
+  /** Only the customer's own messages carry a mark: the team read it ("Visto"). */
+  seen: message.direction === 'in' && Boolean(message.readAt),
 });
 
 export const conversationView = (conversation: Conversation | null) =>
-  conversation ? { id: conversation.id, status: conversation.status, unread: conversation.unreadCustomer, whatsapp: conversation.contactPhone } : null;
+  conversation ? { id: conversation.id, status: conversation.status, unread: conversation.unreadCustomer, whatsapp: conversation.contactPhone, ownerTyping: conversation.status === 'open' && conversation.ownerTyping } : null;
 
 /** The ticket of this company that this person may chat about (the admin: any; others: their own). */
 export async function authorizeCustomer(request: Request, ticketId: string) {

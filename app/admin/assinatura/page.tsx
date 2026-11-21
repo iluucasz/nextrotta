@@ -11,6 +11,7 @@ import { useAppSession } from '@/hooks/use-app-session';
 import { formatCurrency, formatDate } from '@/lib/formatters';
 import { AiCreditsPanel, ExportPanel } from './credits-panel';
 import { CancelPanel } from './cancel-panel';
+import { ModulesPanel } from './modules-panel';
 import { UpgradePanel } from './upgrade-panel';
 
 type Subscription = {
@@ -380,6 +381,7 @@ export default function SubscriptionPage() {
           ) : null}
 
           {!lifetime && !simulated ? <UpgradePanel /> : null}
+          {!lifetime && !simulated ? <ModulesPanel /> : null}
           {!lifetime && !simulated ? <CancelPanel setupFee={subscription.setupFee} setupInstallments={subscription.setupInstallments ?? 1} charges={charges} /> : null}
           <AiCreditsPanel />
         </div>

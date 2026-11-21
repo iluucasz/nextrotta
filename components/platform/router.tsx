@@ -5,6 +5,7 @@ import { Coupons } from './coupons';
 import { AiCredits } from './credits';
 import { FeatureCatalog } from './features';
 import { Leads } from './leads';
+import { Modules } from './modules';
 import { News } from './news';
 import { Notifications } from './notifications';
 import { OperationsScreen } from './operations';
@@ -27,6 +28,7 @@ export function PlatformRouter({ segments = [] }: { segments?: string[] }) {
     case 'organizacoes': if (!owner) return id ? <SupportOrganizationDetail id={id} /> : <SupportOrganizations />; return !id ? <Organizations /> : id === 'nova' ? <OrganizationWizard /> : view === 'provisionamento' ? <Provisioning id={id} /> : <OrganizationDetail id={id} />;
     case 'financeiro': return <Finance />;
     case 'planos': return <Plans />;
+    case 'modulos': return <Modules />;
     case 'cupons': return <Coupons id={id} />;
     case 'creditos-ia': return <AiCredits id={id} />;
     case 'recursos': return <FeatureCatalog id={id} />;

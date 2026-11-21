@@ -18,7 +18,7 @@ require.extensions['.ts'] = (mod, filename) => mod._compile(
   }).outputText,
   filename,
 );
-const { quoteBuilder, annualFactor } = require('../lib/plans.ts');
+const { quoteBuilder, annualFactor, calculateSubscriptionValue } = require('../lib/plans.ts');
 
 const base = { monthlyPrice: 217, annualPrice: 2170, setupFee: 600, features: ['technicians', 'library'] };
 const offers = [
@@ -135,4 +135,16 @@ test('extra technicians bought up front raise the price and the included count',
   assert.equal(quoteBuilder(plan, offers, [], 'monthly', -5).extraTechnicians, 0);
   assert.equal(quoteBuilder(plan, offers, [], 'monthly', 'x').extraTechnicians, 0);
   assert.equal(quoteBuilder(plan, offers, [], 'monthly', 99999).extraTechnicians, 200);
+});
+
+test('technicians past the included ones follow the annual factor, not twelve months', () => {
+  const pricing = { basePrice: 2499.9, extraTechnicianPrice: 19.99, includedTechnicians: 4, discountPercent: 0, discountAmount: 0 };
+  // Monthly: each extra technician costs the monthly price.
+  assert.equal(calculateSubscriptionValue({ ...pricing, cycle: 'monthly', basePrice: 249.99 }, 6).value, 289.97);
+  // Annual: "2 months free" applies to them too (10 payments), 12 would take the discount back.
+  assert.equal(calculateSubscriptionValue({ ...pricing, cycle: 'annual' }, 6).value, 2899.7);
+  // A plan with its own factor passes it in.
+  assert.equal(calculateSubscriptionValue({ ...pricing, cycle: 'annual', annualFactor: 11 }, 5).value, 2719.79);
+  // Nobody over the included count: just the base price.
+  assert.equal(calculateSubscriptionValue({ ...pricing, cycle: 'annual' }, 4).value, 2499.9);
 });
