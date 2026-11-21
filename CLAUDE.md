@@ -151,4 +151,4 @@ Aprovado pelo dono em Folha, Faturamento, Despesas e Config. Porto. Vale para te
 - Commits em inglês, no imperativo, descrevendo o comportamento.
 - `.env` e `.env.local` contêm segredos: não ler nem commitar (ambos estão no `.gitignore`). Nunca imprimir chaves no chat (o ambiente bloqueia): para entregar uma chave ao dono, diga em que arquivo ela está.
 - Armadilhas já vividas: se uma rota nova responder 404 em HTML no `pnpm dev`, apague `.next/dev` (cache do Turbopack); ao parar o dev server mate a árvore de processos; em arquivo montado por bind no Docker (Caddyfile) edite com `cat >`, nunca `sed -i` (troca o inode); script grande com aspas vai por arquivo (Write + python/node), não por heredoc.
-- VPS: `ssh vps` (root, só por chave). Só `nextrotta-*`; `porto-*` e `essencialcentro-*` são de outros projetos (o `garimpo-*` foi removido em 21/11/2026).
+- VPS: `ssh vps` (root, só por chave). Só `nextrotta-*`; `porto-worker` e `essencialcentro-*` são da produção (Central Operacional) e ficam como estão; o `garimpo-*` e o `porto-evolution-*` foram removidos em 21/11/2026.

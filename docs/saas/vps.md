@@ -79,6 +79,8 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 ## Estado da implantação
 
 > **21/11/2026 — Garimpo removido da VPS (pedido do dono, a VPS estava suja).** Eram o `garimpo-importer` (um job sem porta, sem volume e sem rota no Caddy, que já falhava em loop por erro de consulta ao banco dele) e o `garimpo-importer-old` (parado), as duas imagens `garimpo-importer:*` (349 MB cada) e `/opt/garimpo-importer` (3,7 MB: três cópias do código e o `garimpo-importer.env`). Nada além disso do Garimpo existia (nenhum volume, rede, cron, serviço ou rota). Feito com `docker stop/rm/rmi` direcionados e `rm -rf` só dessa pasta; os demais containers (`nextrotta-*`, `porto-*`, `essencialcentro-*`) seguiram de pé. O banco externo do Garimpo não foi tocado.
+
+**21/11/2026 — `porto-evolution-*` removido (pedido do dono: era do projeto antigo).** Era um segundo Evolution sem uso: `porto-evolution-api`, `-postgres` e `-redis`, os 3 volumes `porto-evolution_*` e `/opt/porto-evolution`; a única instância ("Lucas") estava presa em "connecting" desde 14/10, sem rota no Caddy, e o `porto-worker` usa o Evolution do `essencialcentro` (`evolution-whatsapp.duckdns.org`). Ficaram o `porto-worker` (ligado ao `essencialcentro`: mesma rede pública, o Caddy dele roteia `/porto-worker/`) e todo o `essencialcentro-*`, por serem da produção. Disco igual (~23 GB; as imagens `evolution-api`, `postgres` e `redis` são compartilhadas).
 >
 > **21/11/2026 — worker com o backup da plataforma inteira e o Livechat com arquivos/digitando/leitura.** `nextrotta-worker:20261121-1` no lugar do `20261118-1` (que continua na VPS para voltar atrás), recriado às 16h02 (Brasília) com o worker ocioso e as mesmas opções (`--memory=3g --shm-size=512m`, `nextrotta-net`, `worker.env` sem mudança: já tinha `PORTO_CREDENTIALS_KEY`, de onde vem a chave do backup, e `BLOB_READ_WRITE_TOKEN`). Código anterior em `/opt/nextrotta/app.bak-20261121`; log do build em `build-20261121.log`. As imagens `20261109-1`, `20261105-1` e `20261014-1` saíram (ficam a em uso e a anterior). Conferido: sobe, o servidor HTTP escuta, `platformBackupBlocker()` dentro do container devolve `null` e `--run=backups` registrou `platform_backup` e `platform_backup_cleanup` em `worker_runs` com sucesso. Voltar atrás: `docker stop nextrotta-worker && docker rm nextrotta-worker && docker run -d --name nextrotta-worker --restart unless-stopped --label com.nextrotta.owner=nextrotta --memory=3g --shm-size=512m --network nextrotta-net --log-opt max-size=20m --log-opt max-file=5 --env-file /opt/nextrotta/worker.env nextrotta-worker:20261118-1`. No mesmo dia o webhook da instância `nextrotta-suporte` foi atualizado pelo botão **Atualizar recebimento** (eventos `MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `PRESENCE_UPDATE`, `CONNECTION_UPDATE`, conferido no Evolution).
 >
@@ -149,8 +151,8 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 >
 > **14/10/2026 — VPS compartilhada atual (164.163.11.159, Ubuntu 24.04, 8 vCPU, 8 GB, 55 GB).** A
 > VPS da BlackHosting (143.20.50.58) caiu e **não deve mais ser usada**; o texto abaixo sobre ela é
-> histórico. A atual é compartilhada com outros projetos do dono (`garimpo-importer` — removido em 21/11/2026 —, `porto-evolution-*`,
-> `essencialcentro-*` — o Caddy em 80/443 é de outro projeto, **não alterar**). Acesso: `ssh vps`
+> histórico. A atual é compartilhada com outros projetos do dono (`garimpo-importer` e `porto-evolution-*` — removidos em 21/11/2026 —,
+> `porto-worker`, `essencialcentro-*` — o Caddy em 80/443 é de outro projeto, **não alterar**). Acesso: `ssh vps`
 > (root, só por chave). Regras: tudo do NextRotta em `/opt/nextrotta/`, contêineres/imagens com prefixo
 > `nextrotta-`, `--memory`, `--restart unless-stopped`, rotação de log, segredos em `*.env` com `chmod 600`;
 > nada de `docker system prune`, firewall, portas publicadas ou proxy sem autorização do dono.
@@ -163,7 +165,7 @@ mostra o worker offline (o app pergunta ao `/health` dele, sem consultar o banco
 >   do `/` em leitura — só com autorização do dono nesta VPS compartilhada). Sem agente, as métricas da
 >   VPS ficam desligadas.
 > - WhatsApp desligado no worker (sem `EVOLUTION_API_URL/KEY`): o Evolution do NextRotta ainda será definido
->   (não usar o `porto-evolution-*`/`essencialcentro-evolution` da produção).
+>   (não usar o `essencialcentro-evolution` da produção).
 > - Falta: caminho público para `PORTO_WORKER_URL`/`VPS_AGENT_URL` (domínio + proxy próprio, autorizado
 >   pelo dono) e Evolution próprio.
 >
