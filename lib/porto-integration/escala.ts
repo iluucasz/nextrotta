@@ -1,6 +1,7 @@
 import type { Frame, Page } from 'playwright-core';
 import { openPortalFrame } from './navigation';
 import { PortoLayoutError } from '../porto-layout';
+import { normalizePortoBreaks, type PortoBreak } from '../porto-breaks';
 
 export type PortoEscalaDay = {
   /** Day of month, 1-31. */
@@ -16,9 +17,14 @@ export type PortoEscalaDay = {
   unavailable: boolean;
   /** Comma-joined reason(s) from the indisponibilidade entries covering this day, when any. */
   reason: string | null;
+  /**
+   * Every indisponibilidade entry Porto lists on the day, as returned (time and reason). Only filled when the
+   * day was opened; shown on the escala as information, never used to compute hours.
+   */
+  breaks: PortoBreak[];
 };
 
-type IndisponibilidadeEntry = { start: string; end: string; reason: string };
+type IndisponibilidadeEntry = PortoBreak;
 
 const SOCORRISTAS_MENU_ID = 'PDP-00192';
 const SOCORRISTAS_URL = 'https://wwws.portoseguro.com.br/integracoesportaldeprestadores/click/ConSocor.xhtml?portal=2';
@@ -210,6 +216,7 @@ export async function getEscalaForMonth(
           endTime: timeMatch ? timeMatch[2] : null,
           unavailable: hasUnavailabilityIcon,
           reason: null as string | null,
+          breaks: [] as PortoBreak[],
         };
       })
       .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -251,7 +258,7 @@ export async function getEscalaForMonth(
       if (shiftStart === null || shiftEnd === null || shiftEnd <= shiftStart || !indispEntries.length) {
         // No usable shift window to compare against, or the icon didn't correspond to any listed
         // entry for this exact date (stale render) — fall back to the old conservative behavior.
-        result.push(day);
+        result.push({ ...day, breaks: normalizePortoBreaks(indispEntries) });
         continue;
       }
 
@@ -268,6 +275,7 @@ export async function getEscalaForMonth(
         ...day,
         unavailable: isFullDayOff,
         reason: indispEntries.map((e) => e.reason).filter(Boolean).join(', ') || null,
+        breaks: normalizePortoBreaks(indispEntries),
       });
     } catch {
       // Couldn't inspect this day (navigation hiccup) — keep the conservative "unavailable" flag

@@ -77,6 +77,8 @@ export interface Schedule {
   end_time?: string
   status: ScheduleStatus
   notes?: string
+  /** Partial indisponibilidades Porto listed on the day, as returned (information only; lib/porto-breaks.ts). */
+  porto_breaks?: Array<{ start: string; end: string; reason: string }> | null
   created_at: string
   technician_name?: string
 }

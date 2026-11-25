@@ -93,13 +93,14 @@ async function replaceScheduleRows(params: ReplaceScheduleRowsParams & { mode: P
           start_time time,
           end_time time,
           status schedule_status,
-          notes text
+          notes text,
+          porto_breaks jsonb
         )
       )
       INSERT INTO schedule (
-        organization_id, technician_id, date, start_time, end_time, status, notes
+        organization_id, technician_id, date, start_time, end_time, status, notes, porto_breaks
       )
-      SELECT $1, technician_id, date, start_time, end_time, status, notes
+      SELECT $1, technician_id, date, start_time, end_time, status, notes, porto_breaks
       FROM input_rows
       RETURNING id, technician_id, date, start_time, end_time, status, notes, created_at
     `,

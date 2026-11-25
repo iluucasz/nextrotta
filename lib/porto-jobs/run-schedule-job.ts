@@ -201,6 +201,7 @@ export async function runScheduleJob(options: ScheduleJobOptions): Promise<Sched
               end_time: day.endTime ?? '00:00',
               status: day.unavailable ? 'cancelled' : 'scheduled',
               notes: `${PORTO_SCHEDULE_NOTE_PREFIX} ${reason}`,
+              porto_breaks: day.breaks.length ? day.breaks : null,
             });
           }
 

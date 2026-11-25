@@ -555,3 +555,12 @@ O texto gravado no histórico continua sendo `frase (rastro técnico)`; as telas
 - **Suporte**: o que a empresa não resolve sozinha termina com "Se continuar, abra um chamado em Suporte." (`SUPPORT_HINT`, `needsSupport()` em `lib/porto-login-errors.ts`); as telas viram isso em botão ("Abrir chamado" nos problemas, no cartão de recuperação e na janela do resultado). Senha expirada/recusada e CPF sem QRA são da empresa: o botão é "Atualizar a senha".
 - Enquanto o cartão está na tela, o título "Funcionando" e o problema repetido da mesma falha não aparecem.
 - **Conclusão (estilo deploy):** o cartão tem uma linha por tarefa (horas, escala) com bolinha girando enquanto roda, "Na fila" e, ao terminar, check verde com **"Concluído hoje às 11:13 · 3 min"**. Quando tudo termina o cartão fica verde ("Importação recuperada") e **continua na tela** (calculado do histórico, sobrevive a recarregar) até a falha completar 2 dias; se uma execução normal posterior consertou a falha, também vale como conclusão. No histórico a linha da falha **continua**, mas a etiqueta passa de "Falhou" para "Concluída <quando>" (horário da execução que a consertou) e ela deixa de contar em "Só com problema" (`resolvedAt`/`RunKind` `recovered` em `lib/porto-status.ts`).
+
+## Paradas parciais na escala (25/11/2026)
+
+O Porto lista, em cada dia marcado com indisponibilidade, as entradas com início, fim e motivo (`ALMOCO`, `PARADA AUTORIZADA PELO GESTOR`, `ASSUNTO PESSOAL`, `TREINAMENTO PORTO`…). Lido ao vivo em novembro nas duas empresas com a automação ligada: o almoço lançado dura 1 h (igual ao intervalo fixo) e as paradas são em geral de 2 a 4 h no fim do turno.
+
+- A rotina de escala guarda **tudo como o Porto devolveu** (texto do motivo e horários, sem categorias nossas) na coluna `schedule.porto_breaks` (migração `0071`; `lib/porto-breaks.ts`). Dia inteiro de folga continua vindo do corte de 90% (`portoFullDayOffPercent`) e do motivo na observação.
+- É **só informação para a tela**: a marca aparece no calendário da Escala (dias que não são folga) e na observação dos Registros da escala. Status, horários e observação do dia não mudam, e folha, banco de horas e horas trabalhadas não leem a coluna.
+- O job de horas continua sem abrir as indisponibilidades (`resolveUnavailability: false`), então nada muda nas horas. Descontar paradas das horas fica como opção futura por empresa, desligada.
+- Custo: o robô já abria cada dia marcado; agora só guarda o que lia. Teste: `node scripts/test-porto-breaks.cjs`.

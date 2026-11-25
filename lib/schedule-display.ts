@@ -1,4 +1,5 @@
 import { formatTimeRange, normalizeText } from './formatters';
+import { describePortoBreaks } from './porto-breaks';
 import type { Schedule } from './types';
 
 /**
@@ -125,9 +126,17 @@ export function getScheduleTimeLabel(entry: Schedule, fallbackStartTime = '', fa
   return formatTimeRange(entry.start_time, entry.end_time);
 }
 
+/** What Porto lists as partial indisponibilidades on the day ("ALMOCO 12:30–13:30 · ..."), as it returned them; empty when none. */
+export function getScheduleBreaksLabel(entry: Pick<Schedule, 'porto_breaks'> | undefined) {
+  return describePortoBreaks(entry?.porto_breaks);
+}
+
 export function getScheduleObservation(entry: Schedule) {
   const manual = parseManualAttendanceNote(entry.notes);
   if (manual.attendance_status) return manual.observation || '-';
 
-  return entry.notes || '-';
+  const breaks = getScheduleBreaksLabel(entry);
+  if (!breaks) return entry.notes || '-';
+
+  return entry.notes ? `${entry.notes} · ${breaks}` : breaks;
 }

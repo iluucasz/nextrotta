@@ -29,6 +29,7 @@ import { brasiliaDateKey, compactName, formatDate, formatHours, formatTime, form
 import { applyBrazilianDateText, readSpreadsheet } from '@/lib/spreadsheet-import';
 import {
   getAttendanceStatusLabel,
+  getScheduleBreaksLabel,
   getScheduleDisplayLabel,
   getScheduleDisplayTone,
   getScheduleObservation,
@@ -5208,6 +5209,9 @@ function AdminScheduleBuilderContent({ organizationSettings }: { organizationSet
                                           <StatusBadge tone={getScheduleDisplayTone(entry)}>{getScheduleDisplayLabel(entry)}</StatusBadge>
                                         </div>
                                         <p className={`mt-1 text-[11px] ${isDayOff ? 'text-amber-700' : 'text-emerald-700'}`}>{getScheduleTimeLabel(entry)}</p>
+                                        {!isDayOff && getScheduleBreaksLabel(entry) ? (
+                                          <p className="mt-0.5 text-[11px] text-slate-600">{getScheduleBreaksLabel(entry)}</p>
+                                        ) : null}
                                       </div>
                                     );
                                   })}

@@ -297,7 +297,7 @@ export async function GET(request: NextRequest) {
 
     let query = `
       SELECT s.id, s.technician_id, s.date, s.start_time, s.end_time, s.status, s.notes, s.created_at,
-             t.name as technician_name
+             s.porto_breaks, t.name as technician_name
       FROM schedule s
       LEFT JOIN technicians t ON t.id = s.technician_id
     `;

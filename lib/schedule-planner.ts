@@ -81,6 +81,8 @@ export interface ScheduleSeedRow {
   end_time: string;
   status: ScheduleStatus;
   notes: string | null;
+  /** Partial indisponibilidades Porto listed on the day, as returned (information only; see lib/porto-breaks.ts). */
+  porto_breaks?: Array<{ start: string; end: string; reason: string }> | null;
 }
 
 export interface ScheduleGenerationPreview {
