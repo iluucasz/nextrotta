@@ -1,12 +1,13 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Clock, Loader2, Plus, Printer, ScanBarcode, Trash2, Undo2, Unplug } from 'lucide-react';
+import { ArrowDownToLine, ArrowUpFromLine, CheckCircle2, Clock, Loader2, Printer, ScanBarcode, Search, Undo2, Unplug } from 'lucide-react';
 import { DataPanel } from '@/components/data-panel';
 import { StatusBadge } from '@/components/status-badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/formatters';
+import { cn } from '@/lib/utils';
 import type { TransferSummary } from '@/lib/parts/stock';
 import { normalizeBarcode, type Part } from '@/lib/parts/types';
 import { Alert, BarcodeScanner, Field, formatDateTime, inputClassName, PartImage, partsApi, Spinner, useParts } from '../shared';
@@ -246,10 +247,7 @@ export function TechniciansTab() {
   );
 }
 
-interface Line {
-  partId: string;
-  quantity: string;
-}
+const searchKey = (value: string) => value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
 function TransferForm({
   direction,
@@ -265,28 +263,58 @@ function TransferForm({
   onSaved: (transfer: TransferSummary) => void;
 }) {
   const options = parts.filter((part) => (available.get(part.id) ?? 0) > 0 && (direction === 'return' || part.active));
-  const [lines, setLines] = useState<Line[]>([{ partId: options[0]?.id ?? '', quantity: '' }]);
+  // Quantity typed for each part (only parts with a quantity count).
+  const [quantities, setQuantities] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState('');
+  const [onlySelected, setOnlySelected] = useState(false);
   const [note, setNote] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [lastScan, setLastScan] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
 
-  const total = lines.reduce((sum, line) => sum + (Number(line.quantity) || 0) * (parts.find((part) => part.id === line.partId)?.technicianPrice ?? 0), 0);
+  const quantityOf = (partId: string) => Number(quantities[partId]) || 0;
+  const selected = options.filter((part) => quantityOf(part.id) > 0);
+  const units = selected.reduce((sum, part) => sum + quantityOf(part.id), 0);
+  const total = selected.reduce((sum, part) => sum + quantityOf(part.id) * part.technicianPrice, 0);
 
-  function onScan(code: string) {
+  const words = searchKey(search).split(/\s+/).filter(Boolean);
+  const visible = options.filter((part) => {
+    if (onlySelected && quantityOf(part.id) <= 0) return false;
+    if (!words.length) return true;
+    const haystack = searchKey([part.name, part.barcode, part.sku, part.brand, part.category].filter(Boolean).join(' '));
+    return words.every((word) => haystack.includes(word));
+  });
+
+  function setQuantity(partId: string, raw: string) {
+    const max = available.get(partId) ?? 0;
+    const digits = raw.replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    const value = digits ? String(Math.min(Number(digits), max)) : '';
+    setQuantities((current) => ({ ...current, [partId]: value }));
+  }
+
+  /** A typed or scanned barcode adds one unit of that part. Returns false when no part has the code. */
+  function addByCode(code: string) {
     const part = options.find((item) => item.barcode === normalizeBarcode(code));
     if (!part) {
+      setLastScan('');
       setError(`Código ${code}: peça não encontrada ${direction === 'out' ? 'no estoque central' : 'com o técnico'}.`);
-      return;
+      return false;
     }
     setError('');
-    setLines((current) => {
-      const index = current.findIndex((line) => line.partId === part.id && line.quantity);
-      if (index >= 0) return current.map((line, position) => (position === index ? { ...line, quantity: String(Number(line.quantity) + 1) } : line));
-      const empty = current.findIndex((line) => !line.quantity);
-      return empty >= 0 ? current.map((line, position) => (position === empty ? { partId: part.id, quantity: '1' } : line)) : [...current, { partId: part.id, quantity: '1' }];
-    });
+    const max = available.get(part.id) ?? 0;
+    const current = quantityOf(part.id);
+    const next = Math.min(current + 1, max);
+    setQuantities((state) => ({ ...state, [part.id]: String(next) }));
+    setLastScan(next === current ? `${part.name}: já está no máximo (${max}).` : `${part.name}: ${next}`);
+    document.getElementById(`transfer-row-${part.id}`)?.scrollIntoView({ block: 'nearest' });
+    return true;
   }
+
+  // Enter inside a field must never send the whole remittance.
+  const blockEnter = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter') event.preventDefault();
+  };
 
   async function submit(event: React.FormEvent) {
     event.preventDefault();
@@ -299,7 +327,7 @@ function TransferForm({
           technicianId: technician.id,
           direction,
           note,
-          items: lines.filter((line) => line.partId && Number(line.quantity) > 0).map((line) => ({ partId: line.partId, quantity: Number(line.quantity) })),
+          items: selected.map((part) => ({ partId: part.id, quantity: quantityOf(part.id) })),
         },
       });
       onSaved(transfer);
@@ -325,42 +353,93 @@ function TransferForm({
         <Alert tone="warning">{direction === 'out' ? 'O estoque central está vazio. Registre uma entrada antes.' : 'O técnico não tem peças.'}</Alert>
       ) : (
         <>
-          {scanning ? <BarcodeScanner continuous title="Leia cada peça (cada leitura soma 1)" onDetect={onScan} onClose={() => setScanning(false)} /> : null}
-          <div className="grid gap-2">
-            {lines.map((line, index) => (
-              <div key={index} className="grid grid-cols-[1fr_90px_auto] items-end gap-2">
-                <Field label={index === 0 ? 'Peça' : ''}>
-                  <select className={inputClassName} value={line.partId} onChange={(event) => setLines((current) => current.map((item, position) => (position === index ? { ...item, partId: event.target.value } : item)))}>
-                    {options.map((part) => (
-                      <option key={part.id} value={part.id}>
-                        {part.name} (disp. {available.get(part.id) ?? 0})
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label={index === 0 ? 'Qtd.' : ''}>
-                  <input className={inputClassName} value={line.quantity} inputMode="numeric" onChange={(event) => setLines((current) => current.map((item, position) => (position === index ? { ...item, quantity: event.target.value } : item)))} />
-                </Field>
-                <Button type="button" variant="ghost" size="icon" disabled={lines.length === 1} onClick={() => setLines((current) => current.filter((_, position) => position !== index))} aria-label="Remover linha">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            ))}
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" variant="outline" size="lg" onClick={() => setLines((current) => [...current, { partId: options[0]?.id ?? '', quantity: '' }])}>
-                <Plus className="h-4 w-4" />
-                Outra peça
+          {scanning ? (
+            <div className="grid gap-2 rounded-lg border p-3">
+              <BarcodeScanner continuous title="Leia ou digite cada peça (cada código soma 1)" onDetect={(code) => void addByCode(code)} onClose={() => setScanning(false)} />
+              {lastScan ? <Alert tone="success">{lastScan}</Alert> : null}
+            </div>
+          ) : null}
+
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative min-w-[200px] flex-1">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <input
+                className={`${inputClassName} pl-9`}
+                value={search}
+                placeholder="Buscar por nome ou código"
+                aria-label="Buscar peça"
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== 'Enter') return;
+                  event.preventDefault();
+                  // A reader that "types" the code and presses Enter adds the part.
+                  if (search.trim() && addByCode(search.trim())) setSearch('');
+                }}
+              />
+            </div>
+            {!scanning ? (
+              <Button type="button" variant="outline" onClick={() => setScanning(true)}>
+                <ScanBarcode className="h-4 w-4" />
+                Ler ou digitar código
               </Button>
-              {!scanning ? (
-                <Button type="button" variant="outline" size="lg" onClick={() => setScanning(true)}>
-                  <ScanBarcode className="h-4 w-4" />
-                  Ler códigos
-                </Button>
-              ) : null}
+            ) : null}
+          </div>
+
+          <div className="flex items-center justify-between gap-2 text-sm">
+            <span className="text-muted-foreground">
+              {selected.length ? `${selected.length} ${selected.length === 1 ? 'peça' : 'peças'} · ${units} un.` : 'Digite a quantidade das peças que quer enviar'}
+            </span>
+            <div className="flex gap-1">
+              <Button type="button" size="sm" variant={onlySelected ? 'secondary' : 'ghost'} disabled={!selected.length} onClick={() => setOnlySelected((current) => !current)}>
+                Só as escolhidas
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                disabled={!selected.length}
+                onClick={() => {
+                  setQuantities({});
+                  setOnlySelected(false);
+                }}
+              >
+                Limpar
+              </Button>
             </div>
           </div>
+
+          <ul className="grid max-h-[42vh] gap-1.5 overflow-y-auto pr-1">
+            {visible.map((part) => {
+              const max = available.get(part.id) ?? 0;
+              const chosen = quantityOf(part.id) > 0;
+              return (
+                <li key={part.id} id={`transfer-row-${part.id}`}>
+                  <label className={cn('grid cursor-text grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-lg border p-2', chosen ? 'border-primary/60 bg-primary/5' : 'border-border')}>
+                    <PartImage src={part.imageUrl} alt={part.name} className="h-12 w-12" />
+                    <span className="grid min-w-0 gap-0.5">
+                      <span className="text-sm font-medium leading-snug wrap-anywhere">{part.name}</span>
+                      <span className="text-xs text-muted-foreground">
+                        {part.barcode ? `${part.barcode} · ` : ''}disp. {max} · {formatCurrency(part.technicianPrice)}
+                      </span>
+                    </span>
+                    <input
+                      className={`${inputClassName} w-20 text-center`}
+                      value={quantities[part.id] ?? ''}
+                      placeholder="0"
+                      inputMode="numeric"
+                      aria-label={`Quantidade de ${part.name}`}
+                      onChange={(event) => setQuantity(part.id, event.target.value)}
+                      onKeyDown={blockEnter}
+                    />
+                  </label>
+                </li>
+              );
+            })}
+            {!visible.length ? <li className="py-6 text-center text-sm text-muted-foreground">{search ? 'Nenhuma peça com essa busca.' : 'Nenhuma peça escolhida.'}</li> : null}
+          </ul>
+
           <Field label="Observação (opcional)">
-            <input className={inputClassName} value={note} onChange={(event) => setNote(event.target.value)} />
+            <input className={inputClassName} value={note} onChange={(event) => setNote(event.target.value)} onKeyDown={blockEnter} />
           </Field>
           <p className="flex justify-between text-sm font-semibold">
             <span>Total a preço de técnico</span>
@@ -370,7 +449,7 @@ function TransferForm({
       )}
       {error ? <Alert>{error}</Alert> : null}
       <DialogFooter>
-        <Button type="submit" disabled={busy || !lines.some((line) => line.partId && Number(line.quantity) > 0)}>
+        <Button type="submit" disabled={busy || !selected.length}>
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
           {direction === 'out' ? 'Registrar remessa' : 'Registrar devolução'}
         </Button>

@@ -224,6 +224,9 @@ export function BarcodeScanner({
 
   async function submitTyped(event: React.FormEvent) {
     event.preventDefault();
+    // The scanner often sits inside another form (e.g. the transfer dialog): without this the
+    // submit bubbles up and the outer form is sent (and its dialog closed) on every typed code.
+    event.stopPropagation();
     const code = typed.trim();
     if (!code) return;
     setTyped('');
